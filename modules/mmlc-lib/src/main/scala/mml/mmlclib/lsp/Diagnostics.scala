@@ -51,6 +51,7 @@ object Diagnostics:
       case SemanticError.ParseTypeErrorFound(err, _) => err.spanOpt.toList
       case SemanticError.InvalidExpressionFound(inv, _) => inv.spanOpt.toList
       case SemanticError.TypeCheckingError(typeErr) => extractTypeErrorSpans(typeErr)
+      case SemanticError.ProtocolErrorFound(error, _) => error.source.spanOpt.toList
       case SemanticError.InvalidEntryPoint(_, source) => source.spanOpt.toList
       case error: SemanticError.UseAfterMove => error.source.spanOpt.toList
       case SemanticError.ConsumingParamNotLastUse(_, ref, _) => ref.spanOpt.toList
@@ -129,6 +130,8 @@ object Diagnostics:
         "Invalid expression"
       case SemanticError.TypeCheckingError(typeErr) =>
         formatTypeError(typeErr)
+      case SemanticError.ProtocolErrorFound(error, _) =>
+        error.message
       case SemanticError.InvalidEntryPoint(msg, _) =>
         s"Invalid entry point: $msg"
       case e: SemanticError.UseAfterMove => e.message

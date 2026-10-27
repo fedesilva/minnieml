@@ -114,7 +114,7 @@ class TypeRecoveryIntegrationTests extends BaseEffFunSuite:
       assertEquals(AstLookup.findDefinitionAt(state.module, failed.line, failed.col), Nil)
       assertEquals(
         AstLookup.findReferencesAt(
-          state.module,
+          state,
           failed.line,
           failed.col,
           includeDeclaration = true

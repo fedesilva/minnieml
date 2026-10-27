@@ -105,8 +105,10 @@ object DuplicateNameChecker:
         errors += SemanticError.DuplicateName(bnd.name, allWithSameName, phaseName)
     }
 
-    val localDuplicateErrors = finalDecls.flatMap {
-      case bnd: Bnd => localDuplicateErrorsInExpr(bnd.value)
+    val localDuplicateErrors = (finalDecls ++ otherMembers).flatMap {
+      case bnd:      Bnd => localDuplicateErrorsInExpr(bnd.value)
+      case instance: ProtocolInstance =>
+        instance.members.flatMap(member => localDuplicateErrorsInExpr(member.binding.value))
       case _ => Nil
     }
 

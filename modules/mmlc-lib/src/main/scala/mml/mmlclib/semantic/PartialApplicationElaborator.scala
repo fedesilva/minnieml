@@ -12,6 +12,10 @@ import BindingIds.Allocation
   */
 object PartialApplicationElaborator:
 
+  /** Lower typed partial applications and bare executable function values, stabilizing captures. */
+  def rewriteModule(state: CompilerState): CompilerState =
+    stabilizeCaptures(state)
+
   private case class PayloadBinding(local: LocalBindings.Local, value: Expr)
 
   private case class PreparedValue[+T <: Term](value: T, bindings: List[PayloadBinding] = Nil):
@@ -24,9 +28,6 @@ object PartialApplicationElaborator:
       val body = Expr(result.source, List(result), typeSpec = result.typeSpec)
       LocalBindings.bind(binding.local.param, binding.value, body, result.source)
     }
-
-  def rewriteModule(state: CompilerState): CompilerState =
-    stabilizeCaptures(state)
 
   /** Generated PAPs can themselves be partially applied. Refresh their value flow and captures
     * until each enclosing PAP knows whether invoking its captured callee transfers ownership.
@@ -154,7 +155,7 @@ object PartialApplicationElaborator:
       tuple.elements
         .traverse(rewriteExpr(_, owner, index, values))
         .map(elements => PreparedValue(tuple.copy(elements = elements)))
-    case ref: Ref => rewriteRef(ref, owner, index, values).map[PreparedValue[Term]](identity)
+    case ref: Ref => rewriteFunctionValue(ref, owner, index, values)
     case other => PreparedValue(other).pure[Allocation]
 
   /** Preserved operands are elaborated independently; the failed result supplies no PAP value. */
@@ -176,6 +177,7 @@ object PartialApplicationElaborator:
     values: CallableValues
   ): Allocation[PreparedValue[Term]] = term match
     case app:    App => rewriteApplication(app, owner, index, values, allowPartialResult = false)
+    case ref:    Ref => rewriteRef(ref, owner, index, values).map[PreparedValue[Term]](identity)
     case lambda: Lambda =>
       rewriteLambdaBody(lambda, owner, index, values).map(PreparedValue(_))
     case expr:  Expr => rewriteFailedExpr(expr, owner, index, values).map(PreparedValue(_))
@@ -292,6 +294,29 @@ object PartialApplicationElaborator:
   ): Allocation[PreparedValue[Term]] =
     arg.value.typeSpec.fold(arg.pure[Allocation])(prepareArgument(arg, _, owner, index))
 
+  /** A concrete function used as a value is a partial application with no supplied arguments. */
+  private def rewriteFunctionValue(
+    ref:    Ref,
+    owner:  BindingOwner,
+    index:  ResolvablesIndex,
+    values: CallableValues
+  ): Allocation[PreparedValue[Term]] =
+
+    val signature = for
+      binding <- ref.resolvedId.flatMap(index.lookup).collect { case binding: Bnd => binding }
+      if ref.qualifier.isEmpty && values.recovery.isAvailable(ref)
+      if binding.value.terms match
+        case (lambda: Lambda) :: Nil => lambda.params.nonEmpty
+        case _ => false
+      callable <- ref.typeSpec.flatMap(TypeUtils.canonical(_, index)).collect {
+        case signature: TypeFn => signature
+      }
+    yield callable
+
+    signature match
+      case Some(callable) => elaborate(ref, ref, Nil, callable, owner, index, values)
+      case None => rewriteRef(ref, owner, index, values).map[PreparedValue[Term]](identity)
+
   /** A field borrow keeps its qualifier binding around the enclosing consumer. */
   private def rewriteRef(
     ref:    Ref,
@@ -318,11 +343,8 @@ object PartialApplicationElaborator:
       .fold(signature.returnType)(remaining => signature.copy(paramTypes = remaining))
 
   private def rebuild(app: App, callee: Ref | Lambda, args: List[Expr]): App =
-    @scala.annotation.tailrec
-    def nodes(current: App, outer: List[App]): List[App] = current.fn match
-      case inner: App => nodes(inner, current :: outer)
-      case _ => current :: outer
-    nodes(app, Nil).zip(args).foldLeft[Callee](callee) { case (fn, (original, arg)) =>
+    val originals = CallableValues.applicationNodes(app)._2
+    originals.zip(args).foldLeft[Callee](callee) { case (fn, (original, arg)) =>
       original.copy(fn = fn, arg = arg)
     } match
       case result: App => result
@@ -368,7 +390,7 @@ object PartialApplicationElaborator:
         }
 
   private def elaborate(
-    app:       App,
+    term:      Term,
     callee:    Ref | Lambda,
     args:      List[PreparedValue[Term]],
     signature: TypeFn,
@@ -392,10 +414,16 @@ object PartialApplicationElaborator:
       supplied <- supplied
     yield
       val allArgs = supplied.map(_.expression) ++ remaining.map { local =>
-        Expr(app.source, List(local.ref), typeSpec = local.param.typeSpec)
+        Expr(term.source, List(local.ref), typeSpec = local.param.typeSpec)
       }
+      val originals = term match
+        case app: App => CallableValues.applicationNodes(app)._2
+        case _ => Nil
       val fullApp = allArgs.zipWithIndex.foldLeft[Callee](callee) { case (fn, (arg, position)) =>
-        App(app.source, fn, arg, typeSpec = appliedType(signature, position + 1).some)
+        val resultType = appliedType(signature, position + 1).some
+        originals.lift(position) match
+          case Some(original) => original.copy(fn = fn, arg = arg, typeSpec = resultType)
+          case None => App(term.source, fn, arg, typeSpec = resultType)
       }
       val payloads = supplied.zip(signature.paramTypes.toList).zipWithIndex.collect {
         case ((prepared, tpe), position) if TypeUtils.requiresDestruction(tpe, index) =>
@@ -430,14 +458,14 @@ object PartialApplicationElaborator:
         case ref: Ref if borrowsField || (borrowsCallee && !consumesCallee) => ref.resolvedId.toSet
         case _ => Set.empty[String]
       val lambda = Lambda(
-        app.source,
+        term.source,
         remaining.map(_.param),
-        Expr(app.source, List(fullApp), typeSpec = signature.returnType.some),
+        Expr(term.source, List(fullApp), typeSpec = signature.returnType.some),
         Nil,
-        typeSpec = app.typeSpec,
+        typeSpec = term.typeSpec,
         isMove   = transferred.nonEmpty || (!borrowsHeap && !borrowsCallee),
         meta = LambdaMeta(
-          isPartialApplication = true,
+          isPartialApplication = args.nonEmpty,
           transferredCaptures  = transferred,
           borrowedCaptures     = borrowed ++ borrowedCallee
         ).some

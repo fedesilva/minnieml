@@ -8,6 +8,41 @@ import mml.mmlclib.test.BaseEffFunSuite
 
 class TypeResolverTests extends BaseEffFunSuite:
 
+  test("type resolution visits grouped callee annotations after application rewriting") {
+    val code = """
+      type Number = Int;
+      fn identity(value: Int): Int = value;;
+      let result = ((identity): Number -> Number) 1;
+    """
+    parseNotFailed(code).map { parsed =>
+      val rewritten = ExpressionRewriter.rewriteModule(phaseInput(code, parsed))
+      val resolved  = TypeResolver.rewriteModule(rewritten)
+      val result = resolved.module.members
+        .collectFirst {
+          case binding: Bnd if binding.name == "result" => binding
+        }
+        .getOrElse(fail("Expected result binding"))
+      val alias = resolved.module.members
+        .collectFirst {
+          case alias: TypeAlias if alias.name == "Number" => alias
+        }
+        .getOrElse(fail("Expected Number alias"))
+      val application = result.value.terms match
+        case (app: App) :: Nil => app
+        case other => fail(s"Expected a grouped callee application, got $other")
+      val annotation = application.calleeAscriptions match
+        case (signature: TypeFn) :: Nil => signature
+        case other => fail(s"Expected one callable annotation, got $other")
+
+      assertEquals(resolved.errors, Vector.empty)
+      assertEquals(resolvedTypeId(Some(annotation.paramTypes.head), resolved.module), alias.id.get)
+      assertEquals(resolvedTypeId(Some(annotation.returnType), resolved.module), alias.id.get)
+      val repeated = TypeResolver.rewriteModule(resolved)
+      assertEquals(repeated.module.members, resolved.module.members)
+      assertEquals(repeated.errors, resolved.errors)
+    }
+  }
+
   private def resolvedTypeId(tpe: Option[Type], module: Module): String =
     tpe match
       case Some(ref: TypeRef) =>
@@ -378,7 +413,7 @@ class TypeResolverTests extends BaseEffFunSuite:
       )
       assertEquals(failures.flatMap(_.causes), resolved.diagnostics.records.map(_.id))
       assertEquals(failures.map(_.causes.size), Vector(1, 1, 1))
-      assertEquals(unresolvedType(lambda.body.typeAsc).causes, failures(1).causes)
+      assertEquals(lambda.body.typeAsc, None)
       assertEquals(unresolvedType(binding.typeAsc).causes, failures(2).causes)
       assertEquals(resolved.module.resolvables.lookup(binding.id.get), Some(binding))
       lambda.params.foreach { param =>

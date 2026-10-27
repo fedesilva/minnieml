@@ -160,6 +160,7 @@ object InitializeResult:
 
 /** LSP SymbolKind - subset relevant to MML. */
 object SymbolKind:
+  val Interface:     Int = 11
   val Field:         Int = 8
   val Function:      Int = 12
   val Variable:      Int = 13

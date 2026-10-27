@@ -49,9 +49,9 @@ object ClosureMemoryFnGenerator:
           ((lambda, name) :: inner, next)
         case lambda: Lambda =>
           walkExpr(lambda.body, counter)
-        case App(_, fn, arg, _, _) =>
-          val (fnFound, cnt1)  = walkTerm(fn, counter)
-          val (argFound, cnt2) = walkExpr(arg, cnt1)
+        case app: App =>
+          val (fnFound, cnt1)  = walkTerm(app.fn, counter)
+          val (argFound, cnt2) = walkExpr(app.arg, cnt1)
           (fnFound ::: argFound, cnt2)
         case Cond(_, cond, ifTrue, ifFalse, _, _) =>
           val (c, cnt1) = walkExpr(cond, counter)

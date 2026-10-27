@@ -48,8 +48,29 @@ object SemanticTokens:
   /** Collect tokens from a member. */
   private def collectFromMember(member: Member, module: Module): List[RawToken] =
     member match
+      case protocol: Protocol =>
+        // "protocol"
+        protocol.spanOpt.flatMap(s => keywordAt(s.start, 8)).toList ++
+          protocol.nameNode.spanOpt.flatMap(s => tokenAt(s, TokenType.Type)).toList ++
+          collectFromType(protocol.typeParameter) ++
+          protocol.signatures.flatMap(collectFromMember(_, module))
+      case signature: ProtocolSignature =>
+        val tokenType =
+          if signature.meta.origin == BindingOrigin.Operator then TokenType.Operator
+          else TokenType.Function
+        // Both "fn" and "op" occupy two characters.
+        signature.spanOpt.flatMap(s => keywordAt(s.start, 2)).toList ++
+          signature.nameNode.spanOpt.flatMap(s => tokenAt(s, tokenType)).toList ++
+          collectFromParams(signature.params, module) ++ collectFromType(signature.returnType)
+      case instance: ProtocolInstance =>
+        // "instance"
+        instance.spanOpt.flatMap(s => keywordAt(s.start, 8)).toList ++
+          instance.protocol.nameNode.spanOpt.flatMap(s => tokenAt(s, TokenType.Type)).toList ++
+          collectFromType(instance.concreteType) ++ instance.members.flatMap(member =>
+            collectFromBnd(member.binding, module, Some(member.origin))
+          )
       case bnd: Bnd =>
-        collectFromBnd(bnd, module)
+        collectFromBnd(bnd, module, bnd.meta.map(_.origin))
       case td: TypeDef =>
         collectFromTypeDef(td)
       case ta: TypeAlias =>
@@ -60,15 +81,17 @@ object SemanticTokens:
         Nil
 
   /** Collect tokens from a binding (let, fn, op). */
-  private def collectFromBnd(bnd: Bnd, module: Module): List[RawToken] =
+  private def collectFromBnd(
+    bnd:    Bnd,
+    module: Module,
+    origin: Option[BindingOrigin]
+  ): List[RawToken] =
     if !bnd.source.isFromSource then return Nil
 
-    val (keywordLen, nameTokenType) = bnd.meta match
-      case Some(meta) =>
-        meta.origin match
-          case BindingOrigin.Function | BindingOrigin.Constructor | BindingOrigin.Destructor =>
-            (2, TokenType.Function) // "fn"
-          case BindingOrigin.Operator => (2, TokenType.Operator) // "op"
+    val (keywordLen, nameTokenType) = origin match
+      case Some(BindingOrigin.Function | BindingOrigin.Constructor | BindingOrigin.Destructor) =>
+        (2, TokenType.Function) // "fn"
+      case Some(BindingOrigin.Operator) => (2, TokenType.Operator) // "op"
       case None =>
         val tokenType =
           if hasCallableType(bnd.typeSpec.orElse(bnd.typeAsc), module) then TokenType.Function
@@ -213,7 +236,8 @@ object SemanticTokens:
       case ref:    Ref => collectFromRef(ref, module)
       case nested: App => collectFromApp(nested, module)
       case lambda: Lambda => collectFromLambda(lambda, module)
-    fnTokens ++ collectFromExpr(app.arg, module)
+    val typeTokens = app.calleeAscriptions.flatMap(collectFromType)
+    fnTokens ++ collectFromExpr(app.arg, module) ++ typeTokens
 
   /** Collect tokens from a lambda. */
   private def collectFromLambda(lambda: Lambda, module: Module): List[RawToken] =
@@ -281,6 +305,7 @@ object SemanticTokens:
   /** Collect tokens from a type reference. */
   private def collectFromType(typ: Type): List[RawToken] =
     typ match
+      case tpe if !tpe.source.isFromSource => Nil
       case tr: TypeRef =>
         tr.spanOpt
           .flatMap(tokenAt(_, TokenType.Type, lengthOverride = Some(tr.name.length)))
@@ -289,7 +314,8 @@ object SemanticTokens:
         tf.paramTypes.toList.flatMap(collectFromType) ++ collectFromType(tf.returnType)
       case tt: TypeTuple =>
         tt.elements.flatMap(collectFromType)
-      case ta: TypeApplication =>
+      case group: TypeGroup => group.types.flatMap(collectFromType)
+      case ta:    TypeApplication =>
         collectFromType(ta.base) ++ ta.args.flatMap(collectFromType)
       case tv: TypeVariable =>
         tv.spanOpt
@@ -299,13 +325,17 @@ object SemanticTokens:
         collectFromType(ts.bodyType)
       case tor: TypeOpenRecord =>
         tor.fields.flatMap((_, t) => collectFromType(t))
-      case _: NativePrimitive | _: NativePointer | _: NativeStruct | _: TypeUnit | _: TypeGroup |
-          _: Union | _: Intersection | _: TypeRefinement | _: TypeStruct | _: TypeResolutionError |
+      case _: NativePrimitive | _: NativePointer | _: NativeStruct | _: TypeUnit | _: Union |
+          _: Intersection | _: TypeRefinement | _: TypeStruct | _: TypeResolutionError |
           _: ParseTypeError =>
         Nil
 
   private def refTokenType(ref: Ref, resolved: Resolvable, module: Module): TokenType =
     resolved match
+      case _:         Protocol => TokenType.Type
+      case signature: ProtocolSignature =>
+        if signature.meta.origin == BindingOrigin.Operator then TokenType.Operator
+        else TokenType.Function
       case _: TypeDef | _: TypeAlias | _: TypeStruct =>
         TokenType.Type
       case bnd: Bnd if bnd.meta.exists(_.origin == BindingOrigin.Operator) =>

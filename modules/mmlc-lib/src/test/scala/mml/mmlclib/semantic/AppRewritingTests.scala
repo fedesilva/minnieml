@@ -108,52 +108,41 @@ class AppRewritingTests extends BaseEffFunSuite:
     }
   }
 
-  test("bare callable refs in argument position eta-expand to lambdas") {
-    semNotFailed(
-      """
-        fn apply(f: Int -> Int): Int = f 1;;
-        fn inc(x: Int): Int = x + 1;;
-        let result = apply inc;
-      """
-    ).map { m =>
-      val memberBnd =
-        lookupNames("result", m).headOption
-          .getOrElse(
-            fail(s"Member `result` not found in module: ${prettyPrintAst(m)}")
-          )
+  test("bare callable arguments forward through their expanded function values") {
+    val source = """
+      fn apply(f: Int -> Int): Int = f 1;;
+      fn inc(x: Int): Int = x + 1;;
+      let result = apply inc;
+    """
+    semNotFailed(source).map { module =>
+      def binding(name: String): Bnd =
+        module.members
+          .collectFirst { case binding: Bnd if binding.name == name => binding }
+          .getOrElse(fail(s"Expected binding $name"))
 
-      memberBnd match
-        case bnd: Bnd =>
-          bnd.value.terms match
-            case TXApp(applyRef, _, List(Expr(_, List(lambda: Lambda), _, _))) :: Nil =>
-              assertEquals(clue(applyRef.name), "apply", "Outer function should be `apply`")
-              assertEquals(clue(lambda.params.length), 1, "Eta-expanded lambda should have 1 param")
-              lambda.body.terms match
-                case TXApp(
-                      incRef,
-                      _,
-                      List(Expr(_, List(Ref(_, syntheticName, _, _, _, _, _)), _, _))
-                    ) :: Nil =>
-                  assertEquals(clue(incRef.name), "inc", "Eta-expanded body should call `inc`")
-                  assertEquals(
-                    clue(syntheticName),
-                    lambda.params.head.name,
-                    "Eta-expanded call should forward the synthetic param"
-                  )
-                case other =>
-                  fail(
-                    s"Expected eta-expanded lambda body to call inc, got:\n${other
-                        .map(t => prettyPrintAst(t, 0, false, false))
-                        .mkString("\n")}"
-                  )
-            case other =>
-              fail(
-                s"Expected apply to receive an eta-expanded lambda argument, got:\n${other
-                    .map(t => prettyPrintAst(t, 0, false, false))
-                    .mkString("\n")}"
-              )
-        case other =>
-          fail(s"Expected Bnd, got: ${prettyPrintAst(other)}")
+      val applyFunction = binding("apply")
+      val increment     = binding("inc")
+      val result        = binding("result")
+      val calls = TermTraversal.collect(result.value) { case app: App => app }.filter { app =>
+        app.fn match
+          case ref: Ref => ref.resolvedId == applyFunction.id
+          case _ => false
+      }
+      assertEquals(calls.size, 1)
+      val arguments = CallableValues.fromModule(module).lambdas(calls.head.arg)
+      assertEquals(arguments.size, 1)
+      val function = arguments.head
+      assertEquals(function.params.size, 1)
+      assertEquals(function.typeSpec, increment.typeSpec)
+      val call = function.body.terms match
+        case (app: App) :: Nil => app
+        case other => fail(s"Expected the forwarding call to inc, got $other")
+      call.fn match
+        case ref: Ref => assertEquals(ref.resolvedId, increment.id)
+        case other => fail(s"Expected inc as the forwarding target, got $other")
+      call.arg.terms match
+        case (ref: Ref) :: Nil => assertEquals(ref.resolvedId, function.params.head.id)
+        case other => fail(s"Expected the expanded parameter as inc's argument, got $other")
     }
   }
 
@@ -224,7 +213,11 @@ class AppRewritingTests extends BaseEffFunSuite:
       memberBnd match
         case bnd: Bnd =>
           bnd.value.terms match
-            case List(App(_, lambda: Lambda, Expr(_, List(LiteralInt(_, 1)), _, _), _, _)) =>
+            case List(app: App) =>
+              val lambda = app.fn match
+                case literal: Lambda => literal
+                case other => fail(s"Expected a direct lambda call, got ${prettyPrintAst(other)}")
+              assertEquals(TXExprInt.unapply(app.arg), Some(1L))
               assertEquals(clue(lambda.params.map(_.name)), List("x"))
               assert(!lambda.isMove, "Expected normal lambda literal")
             case other =>
@@ -253,7 +246,11 @@ class AppRewritingTests extends BaseEffFunSuite:
       memberBnd match
         case bnd: Bnd =>
           bnd.value.terms match
-            case List(App(_, lambda: Lambda, Expr(_, List(LiteralInt(_, 1)), _, _), _, _)) =>
+            case List(app: App) =>
+              val lambda = app.fn match
+                case literal: Lambda => literal
+                case other => fail(s"Expected a direct lambda call, got ${prettyPrintAst(other)}")
+              assertEquals(TXExprInt.unapply(app.arg), Some(1L))
               assertEquals(clue(lambda.params.map(_.name)), List("x"))
               assert(lambda.isMove, "Expected move lambda marker to be preserved")
             case other =>
@@ -282,26 +279,10 @@ class AppRewritingTests extends BaseEffFunSuite:
       memberBnd match
         case bnd: Bnd =>
           bnd.value.terms match
-            case List(
-                  App(
-                    _,
-                    outerLambda: Lambda,
-                    Expr(_, List(LiteralInt(_, 1)), _, _),
-                    _,
-                    _
-                  )
-                ) =>
+            case List(TXCall1(outerLambda: Lambda, LiteralInt(_, 1))) =>
               assertEquals(clue(outerLambda.params.map(_.name)), List("x"))
               outerLambda.body.terms match
-                case List(
-                      App(
-                        _,
-                        innerLambda: Lambda,
-                        Expr(_, List(LiteralInt(_, 2)), _, _),
-                        _,
-                        _
-                      )
-                    ) =>
+                case List(TXCall1(innerLambda: Lambda, LiteralInt(_, 2))) =>
                   assertEquals(clue(innerLambda.params.map(_.name)), List("y"))
                   innerLambda.body.terms match
                     case List(TXApp(plusRef, _, List(TXExprRefNamed("x"), TXExprRefNamed("y")))) =>
@@ -344,15 +325,7 @@ class AppRewritingTests extends BaseEffFunSuite:
       memberBnd match
         case bnd: Bnd =>
           bnd.value.terms match
-            case List(
-                  App(
-                    _,
-                    outerLambda: Lambda,
-                    Expr(_, List(LiteralInt(_, 1)), _, _),
-                    _,
-                    _
-                  )
-                ) =>
+            case List(TXCall1(outerLambda: Lambda, LiteralInt(_, 1))) =>
               assertEquals(clue(outerLambda.params.map(_.name)), List("x"))
               outerLambda.body.terms match
                 case List(residualLambda: Lambda) =>
@@ -652,9 +625,12 @@ class AppRewritingTests extends BaseEffFunSuite:
       // Helper to find App(Ref(name), _) recursively through ownership wrappers
       def findAppByName(term: Term, name: String): Option[App] =
         term match
-          case app @ App(_, Ref(_, n, _, _, _, _, _), _, _, _) if n == name => Some(app)
-          case App(_, fn, arg, _, _) =>
-            findAppByName(fn, name).orElse(arg.terms.flatMap(findAppByName(_, name)).headOption)
+          case app: App =>
+            app.fn match
+              case ref: Ref if ref.name == name => Some(app)
+              case _ =>
+                findAppByName(app.fn, name)
+                  .orElse(app.arg.terms.flatMap(findAppByName(_, name)).headOption)
           case Lambda(_, _, body, _, _, _, _, _) =>
             body.terms.flatMap(findAppByName(_, name)).headOption
           case Expr(_, terms, _, _) =>
@@ -666,7 +642,11 @@ class AppRewritingTests extends BaseEffFunSuite:
           bnd.value.terms match
             case List(lambda: Lambda) =>
               lambda.body.terms match
-                case List(App(_, innerLambda: Lambda, argExpr, _, _)) =>
+                case List(app: App) =>
+                  val innerLambda = app.fn match
+                    case inner: Lambda => inner
+                    case other => fail(s"Expected let binding lambda, got ${prettyPrintAst(other)}")
+                  val argExpr = app.arg
                   argExpr.terms match
                     case List(LiteralInt(_, 1)) => ()
                     case _ =>

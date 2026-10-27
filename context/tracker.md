@@ -24,7 +24,8 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 
 - **Tracker:** [Implement protocols](tasks/protocols.md)
 - **Status:** in_progress
-- **Current focus:** Implement P1 parsing using the signed-off AST and shared lookup API.
+- **Current focus:** Author review of the verified
+  [protocol repairs](tasks/protocols-review-repairs.md) and Num checkpoint before Clone integration.
 
 ### Operator partial application
 
@@ -32,6 +33,12 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 - **Status:** design
 - **Current focus:** Deferred discussion after Protocols: unary/binary selection, annotation
   burden, rewriter changes, and whether to keep both operator application and placeholders.
+
+### Bug notes
+
+- **Tracker:** [Bug notes](tasks/bug-notes.md)
+- **Status:** in_progress
+- **Current focus:** Collect confirmed bugs and fix status; split into focused tasks later.
 
 ### Protocol derivation
 

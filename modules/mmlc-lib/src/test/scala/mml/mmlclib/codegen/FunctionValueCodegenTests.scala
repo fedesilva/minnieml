@@ -50,6 +50,25 @@ class FunctionValueCodegenTests extends BaseEffFunSuite:
     }
   }
 
+  test("capturing and rebinding a bare function value remains reusable under ASan") {
+    val source = """
+      fn inc(value: Int): Int = value + 1;;
+      fn make(): Int -> Int =
+        let function = inc;
+        ~{ value: Int -> let local = function; local value; };
+      ;
+      pub fn main(): Int =
+        let function = make ();
+        let first = function 1;
+        println (int_to_str first);
+        let second = function first;
+        println (int_to_str second);
+        second - 3;
+      ;
+    """
+    runSanitizedProgram(source, "ReusableFunctionValue", 0, List("2", "3"))
+  }
+
   test("stored callables preserve construction timing, aliases, returns and shadowing at runtime") {
     val source  = """
       fn observe(n: Int): Unit = @metal:ffi;;

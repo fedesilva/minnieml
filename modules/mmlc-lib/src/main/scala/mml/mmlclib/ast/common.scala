@@ -137,6 +137,14 @@ enum CallableArity derives CanEqual:
   case Binary
   case Nary(paramCount: Int)
 
+object CallableArity:
+
+  def fromParameterCount(count: Int): CallableArity = count match
+    case 0 => CallableArity.Nullary
+    case 1 => CallableArity.Unary
+    case 2 => CallableArity.Binary
+    case n => CallableArity.Nary(n)
+
 enum BindingOrigin derives CanEqual:
   case Function
   case Operator
@@ -146,6 +154,14 @@ enum BindingOrigin derives CanEqual:
 object Precedence:
   val MaxUser:  Int = 100
   val Function: Int = 101
+
+/** Written operator declarations share defaults; instance omissions inherit their signature. */
+object OperatorDefaults:
+
+  val precedence: Int = 50
+
+  def associativity(parameterCount: Int): Associativity =
+    if parameterCount == 1 then Associativity.Right else Associativity.Left
 
 object OpMangling:
   private val opCharNames: Map[Char, String] = Map(
@@ -175,6 +191,7 @@ object OpMangling:
       else op.map(c => opCharNames.getOrElse(c, c.toString)).mkString("_")
     s"op.$translated.$arity"
 
+/** Callable identity and concrete grouping attributes. */
 final case class BindingMeta(
   origin:        BindingOrigin,
   arity:         CallableArity,

@@ -56,11 +56,25 @@ object ParsingErrorChecker:
     case error: ParsingIdError =>
       report(SemanticError.ParsingIdErrorFound(error, phaseName)).as(error)
 
-    case binding: Bnd =>
+    case binding: Bnd => stampBinding(binding).widen
+
+    case protocol: Protocol =>
+      protocol.signatures
+        .traverse { signature =>
+          for
+            params <- signature.params.traverse(stampParam)
+            result <- stampType(signature.returnType)
+          yield signature.copy(params = params, returnType = result)
+        }
+        .map(signatures => protocol.copy(signatures = signatures))
+
+    case instance: ProtocolInstance =>
       for
-        value <- stampExpr(binding.value)
-        types <- stampTypes(binding)
-      yield binding.copy(value = value, typeAsc = types.ascription, typeSpec = types.computed)
+        concreteType <- stampType(instance.concreteType)
+        members <- instance.members.traverse { member =>
+          stampBinding(member.binding).map(binding => member.copy(binding = binding))
+        }
+      yield instance.copy(concreteType = concreteType, members = members)
 
     case alias: TypeAlias =>
       for
@@ -79,6 +93,12 @@ object ParsingErrorChecker:
       module.members.traverse(stampMember).map(members => module.copy(members = members))
 
     case other => other.pure[Stamping]
+
+  private def stampBinding(binding: Bnd): Stamping[Bnd] =
+    for
+      value <- stampExpr(binding.value)
+      types <- stampTypes(binding)
+    yield binding.copy(value = value, typeAsc = types.ascription, typeSpec = types.computed)
 
   private def stampTypeError(error: ParseTypeError): Stamping[ParseTypeError] =
     val occurrence = TypeOccurrence(error)
@@ -182,7 +202,14 @@ object ParsingErrorChecker:
       fn <- stampCallee(app.fn)
       arg <- stampExpr(app.arg)
       types <- stampTypes(app)
-    yield app.copy(fn = fn, arg = arg, typeAsc = types.ascription, typeSpec = types.computed)
+      calleeAscriptions <- app.calleeAscriptions.traverse(stampType)
+    yield app.copy(
+      fn                = fn,
+      arg               = arg,
+      typeAsc           = types.ascription,
+      typeSpec          = types.computed,
+      calleeAscriptions = calleeAscriptions
+    )
 
   private def stampCallee(callee: Callee): Stamping[Callee] = callee match
     case ref:    Ref => stampRef(ref).widen

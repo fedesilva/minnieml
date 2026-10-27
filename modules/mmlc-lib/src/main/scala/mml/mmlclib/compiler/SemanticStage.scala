@@ -28,7 +28,9 @@ object SemanticStage:
       |> CompilerState.timePhase("semantic", "mem-fn-gen")(
         MemoryFunctionGenerator.rewriteModule
       )
+      |> CompilerState.timePhase("semantic", "protocol-checker")(ProtocolChecker.rewriteModule)
       |> CompilerState.timePhase("semantic", "ref-resolver")(indexed(RefResolver.rewriteModule))
+      |> CompilerState.timePhase("semantic", "operator-grouping")(OperatorGrouping.checkModule)
       |> CompilerState
         .timePhase("semantic", "expression-rewriter")(indexed(ExpressionRewriter.rewriteModule))
       |> CompilerState.timePhase("semantic", "simplifier")(indexed(Simplifier.rewriteModule))

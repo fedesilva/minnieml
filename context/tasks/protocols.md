@@ -16,12 +16,13 @@
 2. [x] **complete** — Approve the [bounded implementation plan](#plan-approval-gate).
 3. [x] **complete** — [P0: Write the AST nodes, then stop for Author review](#p0-ast-nodes-and-author-review).
 4. [x] **complete** — [P0b: Build shared lookup machinery, then stop for Author review](#p0b-shared-lookups-and-author-review).
-5. [ ] **planned** — [P1: Parse protocol signatures and concrete instances](#p1-declarations-and-syntax).
-6. [ ] **planned** — [P2: Validate contracts and register concrete member functions](#p2-contracts-and-concrete-members).
-7. [ ] **planned** — [P3: Enforce precedence/associativity coherence before grouping; preserve candidates](#p3-lookup-and-operator-grouping).
-8. [ ] **planned** — [P4: Select concrete members using arguments and expected types](#p4-type-directed-selection-and-lowering).
-9. [ ] **planned** — [P5: Deliver Num and migrate numeric operators](#p5-num-and-numeric-migration).
-10. [ ] **planned** — [P6: Verify Num and obtain review and signoff](#p6-num-review-checkpoint).
+5. [x] **complete** — [P1: Parse protocol signatures and concrete instances](#p1-declarations-and-syntax).
+6. [x] **complete** — [P2: Validate signatures and register concrete member functions](#p2-signatures-and-concrete-members).
+7. [x] **complete** — [P3: Enforce precedence/associativity coherence before grouping; preserve candidates](#p3-lookup-and-operator-grouping).
+8. [x] **complete** — [P4: Select concrete members using arguments and expected types](#p4-type-directed-selection-and-lowering).
+9. [x] **complete** — [P5: Deliver Num and migrate numeric operators](#p5-num-and-numeric-migration).
+10. [ ] **ready_for_signoff** — [P6: Review the verified Num deliverable](#p6-num-review-checkpoint).
+    - **ready_for_signoff** — [Repair protocol error recovery and integration](protocols-review-repairs.md).
 11. [ ] **planned** — [P7: Integrate explicit Clone and generated instances](#p7-explicit-clone).
 12. [ ] **planned** — [P8: Require explicit cloning for global ownership transfers](#p8-global-ownership-transfers).
 13. [ ] **planned** — [P9: Complete documentation, verification, and final review](#p9-final-verification-and-documentation).
@@ -30,13 +31,13 @@
 
 MML needs ad hoc polymorphism for type-based function and operator selection. Enum
 equality requires concrete instances, and memory evolution depends on compiler-recognized
-`Unique` and `Clone` contracts.
+`Unique` and `Clone` protocols.
 
 ## Outcome
 
 A functional protocol system unifies numeric operator spellings for `Int` and `Float`
 and introduces the `Clone` protocol through the unary `^` operator. Protocol declarations,
-concrete instances, contract checking, member resolution, and executable lowering support
+concrete instances, signature checking, member resolution, and executable lowering support
 both capabilities through the same mechanism.
 
 ## Scope
@@ -53,7 +54,7 @@ cloning of globals at ownership sinks, in the order shown in the execution check
 - Protocol declarations with one type parameter, required function and operator members,
   and concrete instances. Every required member has a source-defined or compiler-generated
   instance binding.
-- Instance uniqueness, contract checking, and type-based candidate and instance selection
+- Instance uniqueness, signature checking, and type-based candidate and instance selection
   using argument and expected result types, resolving calls to lowered instance member bindings.
 - Shared operator precedence and associativity checked before expression rewriting.
 - A provisional `Num` protocol with concrete `Int` and `Float` instances supplies unified
@@ -74,7 +75,7 @@ cloning of globals at ownership sinks, in the order shown in the execution check
   This applies to transfers requiring ownership, not ordinary scalar value copies.
 
 The operator inventory above follows `injectStandardOperators` in
-[semantic/package.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/package.scala),
+[StandardOperators.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/StandardOperators.scala),
 which supplies the compiler's built-in operators. `prelude.mml` is an unused placeholder,
 not the source of those declarations. Integer remainder and shifts have no Float counterparts;
 the plan keeps them as free operators.
@@ -112,7 +113,7 @@ inherit their protocol's attributes; any explicit restatement must match exactly
 **P3 is a mandatory gate:** demonstrate conflict rejection and declaration-order-independent
 grouping before proceeding to type-directed selection in P4.
 
-### Member contracts and instance selection
+### Member signatures and instance selection
 
 Function members use named, typed parameters; instance headers omit `for`. The first slice
 allows the protocol's single type parameter in member signatures and concrete types in
@@ -129,7 +130,7 @@ and unresolved ambiguity are errors. Functions and operators share this resoluti
 
 The protocol supplies member types and metadata, including operator precedence and
 associativity. Instances may omit them or repeat them. Check every explicit restatement
-against the instantiated contract and reject any divergence.
+against the concrete signature and reject any divergence.
 [Operator syntax](../../docs/brainstorming/language/protocols.md#operator-declaration-syntax)
 uses the ordinary declaration shape: name, named parameters, return type, precedence and
 associativity. A required member omits the body. Instance members supply Lambda bodies.
@@ -157,18 +158,20 @@ update the execution checklist before advancing. Stage completion does not autho
 ### Implementation choices
 
 - A protocol node contains member signatures, each with an optional Lambda body for a default.
-  An instance node contains a protocol reference, a concrete type, and member `Bnd`s whose
-  values contain Lambdas. Required protocol members have no body.
+  An instance node contains a protocol reference, a concrete type, and member declarations whose
+  `Bnd` values contain Lambdas. Instance declarations retain written operator attributes separately
+  from concrete callable metadata. Required protocol members have no body.
 - Instance members already have the ordinary binding shape. Lowering supplies their concrete
-  signatures from the protocol contract and places their bindings among the module's executable
+  signatures from the protocol and places their bindings among the module's executable
   bindings. `BindingMeta` retains function/operator origin, arity, and source member name;
-  operator precedence and associativity come from the protocol contract.
+  operator precedence and associativity come from the protocol signature. Precedence is an `Int`;
+  omitting it in source means a free-operator default or inheritance from the protocol signature.
 - Shared lookup machinery associates protocol, concrete type, and member identities with each
   instance member's binding ID. That association need not be encoded in the ID's spelling.
   Retrieve current bindings through the resolvables index rather than duplicating their bodies.
   Calls select those ordinary bindings during type checking; no runtime dictionary or separate
   protocol calling convention is introduced.
-- The typer checks instance bodies as ordinary Lambdas against their concrete contracts.
+- The typer checks instance bodies as ordinary Lambdas against their concrete signatures.
   Ownership analysis and final code generation process those same Lambdas through their
   existing machinery; neither introduces an instance-specific callable pipeline.
 - Register concrete signatures before checking bodies, so recursive member calls and forward
@@ -215,7 +218,7 @@ Proceed to P0b only after explicit review and signoff of the AST shape.
   Use canonical concrete type identity for instance keys, preserving nominal distinctions.
 - Test the API with constructed AST nodes: successful and missing lookups, duplicate keys,
   alias identity, scoped candidates, and retrieval after an indexed binding is updated.
-- Require resolution, contract checking, operator grouping, type checking, and Clone generation
+- Require resolution, signature checking, operator grouping, type checking, and Clone generation
   to use this machinery. Integrate those consumers in their later stages, not during this step.
 
 Exit: present the API, its data ownership, and focused test results to the Author, then **stop**.
@@ -226,7 +229,7 @@ Proceed to P1 only after explicit review and signoff of the shared lookup machin
 - Use the reviewed AST nodes and retain source locations. Reuse ordinary function/operator
   parameter and type syntax, including consuming parameters.
 - Parse one protocol type parameter, bodyless required members, and explicit instance bodies.
-  Preserve omitted instance types and operator attributes until the contract supplies them.
+  Preserve omitted instance types and operator attributes until the signature supplies them.
   Do not apply free-operator defaults to omitted instance metadata.
 - Reject defaults, prerequisite constraints, multiple protocol parameters, parameterized
   instances, and member-local polymorphism with focused unsupported-feature diagnostics.
@@ -237,13 +240,13 @@ Exit: parser tests cover named members, unary/binary operators, omitted annotati
 terminators, malformed declarations with recovery, and unsupported forms. Existing ordinary
 function/operator syntax remains accepted.
 
-### P2: Contracts and concrete members
+### P2: Signatures and concrete members
 
 - Resolve protocol parameter references in their own scope and concrete instance types through
   the existing type resolver. Populate the shared registry and use the reviewed P0b lookup API.
 - Check duplicate protocols and instances; distinguish repeated names within a protocol from
   legal shared member names across protocols. Generated instances obey the same uniqueness rule.
-- Match instance members to their contracts by member identity and callable shape. Reject
+- Match instance members to their signatures by member identity and callable shape. Reject
   missing, extra, duplicate, or mismatched members. Substitute the concrete type into every
   signature, including nested function types; check all explicit type and metadata restatements.
 - Preserve ordinary parameter ownership rules: `~` is part of the callable contract, and a
@@ -258,7 +261,7 @@ function/operator syntax remains accepted.
   executable bindings.
 
 Exit: semantic tests establish instance uniqueness through aliases, nominal type distinction,
-contract inheritance and mismatch diagnostics, stable references, and concrete signatures on
+signature inheritance and mismatch diagnostics, stable references, and concrete signatures on
 lowered bindings. Instance body checking and execution are verified in P4.
 
 ### P3: Lookup and operator grouping
@@ -278,7 +281,7 @@ of declaration order, lexical shadowing, and rejection of incompatible grouping 
 
 ### P4: Type-directed selection and lowering
 
-- Use shared lookups to retrieve contracts, instances, and their current member bindings.
+- Use shared lookups to retrieve signatures, instances, and their current member bindings.
   Check instance Lambda bodies against the concrete signatures supplied in P2.
 - Pass expected types into reference and application checking. Consider the full enclosing
   application chain before rejecting an inner partial application as ambiguous.
@@ -304,7 +307,7 @@ in source order. No polymorphic binding or runtime dispatch is introduced.
 
 ### P5: Num and numeric migration
 
-- Inject the provisional Num contract and concrete Int/Float instances through the same
+- Inject the provisional Num protocol and concrete Int/Float instances through the same
   registration and checking mechanism as source declarations. Reuse existing LLVM templates.
 - Migrate binary arithmetic, equality, ordering, and unary negation as enumerated in Scope.
   Preserve precedence, associativity, integer division, floating comparison predicates, and
@@ -313,9 +316,8 @@ in source order. No polymorphic binding or runtime dispatch is introduced.
   Update programmatic library bodies, current samples, benchmarks,
   smoke/memory fixtures, and tests that depend on the split spellings. Preserve historical
   records and deliberately user-defined dotted operators.
-- Reconcile current numeric documentation with actual injection. In particular, the compiler
-  design examples show unary Float `+.` and `fneg`, whereas injection supplies only `-.`
-  using subtraction from zero. The implementation is the compatibility baseline.
+- Keep numeric documentation aligned with injection: Float negation uses subtraction from zero,
+  and Float has no unary `+`. The existing LLVM behavior is the compatibility baseline.
 
 Exit: both numeric instances execute all listed operations, with grouping and Float edge
 cases covered. Mixed Int/Float operands remain rejected without an applicable instance.
@@ -324,6 +326,10 @@ explicitly declared by the program. Current shipped programs use the supported s
 
 ### P6: Num review checkpoint
 
+- Verify and review [protocol error recovery and integration repairs](protocols-review-repairs.md)
+  before signoff. The child task records the corrections and renewed compiler-gate results.
+- Resolve broader choices through [separate design discussions](protocols-design-discussions.md),
+  one topic per iteration. Function-value wrapping stays in place pending its discussion.
 - Run the applicable compiler verification and review gates described under P9 for P0 through
   P5, including P0b. Record actual results, outstanding failures, and any explicit waivers.
 - Present the code tour and working Num examples, including a user-defined protocol, a
@@ -334,7 +340,7 @@ Exit: Num is verified and signed off; unresolved required checks or findings kee
 
 ### P7: Explicit Clone
 
-- Inject the compiler-recognized Clone contract with borrowing unary `^`; propose precedence
+- Inject the compiler-recognized Clone protocol with borrowing unary `^`; propose precedence
   95 and right associativity, matching existing prefix operators.
 - Register explicit native Clone instances using the existing runtime implementations for
   String, Buffer, Rng, IntArray, StringArray, and FloatArray. Check their allocating-result
@@ -422,10 +428,9 @@ Implementation anchors:
 - [RefResolver](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/RefResolver.scala)
   retains multiple matches in `candidateIds`.
 - [TypeChecker](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/TypeChecker.scala):
-  `checkRef` reads a resolved reference's type without an expected type;
-  `checkNormalApplication` checks the callee before the argument and does not receive the
-  application's expected result type. These paths need candidate-aware checking and
-  expected-type propagation rather than premature selection or ambiguity errors.
+  checks retained candidates using the full enclosing application chain, independently known
+  argument types, and expected types. Candidate-local trees and diagnostics are committed only
+  for a unique applicable concrete member.
 - [PartialApplicationElaborator](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/PartialApplicationElaborator.scala):
   `rewriteApplication` uses the callee's concrete `TypeFn` to elaborate partial applications.
   Resolution must supply that concrete callable before this phase.
@@ -490,10 +495,192 @@ P0b verification (2026-10-26):
 - Memory and Linux ABI gates are not applicable: registry identities and AST naming do not
   change ownership, lambda execution, native calling conventions, or ABI layouts.
 
+P1 verification (2026-10-26):
+
+- `sbtn 'scalafmtAll;scalafixAll;testFull'` passed formatting and linting. An accidental
+  repository-wide removal of `unsafe_` caused duplicate runtime definitions and one failing
+  `AsanInstrumentationTests` case. The entire accidental replacement is reverted while
+  preserving P1 changes.
+- The final `sbtn testFull` passed 2,030 library and 9 CLI tests, with no failures or errors.
+  The launcher reports multiple main classes; there are no compiler warnings.
+- Focused coverage includes 28 `ProtocolParserTests` plus the documented-protocol/grouped-type
+  token regression in `SemanticTokensTests`.
+- `./tests/smoke/run.sh all` passed all eight fixtures.
+- `sbtn mmlcPublishLocal`, `make -C benchmark clean`, and `make -C benchmark mml` passed.
+  The benchmark collection was compiled; runtime performance was not measured.
+- Independent primary review and separate QA/style, test-quality, and readability checks completed.
+  Three independently confirmed findings are corrected: function members use ordinary binding-name
+  validation, the recovery test observes the second signature's diagnostic, and precedence rendering
+  fits the line limit. Formatting, linting, and all 28 parser tests pass after the corrections.
+  The first correction attempt failed compilation on a parser tuple pattern; the passing run
+  includes its corrected nested pattern. Fresh narrow primary review and separate QA/style,
+  test-quality, and readability checks completed with no actionable findings. Full-suite, smoke,
+  publish, and benchmark compilation passed on the corrected source.
+- `git diff --check`, the main-agent QA pass, and whole-record tracking review passed.
+- Memory and Linux ABI gates are not applicable: parsing and declaration consumers do not
+  change ownership, lambda execution, native calling conventions, or ABI layouts.
+
+P2 verification:
+
+- Type resolution passed 39 focused tests, including six protocol-specific cases.
+- Instance checking passed 31 focused tests, covering signature matching, registry associations,
+  identity/source preservation, diagnostic consumers, editor lookup, and repeated lowering.
+- `sbtn 'scalafmtAll;scalafixAll;testFull'` passed 2,074 library and 9 CLI tests, including the
+  shared type traversal. No compiler warnings were reported.
+- Initial focused verification exposed a missing `CanEqual` derivation on the member lookup key
+  and an array-identity comparison in a new token test. Both are corrected and the focused suite passes.
+- Shared type traversal replaces repeated walks in parsing, resolution, signature substitution,
+  and invalid-type checks. Its seven focused regressions pass within the full suite.
+
+
+P3 verification:
+
+- First focused run: 119 of 122 tests passed. Three grouping failures exposed binary/postfix
+  selection and prefix operators in value position; both are corrected with explicit regressions.
+- The first full run passed 1,992 of 2,107 library tests and all 9 CLI tests. All 21 grouping
+  cases passed, including conflict rejection, reversed declaration order, and callable values.
+- The 115 full-suite failures share undefined generated constructor references. Shared lookup
+  omitted their internal binding names; it accepts both source and internal names, with an
+  additional constructor regression. The corrected `sbtn 'scalafmtAll;scalafixAll;testFull'` run
+  passed all 2,108 library and 9 CLI tests. No compiler warnings were reported.
+- B6 stale-reference selection has a passing rerun regression. See [Bug notes](bug-notes.md).
+
+P4 verification:
+
+- `sbtn 'scalafmtAll;scalafixAll;testFull'` passed 2,199 library and 9 CLI tests.
+  Formatting and linting pass; no Scala compiler warnings were reported. The launcher reports
+  multiple main classes. Forked programs report the Scala runtime's deprecated Unsafe call.
+- Earlier full runs exposed grouped annotation loss, duplicate parser annotations, bare-function
+  ownership marking, and stale wrapper-annotation assertions. Focused tests also exposed repeated
+  operand checking and premature selection in the presence of an unresolved signature. Corrections
+  and explicit regressions are included in the passing full suite; see B10–B15 in
+  [Bug notes](bug-notes.md).
+- Both new examples execute successfully via `sbtn 'run run -s <path>'` with sanitizers:
+  `mml/samples/protocol-functions.mml` prints `answer: 42`, `ready: true`, `function value: 5`,
+  and `partial: 15`; `mml/samples/protocol-operators.mml` prints `42`, `true`, `5`, and `15`.
+- The initial frontend corpus scan completed 182 sources, then hit a parser stack overflow in
+  `mml/samples/stack-depth-1000-lets.mml`. The retry with
+  `set mmlclib / Test / javaOptions += "-Xss16m"` completed all 262 sources: 224 clean and
+  38 with diagnostics, with no infrastructure failures. The larger stack is a corpus-run
+  setting; [Compiler stack safety](compiler-stack-safety.md) remains open.
+
+<details>
+<summary>P4 corpus baseline: sources with diagnostics</summary>
+
+All other sources in `mml/samples` (recursive), `benchmark`, `tests/smoke`, and `tests/mem`
+(direct files in the latter three) are clean. Counts include dependent diagnostics; messages
+list the visible diagnostic roots.
+
+| Source | Count | Visible diagnostics |
+|---|---:|---|
+| `mml/samples/InterleavedErrors.mml` | 6 | Parse error in expression: Expected expression; Undefined type: 'Fsck'; Type mismatch: expected Int64Alias, got Int; Type mismatch: expected TestInt, got String; Type mismatch: expected TestInt, got Int |
+| `mml/samples/bad-line.mml` | 2 | Type mismatch: expected Unit, got Int |
+| `mml/samples/concat_borked_partial.mml` | 2 | Type mismatch: expected String, got (String) -> String (expected by println) |
+| `mml/samples/convobroken.mml` | 17 | Type mismatch: expected Int, got String |
+| `mml/samples/duplicates.mml` | 1 | Duplicate definition: 'a' |
+| `mml/samples/error-acum.mml` | 19 | Parse error in identifier: Invalid identifier '0'. Identifiers must start with a lowercase letter (a-z) followed by letters, digits, or underscores; Parse error in expression: Expected expression; Parse error in expression: Expected '='; Parse error in member: Failed to parse member; Parse error in member: Failed to parse member; Duplicate definition: 'a'; Duplicate definition: 'end'; Undefined reference: 'call_me'; Unexpected term after expression - expected an operator; Cannot resolve type for 'end' |
+| `mml/samples/hole-test.mml` | 2 | Typed hole in 'a' requires type annotation |
+| `mml/samples/if-with-int.mml` | 2 | Type mismatch: expected Bool, got Int |
+| `mml/samples/lambda-forms/borrow-capture-consuming-fail.mml` | 1 | Cannot pass borrowed value 'add_seed' to consuming parameter 'f' |
+| `mml/samples/lambda-forms/struct-field-borrow-fail.mml` | 1 | Cannot pass borrowed value 'add_seed' to consuming parameter 'f' |
+| `mml/samples/mem/borrow-escape.mml` | 1 | Cannot return borrowed value 's' from a function that returns a heap type |
+| `mml/samples/mem/consume-not-last.mml` | 3 | Use of 's' after move at 4:11; Use of 's' after move at 10:11; Consuming parameter 's' must be the last use of 's' |
+| `mml/samples/mem/move-borrow-fails.mml` | 1 | Cannot pass borrowed value 's' to consuming parameter 's' |
+| `mml/samples/mem/struct-field-mutation.mml` | 5 | Undefined reference: '=' |
+| `mml/samples/mem/use-after-move.mml` | 2 | Use of 's' after move at 7:11; Consuming parameter 's' must be the last use of 's' |
+| `mml/samples/member_error.mml` | 6 | Parse error in expression: Expected expression; Parse error in expression: Expected '='; Parse error in expression: Expected expression |
+| `mml/samples/module-parsing-error-2.mml` | 1 | Parse error in member: Failed to parse member |
+| `mml/samples/module-parsing-error-3.mml` | 1 | Parse error in member: Failed to parse member |
+| `mml/samples/module-parsing-error-4.mml` | 7 | Parse error in member: Failed to parse member; Parse error in member: Failed to parse member; Parse error in member: Failed to parse member; Parse error in member: Failed to parse member; Parse error in member: Failed to parse member; Parse error in member: Failed to parse member; Parse error in member: Failed to parse member |
+| `mml/samples/module-parsing-error-5.mml` | 2 | Parse error in member: Failed to parse member; Parse error in member: Failed to parse member |
+| `mml/samples/module-parsing-error-6.mml` | 14 | Parse error in member: Failed to parse member; Parse error in member: Failed to parse member; Parse error in member: Failed to parse member; Parse error in member: Failed to parse member; Parse error in expression: Expected expression; Parse error in expression: Expected ';'; Duplicate definition: 'a'; Duplicate definition: 'b'; Duplicate definition: 'c'; Unexpected term after expression - expected an operator |
+| `mml/samples/module-parsing-error-7.mml` | 16 | Parse error in expression: Expected expression; Parse error in expression: Expected expression; Parse error in expression: Expected '='; Parse error in expression: Expected ';'; Duplicate definition: 'z'; Unexpected term after expression - expected an operator; Type mismatch: expected Int, got Float (expected by y) |
+| `mml/samples/module-parsing-error-8.mml` | 8 | Parse error in member: Failed to parse member; Parse error in member: Failed to parse member; Parse error in member: Failed to parse member; Parse error in identifier: Invalid identifier '1'. Identifiers must start with a lowercase letter (a-z) followed by letters, digits, or underscores; Parse error in member: Failed to parse member; Parse error in member: Failed to parse member; Parse error in member: Failed to parse member; Parse error in member: Failed to parse member |
+| `mml/samples/module-parsing-error.mml` | 1 | Parse error in member: Failed to parse member |
+| `mml/samples/native-no-return.mml` | 1 | Missing return type for 'is_bad_native' |
+| `mml/samples/nullary_app_fail.mml` | 2 | Type mismatch: expected String, got (Unit) -> String (expected by println) |
+| `mml/samples/pap-borrowed-return-diagnostics.mml` | 2 | Cannot capture borrowed heap binding 'borrowed' in a closure; Cannot return borrowed value 'callee' from a function that returns a heap type |
+| `mml/samples/parse-error-later.mml` | 2 | Type mismatch: expected String, got Bool (expected by println) |
+| `mml/samples/parser-type-recovery.mml` | 7 | Parse error in type: Invalid type syntax; Undefined reference: 'missing' |
+| `mml/samples/parser_error1.mml` | 2 | Parse error in expression: Invalid expression syntax |
+| `mml/samples/parser_error2.mml` | 4 | Parse error in expression: Expected expression; Parse error in expression: Expected '=' |
+| `mml/samples/should_fail.mml` | 2 | Type mismatch: expected String, got Int (expected by println) |
+| `mml/samples/term-ascriptions.mml` | 2 | Type mismatch: expected String, got Int |
+| `mml/samples/test-poisoning.mml` | 6 | Type mismatch: expected Int, got String |
+| `mml/samples/test_negative_add.mml` | 4 | Type mismatch: expected String, got Int (expected by println) |
+| `mml/samples/test_return_type_inference.mml` | 1 | Parse error in member: Failed to parse member |
+| `mml/samples/type-error.mml` | 8 | Parse error in expression: Expected expression; Undefined reference: 'Pepe'; Type mismatch: expected String, got Int |
+| `mml/samples/undefined_mult_op.mml` | 3 | Unexpected term after expression - expected an operator |
+
+</details>
+
+P5 verification:
+
+- The first full run passed 2,215 of 2,222 library tests and all 9 CLI tests. All 15 initial
+  Num selection tests and 8 Num execution tests passed. Five existing failures exposed lambda
+  inference bypassing protocol signature evidence; two were test setup assumptions about the
+  first protocol and the first identity-assignment checkpoint. These are corrected without
+  changing the existing inference-conflict or recovery assertions.
+- A follow-up build required a field-access correction in a new capture-ID assertion.
+  The corrected `sbtn 'scalafmtAll;scalafixAll;testFull'` passes 2,227 library and 9 CLI tests,
+  including 20 explicit Num selection cases and 8 O0/O3 sanitizer execution cases. There are
+  no Scala compiler warnings. The launcher reports multiple main classes; forked programs
+  report the Scala runtime's deprecated Unsafe call.
+- Both examples execute with sanitizer checks. The named example prints `answer: 42`,
+  `ready: true`, `function value: 5`, and `partial: 15`. The operator example includes Int,
+  Float, and Bool instances and Num expressions; it prints `42`, `4`, `true`, `5`, `15`, `14`, `14`.
+- The complete frontend corpus comparison covers all 262 sources with the same `-Xss16m`
+  setting as the baseline: 224 clean, 38 with diagnostics, no new failing sources and no
+  infrastructure failures. `convobroken.mml` reports incompatible `*` protocol arguments
+  (19 raw errors instead of 17); `should_fail.mml` reports incompatible `+` arguments/expected
+  type (3 instead of 2). `test_negative_add.mml` retains the same visible mismatch with 3 raw
+  errors instead of 4. Every other record matches the P4 baseline exactly.
+- Shared application-chain traversal cleanup is covered by the P6 verification below.
+
+Initial P6 verification (baseline for the review repairs):
+
+- `sbtn 'scalafmtAll;scalafixAll;testFull'` passes after the shared application-node traversal
+  cleanup: 2,227 library and 9 CLI tests, no failures/errors or Scala compiler warnings.
+- `./tests/smoke/run.sh all` passes all eight fixtures. `sbtn mmlcPublishLocal` installs the
+  verified compiler locally. `make -C benchmark clean` and `make -C benchmark mml` pass;
+  this establishes benchmark compilation, not runtime performance measurements.
+- `./tests/mem/run.sh all` passes all 52 fixtures with ASan and LSan in 72 seconds.
+- Host verification uses macOS arm64, Homebrew Clang/LLVM 23.1.1, target
+  `arm64-apple-darwin25.6.0`. No native ABI layouts or calling conventions change;
+  Linux container and hosted verification gates are not applicable.
+- `git diff --check`, main-agent QA, and whole-record tracking consistency/local links pass.
+  Independent primary review and separate fresh QA/style, test-quality, and readability checks
+  completed. Four findings were confirmed by separate fresh verifiers: candidate-isolation
+  fixtures filtered out the losing trial, AST test navigation was repeated, sanitizer test
+  orchestration was repeated, and `where` was incorrectly documented as reserved.
+- Corrections are limited to tests, shared test helpers, and the language reference. Both
+  candidate orders check two concrete candidates, with independent-inference and losing-only
+  controls. AST navigation and sanitizer execution share helpers; literal fixtures and expected
+  results remain visible. The `where` appendix matches contextual parser recognition.
+- The first correction run passed 2,228 of 2,230 library tests and all 9 CLI tests. Two fixture
+  issues required correction: a missing declaration terminator and an assertion forbidding a
+  properly suppressed consequence diagnostic. The latter now checks its original diagnostic root.
+  `sbtn 'scalafmtAll;scalafixAll;testOnly mml.mmlclib.semantic.ProtocolSelectionTests;testFull'`
+  then passed all 57 selection cases, 2,230 library tests, and 9 CLI tests. No production source
+  changed during these corrections, so the smoke/publish/benchmark/memory evidence above remains
+  applicable.
+- Fresh narrow primary review and separate QA/style, test-quality, and readability checks
+  confirmed the corrections. One independently verified spacing finding in a nested test match
+  is corrected. `sbtn scalafmtAll` and `git diff --check` pass; comparison establishes that only
+  three blank lines changed. Final fresh primary review and all three separate fresh dedicated
+  checks report no actionable findings. One earlier spacing-review attempt ended before dedicated
+  checks after a skill-discovery error; the successful fresh review supplies complete coverage.
+- These checks establish the baseline before the independently confirmed error-recovery and
+  repeated-checking findings. The repair child records the additional verification and review.
+
 The definitions in
 [protocols.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/protocols.scala)
 represent protocols, signatures, and instances as declarations. P0 is verified and
-signed off. P0b is verified and signed off; P1 parsing is next. P1–P9 implementation remains pending.
+signed off. P0b is verified and signed off; P1 parsing and P2 signature checking/lowering are
+complete. P3 lookup and operator grouping are verified and complete. P4 type-directed selection
+is complete. P5 Num integration is complete. P6 repairs, renewed compiler verification, and
+independent review pass; Author signoff remains pending.
+P7–P9 remain pending.
 
 ## Risks / Notes
 
@@ -505,46 +692,63 @@ cover global provenance through aliases and aggregates; broader literal-cloning 
 is tracked separately in [Revisit implicit cloning](implicit-cloning.md).
 The language draft defines semantics beyond the approved bounded plan.
 
+Incidental findings and their fix status are collected in [Bug notes](bug-notes.md).
+
 ## Signoff
 
 - Workstream signoff: Bounded plan, P0 AST shape, and P0b lookup API approved. P0 and P0b
   verification and independent review are complete.
+- Num deliverable (P6): ready_for_signoff; repairs, verification, and independent review pass.
+  Author signoff is pending.
 - Tracked item completion: Pending.
-- Commit authorization: Granted for P0 and P0b source changes, documentation, and scoped bookkeeping.
+- Commit authorization: granted for the implemented protocol/Num checkpoint and related records.
+  Synchronization is authorized. Task completion and Num signoff remain pending.
 
 ## Task Working Memory
 
-Deliver protocols first, validated by provisional Num instances for Int and Float. Then
-inject Clone, adapt the memory-functions phase to generate its instances, and replace
-implicit cloning of globals at ownership sinks with rejection unless `^` is explicit.
-General derivation remains separate. Protocols supply all member types and metadata;
-instances may omit or repeat them, but divergent restatements must be rejected.
-Instance member bindings are lowered before reference resolution. Function values and partial
-applications select concrete members during type checking, before ordinary callable lowering,
-as detailed in the implementation reference.
-The first slice has one protocol type parameter and required members only. Defaults,
-prerequisites, and multiple protocol parameters are deferred.
-The bounded P0–P9 plan, including P0b, is approved.
-P0 defines `Protocol`, `ProtocolSignature`, `ProtocolRef`, and `ProtocolInstance` in
-[protocols.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/protocols.scala).
-Signatures reuse `FnParam`, `Type`, and `BindingMeta`; default bodies use `Option[Lambda]`,
-and instance bodies remain ordinary `Bnd` values. Protocols, member signatures, and instances
-extend `Decl`. Named declarations also implement
-`Resolvable`; `Bnd`, `TypeDef`, and `TypeAlias` explicitly implement `Typeable`.
-Instances carry their own optional ID and are unnamed declarations. Protocol references
-retain `Name` plus an optional resolved protocol ID.
-P0 is verified, signed off, and committed in `c3091ce6`.
-P0b adds an immutable `ProtocolRegistry` with protocol/signature registration, concrete-instance
-keys, member-binding associations, and lexical candidate lookup. Nodes are retrieved from the
-supplied `ResolvablesIndex`. Keys follow aliases and preserve nominal identity; registry comments
-explain the model with alias, Num/Clone, shadowing, and updated-binding examples.
-The public registry API precedes its auxiliary types. Tests share concrete Num declarations but
-show registration, the operation, and explicit expected results individually, without generated-case
-loops or generic fixture wrappers. The signature node and lookup vocabulary use `ProtocolSignature`.
-P0b is verified and signed off, with local commit authorization. Full-suite, smoke, local publish,
-benchmark compilation, and independent review results are recorded under Verification.
-P1 parsing is the next approved step: preserve omitted instance annotations and operator attributes,
-then integrate source-aware traversal, IDs, indexes, diagnostics, printers, and editor consumers.
-P6 is the Num signoff gate before Clone integration. Literal promotion and mixed
-ownership witnesses remain supported; broader implicit-cloning policy belongs to
-[Revisit implicit cloning](implicit-cloning.md).
+P0 and P0b are verified, signed off, and committed in `c3091ce6` and `14615983`.
+P1–P5 are complete. P6 and its
+[review repairs](protocols-review-repairs.md) are ready for Author signoff;
+stop before P7 Clone. Commit and synchronization are authorized for this review checkpoint;
+the task remains open.
+
+Protocols, signatures, and instances are declarations. Protocols constrain a single type
+parameter; they are not ordinary value types. Required signatures and concrete instances are
+supported; defaults, prerequisites, general generics, and derivation remain outside this slice.
+Instance syntax retains written attributes separately. Concrete callable precedence is always
+an Int; omitted instance precedence inherits the signature. Public registry APIs precede
+auxiliary types, with examples and explicit tests.
+
+The two added phases are ProtocolChecker before reference resolution and OperatorGrouping
+before expression rewriting. The first validates signatures and lowers instance bodies to
+ordinary functions; the second enforces consistent grouping while preserving candidates.
+TypeChecker selects concrete members using full application chains, known operands, and
+expected types. It preserves written annotations, isolates failed candidate trials, and shares
+signature evidence with lambda inference. Shared type identity follows aliases and declaration
+IDs. Function values and partial calls share late callable lowering and ordinary ownership rules.
+Application-node traversal is consolidated in CallableValues; original nodes retain annotations
+and invocation boundaries.
+
+Num supplies eleven arithmetic/comparison/negation signatures with Int and Float instances.
+LLVM behavior and Int implementation IDs are preserved. Integer-only operations, Boolean
+operators, and string concatenation remain free operators. Dotted Float built-ins are removed;
+current samples, smoke fixtures, tests, and documentation use unified symbols. Source-declared
+dotted operators remain valid. The named and operator examples in `mml/samples` run successfully
+with sanitizers; the latter includes Int, Float, and Bool instances, function values, partial
+calls, and ordinary Num expressions.
+
+P5 formatting, linting, and the full suite pass 2,227 library and 9 CLI tests. The 262-source
+frontend corpus retains all 224 clean sources and 38 diagnostic sources. It uses `-Xss16m`
+for the known 1,000-let stack limitation; complete comparison evidence is under Verification.
+B10–B13, B15, and B17 are corrected and verified. The B14 failed-operand repair passes focused
+and full tests and independent review. Findings and follow-up links are in [Bug notes](bug-notes.md).
+
+P6 review repairs pass all compiler gates: 366 focused tests, 2,277 library/9 CLI full-suite tests,
+eight smoke fixtures, local publishing, benchmark compilation, and 52 ASan/LSan memory fixtures.
+Formatting and linting pass. Fresh primary repair review and separate QA/style, test-quality,
+and human-readability checks complete with no actionable findings. Author review is next.
+Broader design choices have separate discussion subtasks.
+No ABI layout or calling-convention changes are present.
+P7 integrates Clone; P8 requires explicit cloning for global ownership transfers. Literal
+promotion and mixed ownership witnesses remain supported. General derivation and broader
+implicit-cloning policy remain separate tasks.

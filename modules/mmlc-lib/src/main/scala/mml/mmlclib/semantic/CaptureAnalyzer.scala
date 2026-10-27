@@ -6,10 +6,11 @@ import mml.mmlclib.compiler.CompilerState
 /** Populates `Lambda.captures` for value-position lambdas that reference bindings from enclosing
   * scopes.
   *
-  * Runs after RefResolver (all refs have resolvedId). Walks each top-level Bnd, tracking local
-  * scope (params introduced by scoped-binding chains). When a value-position lambda is found (any
-  * Lambda NOT in App.fn position acting as scoped-binding sugar), collects refs whose resolvedId
-  * points to a local-scope param rather than a module-level member or the lambda's own params.
+  * Runs after RefResolver has resolved local bindings; protocol candidates await type selection.
+  * Walks each top-level Bnd, tracking local scope (params introduced by scoped-binding chains).
+  * When a value-position lambda is found (any Lambda NOT in App.fn position acting as
+  * scoped-binding sugar), collects refs whose resolvedId points to a local-scope param rather than
+  * a module-level member or the lambda's own params.
   *
   * For nested lambdas, inner captures that reference bindings outside the enclosing lambda
   * propagate outward: the enclosing lambda must also capture them.

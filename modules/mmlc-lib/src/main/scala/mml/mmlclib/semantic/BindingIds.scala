@@ -24,7 +24,10 @@ final case class BindingIdSupply(
   def reserve(ids: Iterable[String]): BindingIdSupply = copy(allocated = allocated ++ ids)
 
   def include(module: Module): BindingIdSupply =
-    reserve(ResolvablesIndexer.definitions(module).flatMap(_.id))
+    reserve(
+      ResolvablesIndexer.definitions(module).flatMap(_.id) ++
+        module.members.collect { case declaration: Decl => declaration }.flatMap(_.id)
+    )
 
   def fresh(owner: BindingOwner, purpose: String, name: String): (BindingIdSupply, String) =
     @scala.annotation.tailrec
@@ -42,6 +45,10 @@ object BindingIds:
   /** Declaration identity shared by definitions, generated references, and allocation owners. */
   def declaration(moduleName: String, name: String, kind: String = "bnd"): String =
     s"$moduleName::$kind::$name"
+
+  /** Source and injected signatures use the same identity within their protocol. */
+  def protocolSignature(protocolId: String, mangledName: String): String =
+    s"$protocolId::signature::$mangledName"
 
   /** Retain new declaration and field identities at construction, alongside allocated locals. */
   def reserveDeclaration(declaration: Decl): Allocation[Unit] =

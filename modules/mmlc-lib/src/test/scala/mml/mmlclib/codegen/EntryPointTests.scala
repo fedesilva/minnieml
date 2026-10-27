@@ -10,6 +10,35 @@ import scala.jdk.CollectionConverters.*
 
 class EntryPointTests extends BaseEffFunSuite:
 
+  test("the executable calls the public main when a protocol also declares main") {
+    val source = """
+      pub fn main(): Int64 = int_to_int64 37;;
+      protocol Run 'T = fn main(): 'T; ;
+      instance Run Unit = fn main() = ();; ;
+    """
+
+    withDirectory { directory =>
+      val config = CompilerConfig.default.copy(
+        mode       = CompilationMode.Exe,
+        outputDir  = directory,
+        outputName = directory.resolve("program").toString.some
+      )
+      for
+        ir <- compileAndGenerate(source, "ProtocolEntry", config)
+        pair <- targetAt(directory, config)
+        (triple, target) = pair
+        path <- IO.blocking(Files.writeString(directory.resolve("ProtocolEntry.ll"), ir))
+        result <- LlvmToolchain.compile(path, config, triple.some, target)
+        _ = assertEquals(result._1, Right(0))
+        _ <- programExits(
+          List(directory.resolve("program").toString),
+          directory,
+          expectedCode = 37
+        )
+      yield ()
+    }
+  }
+
   private def withDirectory(use: Path => IO[Unit]): IO[Unit] =
     IO.blocking(Files.createTempDirectory("mml-int32-"))
       .bracket(use) { directory =>

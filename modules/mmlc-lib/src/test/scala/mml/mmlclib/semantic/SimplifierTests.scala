@@ -22,7 +22,7 @@ class SimplifierTests extends BaseEffFunSuite:
     )
 
   private def grouped(expr: Expr): Expr =
-    expr.copy(terms = List(TermGroup(source, expr)))
+    expr.copy(terms = List(TermGroup(source, expr.copy(typeAsc = None))))
 
   test("direct lambda callee preserves parameter and capture identities and annotations") {
     val param = FnParam(
@@ -109,15 +109,52 @@ class SimplifierTests extends BaseEffFunSuite:
     assertEquals(Simplifier.simplifyTerm(input), expected)
   }
 
-  List(
-    "computed only" -> (intType.some, none[TypeRef]),
-    "declared only" -> (none[TypeRef], intAsc.some),
-    "computed and declared" -> (intType.some, intAsc.some),
-    "untyped" -> (none[TypeRef], none[TypeRef])
-  ).foreach { case (name, (computed, declared)) =>
-    test(s"expression simplification preserves $name type annotations") {
-      val expected = argument(17).copy(typeSpec = computed, typeAsc = declared)
+  test("expression simplification preserves a computed type") {
+    val expected = argument(17).copy(typeAsc = None)
 
-      assertEquals(Simplifier.simplifyExpr(grouped(expected)), expected)
-    }
+    assertEquals(Simplifier.simplifyExpr(grouped(expected)), expected)
+  }
+
+  test("expression simplification preserves a declared type") {
+    val expected = argument(17).copy(typeSpec = None)
+
+    assertEquals(Simplifier.simplifyExpr(grouped(expected)), expected)
+  }
+
+  test("expression simplification preserves both computed and declared types") {
+    val expected = argument(17)
+
+    assertEquals(Simplifier.simplifyExpr(grouped(expected)), expected)
+  }
+
+  test("expression simplification keeps an untyped expression untyped") {
+    val expected = argument(17).copy(typeSpec = None, typeAsc = None)
+
+    assertEquals(Simplifier.simplifyExpr(grouped(expected)), expected)
+  }
+
+  test("a grouped call retains the annotation on its result") {
+    val unit     = LiteralUnit(source, TypeRef(source, "Unit").some)
+    val call     = App(source, Ref(source, "empty"), Expr(source, List(unit)))
+    val group    = TermGroup(source, Expr(source, List(call)), typeAsc = intAsc.some)
+    val expected = Expr(source, List(call), typeAsc = intAsc.some)
+
+    assertEquals(Simplifier.simplifyTerm(group), expected)
+    assertEquals(Simplifier.simplifyTerm(expected), expected)
+  }
+
+  test("a grouped lambda keeps its callable annotation separate from its return annotation") {
+    val parameter = FnParam(source, Name("x", source), typeAsc = intAsc.some)
+    val lambda = Lambda(
+      source,
+      List(parameter),
+      Expr(source, List(Ref(source, "x"))),
+      Nil,
+      typeAsc = intAsc.some
+    )
+    val group    = TermGroup(source, Expr(source, List(lambda)), typeAsc = unaryAsc.some)
+    val expected = Expr(source, List(lambda), typeAsc = unaryAsc.some)
+
+    assertEquals(Simplifier.simplifyTerm(group), expected)
+    assertEquals(Simplifier.simplifyTerm(expected), expected)
   }

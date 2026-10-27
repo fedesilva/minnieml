@@ -36,7 +36,7 @@ class DataConstructorTests extends BaseEffFunSuite:
       val binding    = module.members.collectFirst { case b: Bnd if b.name == "p" => b }
       val bindingBnd = binding.getOrElse(fail("Expected let binding p"))
       bindingBnd.value.terms.headOption match
-        case Some(App(_, _, _, _, _)) => ()
+        case Some(_: App) => ()
         case other => fail(s"Expected App (constructor call), got $other")
     }
   }

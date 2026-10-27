@@ -7,6 +7,16 @@ import mml.mmlclib.test.BaseEffFunSuite
 
 class ValueAvailabilityTests extends BaseEffFunSuite:
 
+  test("a failed callee annotation makes an otherwise usable application unavailable") {
+    val function  = Lambda(source, Nil, integer, Nil)
+    val available = App(source, function, integer, typeSpec = intType.some)
+    val missing   = UndefinedTypeError(source, TypeRef(source, "Missing"))
+    val rejected  = available.copy(calleeAscriptions = List(missing))
+
+    assert(ValueAvailability.empty.isAvailable(available))
+    assert(!ValueAvailability.empty.isAvailable(rejected))
+  }
+
   private val source  = SourceOrigin.Synth
   private val intType = NativePrimitive(source, "i32")
 

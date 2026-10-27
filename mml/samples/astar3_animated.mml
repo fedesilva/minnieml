@@ -522,13 +522,13 @@ fn animate(grid: Grid, start: Int, goal: Int, result: SearchResult, speed: Int):
       let next =
         if next_controls.paused then playback;
         else
-          let interval = 1.0 /. (int_to_float next_controls.speed);
+          let interval = 1.0 / (int_to_float next_controls.speed);
           advance_playback
             grid
             cells
             result
             interval
-            (Playback playback.step (playback.elapsed +. (get_frame_time ())))
+            (Playback playback.step (playback.elapsed + (get_frame_time ())))
           ;
         ;
       draw_loop next next_controls;
@@ -550,7 +550,7 @@ fn advance_playback(
 ): Playback =
   if playback.step >= result.event_count + result.path_length then
     Playback playback.step 0.0;
-  elif playback.elapsed >=. interval then
+  elif playback.elapsed >= interval then
     if playback.step < result.event_count then
       apply_event grid cells (read_event result.events playback.step);
     else
@@ -562,7 +562,7 @@ fn advance_playback(
       cells
       result
       interval
-      (Playback (playback.step + 1) (playback.elapsed -. interval))
+      (Playback (playback.step + 1) (playback.elapsed - interval))
     ;
   else playback;
   ;

@@ -4,11 +4,61 @@ import cats.data.{NonEmptyList, State}
 import cats.implicits.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.compiler.CompilerState
-import mml.mmlclib.errors.{DiagnosticId, DiagnosticStore}
+import mml.mmlclib.errors.{CompilationError, DiagnosticId, DiagnosticRelation, DiagnosticStore}
 
 import scala.annotation.tailrec
 
 object TypeChecker:
+
+  /** Check definitions in dependency order while retaining diagnostics in emission order. */
+  def rewriteModule(state: CompilerState): CompilerState =
+    val checking = for
+      signatures <- state.module.members.traverse(lowerSignature)
+      members           = signatures.map(_._1)
+      parameterFailures = signatures.flatMap(_._2).toMap
+      module = state.module.copy(
+        members = members,
+        resolvables = members.foldLeft(state.module.resolvables) {
+          case (index, binding: Bnd) => index.updated(binding)
+          case (index, _) => index
+        }
+      )
+      topLevelIds = members.collect { case binding: Bnd => binding.id }.flatten.toSet
+      dependencies = members.collect {
+        case binding: Bnd if binding.id.isDefined =>
+          binding.id.get -> collectMemberDeps(
+            binding,
+            topLevelIds,
+            state.protocols,
+            module.resolvables
+          )
+      }.toMap
+      ordered = topologicalOrder(members, dependencies, topLevelIds)
+      initial = ModuleCheckingState(
+        module,
+        Set.empty,
+        DiagnosticCauses.fromModule(module),
+        ValueAvailability.fromModule(module.copy(members = Nil))
+      )
+      checked <- ordered.foldM(initial) { (current, member) =>
+        member match
+          case binding: Bnd =>
+            val context = CheckContext(
+              current.module,
+              state.protocols,
+              Map.empty,
+              current.causes,
+              current.availability,
+              bindingDisplayName(binding)
+            )
+            checkBinding(binding, context, parameterFailures).map(current.withChecked)
+          case _ => current.pure[Check]
+      }
+    yield checked.module
+
+    val (diagnostics, module) = checking.run(state.diagnostics).value
+    val checked               = state.copy(diagnostics = diagnostics).withModule(module)
+    validateIntegerRanges(validateResolvedReferences(checked))
 
   private val phaseName          = "mml.mmlclib.semantic.TypeChecker"
   private val statementParamName = "__stmt"
@@ -19,6 +69,7 @@ object TypeChecker:
 
   private case class CheckContext(
     module:           Module,
+    protocols:        ProtocolRegistry,
     params:           Map[String, FnParam],
     causes:           DiagnosticCauses,
     availability:     ValueAvailability,
@@ -145,16 +196,6 @@ object TypeChecker:
       case Some(next) if next != name => resolveAlias(next, aliases)
       case _ => name
 
-  private def collectAppChain(app: App): (Ref | Lambda, List[Expr]) =
-    @tailrec
-    def loop(current: App, args: List[Expr]): (Ref | Lambda, List[Expr]) =
-      current.fn match
-        case inner:  App => loop(inner, current.arg :: args)
-        case ref:    Ref => (ref, current.arg :: args)
-        case lambda: Lambda => (lambda, current.arg :: args)
-
-    loop(app, Nil)
-
   private def bareRef(expr: Expr): Option[Ref] =
     expr.terms match
       case List(ref: Ref) => Some(ref)
@@ -219,11 +260,80 @@ object TypeChecker:
         case _ => false)
 
   private def inferParamTypesFromBody(
-    params: List[FnParam],
-    body:   Expr,
-    module: Module
+    params:  List[FnParam],
+    body:    Expr,
+    context: CheckContext
   ): LambdaInferenceResult =
+    val module  = context.module
     val tracked = params.map(param => param.name -> param).toMap
+
+    def referenceType(ref: Ref, state: LambdaInferenceState): Option[Type] =
+      trackedParamName(ref, state.aliases, tracked.keySet)
+        .flatMap(state.inferred.get)
+        .orElse(
+          context.params
+            .get(ref.name)
+            .filter(_.id == ref.resolvedId)
+            .flatMap(param => param.typeSpec.orElse(param.typeAsc))
+        )
+        .orElse(resolveRefType(ref, module))
+        .orElse(ref.typeSpec)
+
+    def argumentType(argument: Expr, state: LambdaInferenceState): Option[Type] =
+      val direct = argument.typeAsc.orElse(argument.typeSpec).orElse {
+        argument.terms match
+          case List(lambda: Lambda) => lambda.typeSpec
+          case List(term) => term.typeAsc.orElse(term.typeSpec)
+          case _ => None
+      }
+      bareRef(argument)
+        .flatMap(referenceType(_, state))
+        .orElse(direct)
+        .filterNot(failedType(_, context))
+
+    // A known operand, such as 1.0 in value + 1.0, constrains the protocol parameter. The
+    // registration set alone supplies no evidence, and unresolved alternatives remain unresolved.
+    def callSignatures(
+      ref:          Ref,
+      applications: List[App],
+      state:        LambdaInferenceState
+    ): List[TypeFn] =
+      if !needsProtocolSelection(ref, module.resolvables) then
+        referenceType(ref, state).flatMap(extractTypeFn(_, module)).toList
+      else
+        val known = applications.map(application => argumentType(application.arg, state))
+        ProtocolSelection
+          .candidates(ref, context.protocols, module.resolvables)
+          .toOption
+          .toList
+          .flatMap { choices =>
+            val evidence = ProtocolSelection.matchSignatures(
+              choices,
+              applications.zip(known).map { (application, tpe) =>
+                ProtocolSelection.ApplicationEvidence(
+                  tpe,
+                  calleeAscriptions(application).filterNot(failedType(_, context))
+                )
+              },
+              None,
+              module.resolvables
+            )
+            if evidence.exists(_.evidence == ProtocolSelection.SignatureEvidence.Unknown) then Nil
+            else
+              (choices.declarationIds ++ evidence.flatMap(_.implementationIds)).distinct
+                .flatMap { id =>
+                  module.resolvables
+                    .lookup(id)
+                    .collect { case value: Typeable => value }
+                    .flatMap(value => value.typeSpec.orElse(value.typeAsc))
+                    .flatMap(extractTypeFn(_, module))
+                }
+                .filter { function =>
+                  known.zip(function.paramTypes.toList).forall { (actual, expected) =>
+                    actual.forall(areTypesCompatible(expected, _, module))
+                  }
+                }
+          }
 
     def walkAppFn(
       fn:    Callee,
@@ -262,20 +372,21 @@ object TypeChecker:
           state
 
     def walkApp(app: App, state: LambdaInferenceState): LambdaInferenceState =
-      val inferredFromCall =
-        collectAppChain(app) match
-          case (ref: Ref, args) =>
-            extractTypeFnFromRef(ref, module) match
-              case Some(fnType) =>
-                args
-                  .zip(fnType.paramTypes.toList)
-                  .foldLeft(state) { case (acc, (argExpr, argType)) =>
-                    recordInferenceFromExpr(argExpr, argType, acc, tracked, module)
-                  }
-              case None =>
-                state
-          case _ =>
-            state
+      val inferredFromCall = CallableValues.applicationNodes(app) match
+        case (ref: Ref, applications) =>
+          val signatures = callSignatures(ref, applications, state)
+          applications.zipWithIndex.foldLeft(state) { case (current, (application, position)) =>
+            val possible = signatures.flatMap(_.paramTypes.toList.lift(position))
+            possible.headOption
+              .filter { expected =>
+                possible.size == signatures.size &&
+                possible.forall(areTypesCompatible(expected, _, module))
+              }
+              .fold(current) { expected =>
+                recordInferenceFromExpr(application.arg, expected, current, tracked, module)
+              }
+          }
+        case _ => state
 
       app.fn match
         case lambda: Lambda if isSimpleLetBinding(lambda, app) =>
@@ -304,12 +415,27 @@ object TypeChecker:
     )
 
   /** Include references retained inside failed payloads in dependency ordering. */
-  private def collectMemberDeps(member: Member, topLevelIds: Set[String]): Set[String] =
+  private def collectMemberDeps(
+    member:      Member,
+    topLevelIds: Set[String],
+    protocols:   ProtocolRegistry,
+    index:       ResolvablesIndex
+  ): Set[String] =
     member match
       case binding: Bnd =>
         val referenced = TermTraversal
           .collect(binding.value) { case ref: Ref =>
-            ref.resolvedId.toList
+            val ids = (ref.resolvedId.toList ++ ref.candidateIds).distinct
+            ids.flatMap { id =>
+              index.lookup(id) match
+                case Some(_: ProtocolSignature) =>
+                  protocols
+                    .signatureCandidates(id, index)
+                    .toOption
+                    .toList
+                    .flatMap(_.implementations.flatMap(_.binding.id))
+                case _ => List(id)
+            }
           }
           .flatten
           .toSet
@@ -387,48 +513,64 @@ object TypeChecker:
       }
       ._2
 
-  /** Check definitions in dependency order while retaining diagnostics in emission order. */
-  def rewriteModule(state: CompilerState): CompilerState =
-    val checking = for
-      signatures <- state.module.members.traverse(lowerSignature)
-      members           = signatures.map(_._1)
-      parameterFailures = signatures.flatMap(_._2).toMap
-      module = state.module.copy(
-        members = members,
-        resolvables = members.foldLeft(state.module.resolvables) {
-          case (index, binding: Bnd) => index.updated(binding)
-          case (index, _) => index
+  /** Successful executable definitions contain only concrete selections before callable lowering.
+    */
+  private def validateResolvedReferences(state: CompilerState): CompilerState =
+    if state.hasErrors then state
+    else
+      val index = state.module.resolvables
+      val unresolved =
+        state.module.members.collect { case binding: Bnd => binding }.flatMap { binding =>
+          TermTraversal.collect(binding.value) {
+            case ref: Ref if needsProtocolSelection(ref, index) =>
+              SemanticError.ProtocolErrorFound(
+                ProtocolError.InsufficientTypeInformation(ref),
+                phaseName
+              )
+          }
         }
-      )
-      topLevelIds = members.collect { case binding: Bnd => binding.id }.flatten.toSet
-      dependencies = members.collect {
-        case binding: Bnd if binding.id.isDefined =>
-          binding.id.get -> collectMemberDeps(binding, topLevelIds)
-      }.toMap
-      ordered = topologicalOrder(members, dependencies, topLevelIds)
-      initial = ModuleCheckingState(
-        module,
-        Set.empty,
-        DiagnosticCauses.fromModule(module),
-        ValueAvailability.fromModule(module.copy(members = Nil))
-      )
-      checked <- ordered.foldM(initial) { (current, member) =>
-        member match
-          case binding: Bnd =>
-            val context = CheckContext(
-              current.module,
-              Map.empty,
-              current.causes,
-              current.availability,
-              bindingDisplayName(binding)
-            )
-            checkBinding(binding, context, parameterFailures).map(current.withChecked)
-          case _ => current.pure[Check]
-      }
-    yield checked.module
+      state.addErrors(unresolved)
 
-    val (diagnostics, module) = checking.run(state.diagnostics).value
-    state.copy(diagnostics = diagnostics).withModule(module)
+  /** The parser retains MinInt's positive magnitude until the concrete negation is selected. */
+  private def finalizeIntegerLiteral(checked: Checked[Callee]): Term =
+    @tailrec
+    def magnitude(term: Term): Option[LiteralInt] = term match
+      case literal:    LiteralInt if literal.value == 2147483648L => literal.some
+      case expression: Expr =>
+        expression.terms match
+          case List(inner) => magnitude(inner)
+          case _ => None
+      case _ => None
+
+    checked.value match
+      case application: App if checked.roots.isEmpty =>
+        application.fn match
+          case ref: Ref if ref.resolvedId.contains(standardIntNegationId) =>
+            magnitude(application.arg).fold[Term](application) { literal =>
+              literal.copy(
+                source   = application.source,
+                value    = Int.MinValue.toLong,
+                typeSpec = application.typeSpec,
+                typeAsc  = application.typeAsc.orElse(literal.typeAsc)
+              )
+            }
+          case _ => application
+      case other => other
+
+  /** Every remaining magnitude must fit Int32, including operands retained in failed expressions.
+    */
+  private def validateIntegerRanges(state: CompilerState): CompilerState =
+    val errors = state.module.members.collect { case binding: Bnd => binding }.flatMap { binding =>
+      TermTraversal.collect(binding.value) {
+        case literal: LiteralInt if literal.value < Int.MinValue || literal.value > Int.MaxValue =>
+          SemanticError.InvalidExpression(
+            Expr(literal.source, List(literal)),
+            "Integer literal is outside the Int32 range",
+            phaseName
+          )
+      }
+    }
+    state.addErrors(errors)
 
   private def lowerSignature(
     member: Member
@@ -553,7 +695,8 @@ object TypeChecker:
   ): Check[Expr] =
     expr.terms.zipWithIndex
       .traverse { (term, index) =>
-        val expected = if index == expr.terms.size - 1 then expectedType else None
+        val expected =
+          if index == expr.terms.size - 1 then expr.typeAsc.orElse(expectedType) else None
         for
           checked <- checkTerm(term, context, expected)
           validated <- validateTermAscription(checked, context)
@@ -582,8 +725,11 @@ object TypeChecker:
   ): Check[Term] = term match
 
     case callee: Callee =>
-      checkCallee(callee, context, expectedType)
-        .map(checked => invalidResult(checked.value, checked.roots))
+      val expected = callee match
+        case _: Lambda => expectedType
+        case _ => callee.typeAsc.orElse(expectedType)
+      checkCallee(callee, context, expected)
+        .map(checked => invalidResult(finalizeIntegerLiteral(checked), checked.roots))
 
     case cond: Cond => checkConditional(cond, context, expectedType)
 
@@ -593,13 +739,21 @@ object TypeChecker:
     case nested: Expr => checkExpr(nested, context, expectedType).widen
 
     case tuple: Tuple =>
-      tuple.elements.traverse(checkExpr(_, context.independent, None)).map { elements =>
-        val updated = tuple.copy(
-          elements = elements,
-          typeSpec = elements.toList.traverse(_.typeSpec).map(TypeTuple(tuple.source, _))
-        )
-        invalidResult(updated, context.provenRootsOf(updated))
-      }
+      val expectedElements = expectedType
+        .flatMap(TypeUtils.canonical(_, context.module.resolvables))
+        .collect { case expected: TypeTuple => expected.elements }
+        .getOrElse(Nil)
+      tuple.elements.zipWithIndex
+        .traverse { (element, index) =>
+          checkExpr(element, context.independent, expectedElements.lift(index))
+        }
+        .map { elements =>
+          val updated = tuple.copy(
+            elements = elements,
+            typeSpec = elements.toList.traverse(_.typeSpec).map(TypeTuple(tuple.source, _))
+          )
+          invalidResult(updated, context.provenRootsOf(updated))
+        }
 
     case invalid: InvalidExpression =>
       for
@@ -638,14 +792,332 @@ object TypeChecker:
     context:      CheckContext,
     expectedType: Option[Type]
   ): Check[Checked[Callee]] = callee match
+
     case ref: Ref if ref.qualifier.isDefined => checkSelection(ref, context).widen
+
+    case ref: Ref if needsProtocolSelection(ref, context.module.resolvables) =>
+      selectCallable(ref, Nil, context, expectedType)
+
     case ref: Ref => checkRef(ref, context).widen
+
     case app: App =>
-      app.fn match
-        case lambda: Lambda if lambda.params.nonEmpty =>
-          checkImmediateApplication(app, lambda, context).widen
-        case _ => checkNormalApplication(app, context).widen
+      val (root, applications) = CallableValues.applicationNodes(app)
+      root match
+
+        case ref: Ref if needsProtocolSelection(ref, context.module.resolvables) =>
+          selectCallable(ref, applications, context, expectedType)
+
+        case lambda: Lambda
+            if lambda.params.nonEmpty && applications.head.calleeAscriptions.nonEmpty =>
+          checkAscribedLambdaApplication(lambda, applications, context)
+
+        case _ =>
+          app.fn match
+            case lambda: Lambda if lambda.params.nonEmpty =>
+              checkImmediateApplication(app, lambda, context, expectedType).widen
+            case _ => checkNormalApplication(app, context, expectedType).widen
+
     case lambda: Lambda => checkLambda(lambda, context, expectedType).widen
+
+  private def needsProtocolSelection(ref: Ref, index: ResolvablesIndex): Boolean =
+    val selected = ref.resolvedId.flatMap(index.lookup).exists(_.isInstanceOf[Bnd])
+    !selected && (ref.candidateIds ++ ref.resolvedId).exists { id =>
+      index.lookup(id).exists(_.isInstanceOf[ProtocolSignature])
+    }
+
+  private case class ArgumentProbe(
+    original:          Expr,
+    value:             Expr,
+    independentErrors: List[CompilationError],
+    knownType:         Option[Type],
+    reusable:          Boolean
+  )
+
+  private case class SelectionTrial(
+    checked:     Checked[Callee],
+    diagnostics: DiagnosticStore,
+    applicable:  Boolean
+  )
+
+  private def hasPrimarySince(diagnostics: DiagnosticStore, checkpoint: DiagnosticStore): Boolean =
+    diagnostics.records
+      .drop(checkpoint.records.size)
+      .exists(_.relation == DiagnosticRelation.Primary)
+
+  /** A probe supplies evidence only when the argument checks without an expected type. Its
+    * diagnostics and inferred lambda parameters remain local until a final choice is made. A
+    * concrete result with no emitted diagnostics can be reused by every candidate: its type still
+    * constrains each candidate, while contextual lambdas and holes are checked afresh. Reuse also
+    * requires a compatible expected type; selection with unknown alternatives fails before a probe
+    * can become reusable. Independent errors, such as the mixed operands in `1.0 + 2`, rule out
+    * every enclosing candidate. Retaining those errors avoids checking that failed subtree again.
+    */
+  private def probeArgument(
+    argument:   Expr,
+    context:    CheckContext,
+    checkpoint: DiagnosticStore
+  ): ArgumentProbe =
+    val (diagnostics, value) = checkExpr(argument, context.independent, None).run(checkpoint).value
+    val hasNewFailure        = hasPrimarySince(diagnostics, checkpoint)
+    val independentErrors = diagnostics.records
+      .drop(checkpoint.records.size)
+      .collect {
+        case record
+            if record.relation == DiagnosticRelation.Primary &&
+              independentProbeError(record.error) =>
+          record.error
+      }
+      .toList
+    val known = Option
+      .when(!hasNewFailure && context.availability.isAvailable(value))(
+        value.typeSpec
+      )
+      .flatten
+    val reusable = known.isDefined && diagnostics.records.size == checkpoint.records.size
+    ArgumentProbe(argument, value, independentErrors, known, reusable)
+
+  private def calleeAscriptions(application: App): List[Type] =
+    val own = application.fn match
+      case _: Lambda => Nil
+      case other => other.typeAsc.toList
+    own ++ application.calleeAscriptions
+
+  /** Every written constraint is checked; an inner annotation cannot be replaced by an outer one.
+    */
+  private def validateCalleeAscriptions(
+    checked:     Checked[Callee],
+    annotations: List[Type],
+    context:     CheckContext
+  ): Check[Checked[Callee]] =
+    annotations
+      .traverse { expected =>
+        if failedType(expected, context) then
+          report(
+            TypeError.UnresolvableType(checked.value, None, phaseName),
+            context.causes.provenRootsOfType(expected)
+          )
+        else
+          checked.value.typeSpec match
+            case Some(actual)
+                if !failedType(actual, context) &&
+                  !areTypesCompatible(expected, actual, context.module) =>
+              report(TypeError.TypeMismatch(checked.value, expected, actual, phaseName, None))
+            case _ => Vector.empty[DiagnosticId].pure[Check]
+      }
+      .map(roots => checked.copy(roots = (checked.roots ++ roots.flatten).distinct))
+
+  /** Check the source lambda's complete signature before lowering its parameter scopes. */
+  private def checkAscribedLambdaApplication(
+    lambda:       Lambda,
+    applications: List[App],
+    context:      CheckContext
+  ): Check[Checked[Callee]] =
+    val expected = calleeAscriptions(applications.head).find(tpe => !failedType(tpe, context))
+    for
+      function <- checkLambda(lambda, context, expected)
+      checked <- checkApplicationChain(
+        Checked[Callee](function.value, function.roots),
+        applications,
+        context
+      )
+    yield checked.value match
+      case application: App =>
+        val (invocation, later) =
+          CallableValues.applicationNodes(application)._2.splitAt(lambda.params.size)
+        val lowered = DirectLambdaApplication.lower(
+          function.value,
+          invocation.map(_.arg),
+          applications.head.source
+        )
+        val result = later.foldLeft(lowered) { (callee, original) => original.copy(fn = callee) }
+        Checked(result, checked.roots)
+      case _ => checked
+
+  /** Check every supplied argument before deciding whether a concrete signature applies. A returned
+    * callable starts another invocation naturally when validateApplication consumes the previous
+    * signature's last parameter.
+    */
+  private def checkApplicationChain(
+    root:             Checked[Callee],
+    applications:     List[App],
+    context:          CheckContext,
+    checkedArguments: List[Option[Expr]] = Nil
+  ): Check[Checked[Callee]] =
+    applications.zipWithIndex.foldLeftM(root) { case (function, (original, position)) =>
+      val expected = expectedArgumentType(function.value, context.module)
+      for
+        constrained <- validateCalleeAscriptions(function, calleeAscriptions(original), context)
+        argument <- checkedArguments
+          .lift(position)
+          .flatten
+          .filter { value =>
+            expected
+              .forall(tpe => value.typeSpec.exists(areTypesCompatible(tpe, _, context.module)))
+          }
+          .fold(checkExpr(original.arg, context.independent, expected))(_.pure[Check])
+        checked <- validateApplication(
+          original.copy(fn = constrained.value, arg = argument),
+          constrained,
+          context
+        )
+      yield Checked[Callee](checked.value, checked.roots)
+    }
+
+  private def trySelection(
+    ref:          Ref,
+    bindingId:    String,
+    applications: List[App],
+    probes:       List[ArgumentProbe],
+    context:      CheckContext,
+    expectedType: Option[Type],
+    checkpoint:   DiagnosticStore
+  ): SelectionTrial =
+    val selected =
+      ref.copy(resolvedId = bindingId.some, candidateIds = List(bindingId), typeSpec = None)
+    val checking = for
+      root <- checkRef(selected, context)
+      result <- checkApplicationChain(
+        Checked[Callee](root.value, root.roots),
+        applications,
+        context,
+        probes.map(probe => Option.when(probe.reusable)(probe.value))
+      )
+    yield result
+    val (diagnostics, checked) = checking.run(checkpoint).value
+    val newFailure             = hasPrimarySince(diagnostics, checkpoint)
+    val expectedMatches = expectedType.forall { expected =>
+      checked.value.typeSpec.exists(areTypesCompatible(expected, _, context.module))
+    }
+    // A failed implementation still has a signature. Consequences of its recorded body error
+    // cannot favor another implementation with the same signature.
+    SelectionTrial(checked, diagnostics, !newFailure && expectedMatches)
+
+  private def selectCallable(
+    ref:          Ref,
+    applications: List[App],
+    context:      CheckContext,
+    expectedType: Option[Type]
+  ): Check[Checked[Callee]] =
+    import ProtocolSelection.SignatureEvidence
+
+    State.get[DiagnosticStore].flatMap { checkpoint =>
+      // Failed annotations supply no type evidence; independently known arguments remain usable.
+      val selectionExpected = expectedType.filterNot(failedType(_, context))
+      val probes            = applications.map(app => probeArgument(app.arg, context, checkpoint))
+      val candidates = ProtocolSelection.candidates(
+        ref,
+        context.protocols,
+        context.module.resolvables
+      )
+      candidates match
+        case Left(error) =>
+          failedSelection(
+            ref,
+            applications,
+            probes,
+            ProtocolError.RegistryFailure(ref, error),
+            expectedType,
+            context
+          )
+
+        case Right(choices) =>
+          val evidence = ProtocolSelection.matchSignatures(
+            choices,
+            applications.zip(probes).map { (application, probe) =>
+              ProtocolSelection.ApplicationEvidence(
+                probe.knownType,
+                calleeAscriptions(application).filterNot(failedType(_, context))
+              )
+            },
+            selectionExpected,
+            context.module.resolvables
+          )
+          val matching = evidence.flatMap(_.implementationIds)
+          // An expected parameter type cannot repair an independent operand error. Trying each
+          // candidate would only repeat the same failed subtree, once at every enclosing call.
+          val trials =
+            if probes.exists(_.independentErrors.nonEmpty) then Nil
+            else
+              (choices.declarationIds ++ matching).distinct.map { id =>
+                trySelection(ref, id, applications, probes, context, selectionExpected, checkpoint)
+              }
+          val applicable    = trials.filter(_.applicable)
+          val needsEvidence = evidence.exists(_.evidence == SignatureEvidence.Unknown)
+          applicable match
+            case winner :: Nil if !needsEvidence => State.set(winner.diagnostics).as(winner.checked)
+
+            case _ =>
+              val missing = evidence.collectFirst {
+                case ProtocolSelection.SignatureMatch(
+                      registered,
+                      SignatureEvidence.Concrete(tpe),
+                      Nil
+                    ) =>
+                  ProtocolError.MissingInstance(ref, registered.protocol, tpe)
+              }
+              val error =
+                if applicable.size > 1 then ProtocolError.AmbiguousSelection(ref)
+                else if needsEvidence then ProtocolError.InsufficientTypeInformation(ref)
+                else missing.getOrElse(ProtocolError.IncompatibleArguments(ref))
+              failedSelection(ref, applications, probes, error, expectedType, context)
+    }
+
+  /** Context-dependent probe errors are provisional: an expected lambda or hole type may resolve
+    * them. Independent argument errors are emitted once when no selection can be committed.
+    */
+  private def independentProbeError(error: CompilationError): Boolean = error match
+    case SemanticError.TypeCheckingError(
+          _: TypeError.UninferrableLambdaParam | _: TypeError.UntypedHoleInBinding |
+          _: TypeError.UnresolvableType | _: TypeError.ConditionalBranchTypeUnknown
+        ) =>
+      false
+    case SemanticError.ProtocolErrorFound(
+          _: ProtocolError.InsufficientTypeInformation | _: ProtocolError.AmbiguousSelection,
+          _
+        ) =>
+      false
+    case _ => true
+
+  private def failedSelection(
+    ref:          Ref,
+    applications: List[App],
+    probes:       List[ArgumentProbe],
+    error:        ProtocolError,
+    expectedType: Option[Type],
+    context:      CheckContext
+  ): Check[Checked[Callee]] =
+    val independentErrors = probes.flatMap(_.independentErrors)
+    // A failed annotation explains missing evidence, but not a concrete argument mismatch.
+    val expectedRoots = error match
+      case _: ProtocolError.InsufficientTypeInformation | _: ProtocolError.AmbiguousSelection =>
+        (expectedType.toList ++ applications.flatMap(calleeAscriptions))
+          .flatMap(context.causes.knownRootsOfType)
+          .toVector
+      case _ => Vector.empty
+    val instanceRoots = error match
+      case ProtocolError.MissingInstance(_, protocol, concreteType) =>
+        protocol.id.toVector.flatMap { id =>
+          context.protocols.instanceFailureCauses(id, concreteType, context.module.resolvables)
+        }
+      case _ => Vector.empty
+    for
+      argumentRoots <- independentErrors.traverse(DiagnosticStore.report(_))
+      knownRoots = probes.flatMap(probe => context.knownRootsOf(probe.original)).toVector
+      selectionRoots =
+        argumentRoots.flatten ++ knownRoots ++ expectedRoots ++ instanceRoots ++
+          context.enclosingFailure
+      roots <- DiagnosticStore.report(
+        SemanticError.ProtocolErrorFound(error, phaseName),
+        selectionRoots.distinct.toVector
+      )
+    yield
+      val unresolved = ref.copy(resolvedId = None, typeSpec = None)
+      val result = applications.zip(probes).foldLeft[Callee](unresolved) {
+        case (function, (original, probe)) =>
+          val argument = if probe.reusable then probe.value else original.arg
+          original.copy(fn = function, arg = argument, typeSpec = None)
+      }
+      Checked(result, roots)
 
   private def checkRef(ref: Ref, context: CheckContext): Check[Checked[Ref]] =
     val inferred = context.params
@@ -728,9 +1200,10 @@ object TypeChecker:
 
   /** A local initializer supplies its binding, while the continuation supplies the result. */
   private def checkImmediateApplication(
-    app:     App,
-    lambda:  Lambda,
-    context: CheckContext
+    app:          App,
+    lambda:       Lambda,
+    context:      CheckContext,
+    expectedType: Option[Type]
   ): Check[Checked[App]] =
     val parameter = lambda.params.head
     val initializerContext = context.independent.copy(
@@ -763,8 +1236,8 @@ object TypeChecker:
       )
       typedParameter = parameter.copy(typeSpec = parameter.typeAsc.orElse(arg.typeSpec))
       bodyContext    = context.independent.withBinding(typedParameter, arg)
-      initialBody <- checkExpr(lambda.body, bodyContext, None)
-      body <- validateExpectedResult(initialBody, None, lambda.body, bodyContext)
+      initialBody <- checkExpr(lambda.body, bodyContext, expectedType)
+      body <- validateExpectedResult(initialBody, expectedType, lambda.body, bodyContext)
     yield
       val lambdaType = for
         paramType <- typedParameter.typeSpec
@@ -780,12 +1253,45 @@ object TypeChecker:
         bodyContext.knownRootsOf(body)
       )
 
-  private def checkNormalApplication(app: App, context: CheckContext): Check[Checked[App]] =
+  private def checkNormalApplication(
+    app:          App,
+    context:      CheckContext,
+    expectedType: Option[Type]
+  ): Check[Checked[App]] =
     for
-      fn <- checkCallee(app.fn, context, None)
-      expected = expectedArgumentType(fn.value, context.module)
+      checkpoint <- State.get[DiagnosticStore]
+      explicit = calleeAscriptions(app).find(tpe => !failedType(tpe, context))
+      fn <- app.fn match
+
+        case _ if explicit.isDefined => checkCallee(app.fn, context, explicit)
+
+        case inner: App
+            if CallableValues.applicationNodes(inner)._1.isInstanceOf[Lambda] &&
+              expectedType.isDefined =>
+          val (diagnostics, inferred) = checkCallee(inner, context, None).run(checkpoint).value
+          val hasType =
+            inferred.value.typeSpec.isDefined && !hasPrimarySince(diagnostics, checkpoint)
+          // A known inner signature constrains the outer argument. Context only supplies missing
+          // information; an incompatible outer argument cannot invalidate that inner value.
+          if hasType then State.set(diagnostics).as(inferred)
+          else
+            val expectedCallee = for
+              result <- expectedType
+              argument <- probeArgument(app.arg, context, checkpoint).knownType
+            yield TypeFn(app.source, NonEmptyList.one(argument), result)
+            expectedCallee match
+              case Some(expected) => checkCallee(inner, context, expected.some)
+              case None => State.set(diagnostics).as(inferred)
+
+        case _ => checkCallee(app.fn, context, None)
+      constrained <- validateCalleeAscriptions(fn, calleeAscriptions(app), context)
+      expected = expectedArgumentType(constrained.value, context.module)
       arg <- checkExpr(app.arg, context.independent, expected)
-      checked <- validateApplication(app.copy(fn = fn.value, arg = arg), fn, context)
+      checked <- validateApplication(
+        app.copy(fn = constrained.value, arg = arg),
+        constrained,
+        context
+      )
     yield checked
 
   private def validateApplication(
@@ -894,7 +1400,12 @@ object TypeChecker:
     val untyped = topDownParams.filter(_.typeSpec.isEmpty)
     val inferred =
       if untyped.isEmpty then LambdaInferenceResult(Map.empty, Vector.empty)
-      else inferParamTypesFromBody(untyped, lambda.body, context.module)
+      else
+        inferParamTypesFromBody(
+          untyped,
+          lambda.body,
+          context.copy(params = context.params ++ topDownParams.map(param => param.name -> param))
+        )
     val parameters = topDownParams.map { parameter =>
       parameter.copy(typeSpec = parameter.typeSpec.orElse(inferred.inferred.get(parameter.name)))
     }
@@ -915,8 +1426,9 @@ object TypeChecker:
       bodyContext = failures.flatten.foldLeft(parameterContext) {
         case (current, (parameter, roots)) => withParameterFailure(current, parameter, roots)
       }
-      initialBody <- checkExpr(lambda.body, bodyContext, lambda.typeAsc)
-      body <- validateExpectedResult(initialBody, lambda.typeAsc, lambda, bodyContext)
+      expectedReturn = lambda.typeAsc.orElse(expectedFn.map(_.returnType))
+      initialBody <- checkExpr(lambda.body, bodyContext, expectedReturn)
+      body <- validateExpectedResult(initialBody, expectedReturn, lambda, bodyContext)
     yield
       val lambdaType = body.typeSpec.flatMap(buildFunctionTypeSpec(lambda.source, parameters, _))
       val captures = lambda.captures.map { capture =>
@@ -995,13 +1507,17 @@ object TypeChecker:
         else
           predicate.typeSpec match
             case Some(tpe)
-                if areTypesCompatible(tpe, TypeRef(cond.source, "Bool"), context.module) =>
+                if areTypesCompatible(
+                  tpe,
+                  TypeRef(cond.source, "Bool", stdlibTypeId("Bool")),
+                  context.module
+                ) =>
               Vector.empty[DiagnosticId].pure[Check]
             case Some(tpe) =>
               report(
                 TypeError.TypeMismatch(
                   predicate,
-                  TypeRef(cond.source, "Bool"),
+                  TypeRef(cond.source, "Bool", stdlibTypeId("Bool")),
                   tpe,
                   phaseName,
                   None
@@ -1087,32 +1603,8 @@ object TypeChecker:
         else List(TypeError.TypeMismatch(node, asc, comp, phaseName, None))
       case _ => Nil
 
-  /** Check type compatibility (handles aliases, etc.) */
   private def areTypesCompatible(t1: Type, t2: Type, module: Module): Boolean =
-    val resolved = for
-      left <- TypeUtils.canonical(t1, module.resolvables)
-      right <- TypeUtils.canonical(t2, module.resolvables)
-    yield (left, right) match
-      case (NativePrimitive(_, n1, _, _), NativePrimitive(_, n2, _, _)) => n1 == n2
-      case (TypeRef(_, name1, _, _), TypeRef(_, name2, _, _)) => name1 == name2
-      case (ts1: TypeStruct, ts2: TypeStruct) =>
-        ts1.name == ts2.name
-      case (ts: TypeStruct, TypeRef(_, actualName, _, _)) =>
-        ts.name == actualName
-      case (TypeRef(_, expectedName, _, _), ts: TypeStruct) =>
-        expectedName == ts.name
-      case (TypeFn(_, p1, r1), TypeFn(_, p2, r2)) =>
-        p1.length == p2.length &&
-        p1.zip(p2).forall { case (pt1, pt2) => areTypesCompatible(pt1, pt2, module) } &&
-        areTypesCompatible(r1, r2, module)
-      case (TypeTuple(_, e1), TypeTuple(_, e2)) =>
-        e1.length == e2.length &&
-        e1.zip(e2).forall { case (et1, et2) => areTypesCompatible(et1, et2, module) }
-      case (TypeUnit(_), TypeUnit(_)) => true
-      case (TypeUnit(_), TypeRef(_, "Unit", _, _)) => true
-      case (TypeRef(_, "Unit", _, _), TypeUnit(_)) => true
-      case _ => false
-    resolved.getOrElse(false)
+    TypeCompatibility.same(t1, t2, module.resolvables)
 
   private def resolveStructType(typeSpec: Type, module: Module): Option[TypeStruct] =
     TypeUtils.canonical(typeSpec, module.resolvables).flatMap {
@@ -1140,7 +1632,7 @@ object TypeChecker:
   ): NonEmptyList[Type] =
     NonEmptyList
       .fromList(paramTypes)
-      .getOrElse(NonEmptyList.one(TypeRef(source, "Unit", Some("stdlib::typedef::Unit"), Nil)))
+      .getOrElse(NonEmptyList.one(TypeRef(source, "Unit", stdlibTypeId("Unit"), Nil)))
 
   /** Validate mandatory ascriptions for functions/operators
     *

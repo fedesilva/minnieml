@@ -2,8 +2,10 @@ package mml.mmlclib.semantic
 
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.errors.DiagnosticId
 
-/** Stores identities and associations only. Every lookup reads nodes from the supplied index.
+/** Stores identities, associations, and declaration-failure causes. Lookups read current nodes from
+  * the supplied index.
   *
   * Registration proceeds from protocol, to concrete instance, to each member's executable binding.
   * For example: register Num, register Num Int, then associate Num's + signature ID with the Int
@@ -19,7 +21,9 @@ final case class ProtocolRegistry private (
   private val signatureOwners:    Map[String, String],
   private val instances:          Map[ProtocolInstanceKey, String],
   private val instanceKeys:       Map[String, ProtocolInstanceKey],
-  private val memberBindings:     Map[(String, String), String]
+  private val memberBindings:     Map[(String, String), String],
+  private val failedSignatures:   Map[String, Vector[DiagnosticId]],
+  private val failedInstances:    Map[String, Vector[DiagnosticId]]
 ):
 
   import ProtocolLookupError.*
@@ -43,6 +47,20 @@ final case class ProtocolRegistry private (
       signatureOwners    = signatureOwners ++ ids.map(_ -> id)
     )
 
+  /** Keep rejected signature names attributable to their declaration errors. For duplicate `f`
+    * signatures, a later use of `f` carries these roots instead of reporting a missing registry ID.
+    * This records failure only; it does not register the rejected protocol as a valid declaration.
+    */
+  def rejectProtocol(
+    id:     String,
+    causes: Vector[DiagnosticId],
+    index:  ResolvablesIndex
+  ): Either[ProtocolLookupError, ProtocolRegistry] =
+    for
+      declaration <- indexedProtocol(id, index)
+      ids <- declaration.signatures.traverse(member => member.id.toRight(MissingId(member)))
+    yield copy(failedSignatures = failedSignatures ++ ids.map(_ -> causes))
+
   /** Register instance identity independently of signature checking and body lowering. Registering
     * Num Count after Num Int fails as a duplicate when Count aliases Int, even if the two instance
     * declarations were assigned different IDs.
@@ -62,6 +80,31 @@ final case class ProtocolRegistry private (
       instances    = instances.updated(key, id),
       instanceKeys = instanceKeys.updated(id, key)
     )
+
+  /** Reserve a failed instance's identity for duplicate detection without offering implementations.
+    * An incomplete Num Bool instance must not prevent Num Int addition elsewhere in the module.
+    */
+  def rejectInstance(
+    id:     String,
+    causes: Vector[DiagnosticId]
+  ): Either[ProtocolLookupError, ProtocolRegistry] =
+    instanceKeys
+      .get(id)
+      .toRight(MissingInstanceId(id))
+      .as(copy(failedInstances = failedInstances.updated(id, causes)))
+
+  /** Explain a missing implementation only when that exact instance has a recorded rejection. An
+    * absent instance, or a type without concrete identity, supplies no failure evidence.
+    */
+  def instanceFailureCauses(
+    protocolId:   String,
+    concreteType: Type,
+    index:        ResolvablesIndex
+  ): Vector[DiagnosticId] =
+    instanceKey(protocolId, concreteType, index).toOption
+      .flatMap(instances.get)
+      .flatMap(failedInstances.get)
+      .getOrElse(Vector.empty)
 
   /** Associate a signature with its ordinary executable binding by stable ID. For Num Int's +,
     * instanceId identifies Num Int, signatureId identifies Num's + signature, and bindingId
@@ -84,6 +127,10 @@ final case class ProtocolRegistry private (
         DuplicateMemberBinding(instanceId, signatureId)
       )
     yield copy(memberBindings = memberBindings.updated(key, bindingId))
+
+  /** All executable implementations of one signature, for editor reference search across types. */
+  def memberBindingIds(signatureId: String): Set[String] =
+    memberBindings.collect { case ((_, id), bindingId) if id == signatureId => bindingId }.toSet
 
   /** Read a registered protocol from the supplied index. An indexed but unregistered protocol
     * returns MissingProtocol; a registered ID whose node is absent returns MissingNode.
@@ -134,12 +181,39 @@ final case class ProtocolRegistry private (
   ): Either[ProtocolLookupError, Bnd] =
     for
       key <- instanceKeys.get(instanceId).toRight(MissingInstanceId(instanceId))
+      _ <- failedInstances.get(instanceId).map(RejectedDeclaration(_)).toLeft(())
       _ <- signature(key.protocolId, signatureId, index)
       id <- memberBindings
         .get((instanceId, signatureId))
         .toRight(MissingMemberBinding(instanceId, signatureId))
       binding <- indexedBinding(id, index)
     yield binding
+
+  /** Read a signature and every usable concrete implementation from the current index. For Num's +,
+    * this can return the Int and Float bindings; neither is selected here. A signature with no
+    * instances still returns its protocol and signature with an empty implementation list. Rejected
+    * instances reserve their keys but contribute no implementation. An unmarked instance with a
+    * missing member association remains an internal registry error.
+    */
+  def signatureCandidates(
+    signatureId: String,
+    index:       ResolvablesIndex
+  ): Either[ProtocolLookupError, ProtocolSignatureCandidates] =
+    for
+      _ <- failedSignatures.get(signatureId).map(RejectedDeclaration(_)).toLeft(())
+      owner <- signatureOwners
+        .get(signatureId)
+        .toRight(WrongNode(signatureId, "registered signature"))
+      declaration <- protocol(owner, index)
+      required <- signature(owner, signatureId, index)
+      implementations <- instanceKeys.toList
+        .filter { case (id, key) => key.protocolId == owner && !failedInstances.contains(id) }
+        .sortBy(_._1)
+        .traverse { case (instanceId, key) =>
+          memberBinding(instanceId, signatureId, index)
+            .map(binding => ProtocolImplementation(instanceId, key.concreteType, binding))
+        }
+    yield ProtocolSignatureCandidates(declaration, required, implementations)
 
   /** Select the nearest lexical name, then filter operator arity without selecting an instance.
     * None requests an ordinary function/value name; Some requests an operator of that arity. For
@@ -154,19 +228,34 @@ final case class ProtocolRegistry private (
     index:         ResolvablesIndex
   ): Either[ProtocolLookupError, List[ProtocolCandidate]] =
 
-    def sourceName(node: Resolvable): String = node match
-      case binding:   Bnd => binding.meta.map(_.originalName).getOrElse(binding.name)
-      case signature: ProtocolSignature => signature.meta.originalName
-      case other => other.name
-
     def matchesArity(node: Resolvable): Boolean =
-      val meta = node match
-        case binding:   Bnd => binding.meta
-        case signature: ProtocolSignature => signature.meta.some
-        case _ => None
+      val meta = ProtocolRegistry.metadata(node)
       operatorArity match
         case Some(arity) => meta.exists(m => m.origin == BindingOrigin.Operator && m.arity == arity)
         case None => !meta.exists(_.origin == BindingOrigin.Operator)
+
+    lookupCandidates(name, scope, index, matchesArity)
+
+  /** Retain every candidate for the nearest lexical name. Expression grouping selects operator
+    * arity later, so a source reference can initially contain both unary and binary signatures.
+    */
+  def visibleCandidates(
+    name:  String,
+    scope: ProtocolLookupScope,
+    index: ResolvablesIndex
+  ): Either[ProtocolLookupError, List[ProtocolCandidate]] =
+    lookupCandidates(name, scope, index, _ => true)
+
+  private def lookupCandidates(
+    name:    String,
+    scope:   ProtocolLookupScope,
+    index:   ResolvablesIndex,
+    accepts: Resolvable => Boolean
+  ): Either[ProtocolLookupError, List[ProtocolCandidate]] =
+
+    def matchesName(node: Resolvable): Boolean = node match
+      case binding: Bnd => binding.name == name || ProtocolRegistry.sourceName(binding) == name
+      case _ => ProtocolRegistry.sourceName(node) == name
 
     def candidate(id: String, node: Resolvable): Either[ProtocolLookupError, ProtocolCandidate] =
       node match
@@ -182,9 +271,15 @@ final case class ProtocolRegistry private (
         case Nil => List.empty[ProtocolCandidate].asRight
         case ids :: outer =>
           ids.distinct.traverse(id => indexed(id, index).map(id -> _)).flatMap { nodes =>
-            val named = nodes.filter((_, node) => sourceName(node) == name)
+            val named = nodes.filter((_, node) => matchesName(node))
             if named.isEmpty then search(outer)
-            else named.filter((_, node) => matchesArity(node)).traverse(candidate)
+            else
+              val matching         = named.filter((_, node) => accepts(node))
+              val (failed, usable) = matching.partition((id, _) => failedSignatures.contains(id))
+              if usable.nonEmpty || failed.isEmpty then usable.traverse(candidate)
+              else
+                val causes = failed.flatMap((id, _) => failedSignatures(id)).distinct.toVector
+                RejectedDeclaration(causes).asLeft
           }
 
     search(scope.levels)
@@ -233,10 +328,24 @@ final case class ProtocolRegistry private (
 
 object ProtocolRegistry:
 
-  private val unitTypeId = BindingIds.declaration("stdlib", "Unit", "typedef")
+  private val unitTypeId = stdlibTypeId("Unit")
 
   val empty: ProtocolRegistry =
-    ProtocolRegistry(Map.empty, Map.empty, Map.empty, Map.empty, Map.empty)
+    ProtocolRegistry(Map.empty, Map.empty, Map.empty, Map.empty, Map.empty, Map.empty, Map.empty)
+
+  /** Lowered bodies remain module bindings, but their source declarations are instance members. */
+  def loweredMemberIds(module: Module): Set[String] =
+    module.members.collect { case instance: ProtocolInstance => instance.memberIds }.flatten.toSet
+
+  /** Source names and callable attributes are shared by lexical lookup and operator grouping. */
+  def sourceName(node: Resolvable): String =
+    metadata(node).map(_.originalName).getOrElse(node.name)
+
+  /** Functions and operators expose the same attributes whether executable or required. */
+  def metadata(node: Resolvable): Option[BindingMeta] = node match
+    case binding:   Bnd => binding.meta
+    case signature: ProtocolSignature => signature.meta.some
+    case _ => None
 
   /** Resolve aliases through declaration IDs; never use source spelling or native layout as
     * identity. Grouping such as (Int) does not change the key, and the built-in Unit declaration
@@ -258,7 +367,8 @@ object ProtocolRegistry:
             case Some(declaration: TypeDef) if declaration.id == ref.resolvedId =>
               declaration.id
                 .map(id =>
-                  if id == unitTypeId then ProtocolTypeKey.Unit else ProtocolTypeKey.Nominal(id)
+                  if unitTypeId.contains(id) then ProtocolTypeKey.Unit
+                  else ProtocolTypeKey.Nominal(id)
                 )
                 .toRight(ProtocolLookupError.InvalidConcreteType(current))
             case Some(struct: TypeStruct) if struct.id == ref.resolvedId =>
@@ -307,12 +417,23 @@ enum ProtocolTypeKey derives CanEqual:
   case Function(params: List[ProtocolTypeKey], result: ProtocolTypeKey)
   case Tuple(elements: List[ProtocolTypeKey])
 
+/** Current nodes returned by a signature lookup; the registry itself retains only their IDs. */
+case class ProtocolSignatureCandidates(
+  protocol:        Protocol,
+  signature:       ProtocolSignature,
+  implementations: List[ProtocolImplementation]
+)
+
+/** One concrete meaning of a signature, before arguments and expected types select it. */
+case class ProtocolImplementation(instanceId: String, typeKey: ProtocolTypeKey, binding: Bnd)
+
 /** The pair that must be unique: one protocol and one concrete type. Num Int and Clone Int share a
   * type key but have different protocol IDs and instance keys.
   */
 case class ProtocolInstanceKey(protocolId: String, concreteType: ProtocolTypeKey)
 
 enum ProtocolLookupError:
+  case RejectedDeclaration(causes: Vector[DiagnosticId])
   case MissingId(node: AstNode)
   case MissingNode(id: String)
   case WrongNode(id: String, expected: String)
@@ -336,9 +457,30 @@ enum ProtocolCandidate derives CanEqual:
   case Declaration(bindingId: String)
   case Signature(protocolId: String, signatureId: String)
 
+  def id: String = this match
+    case Declaration(bindingId) => bindingId
+    case Signature(_, signatureId) => signatureId
+
 /** Lexical levels run from innermost to outermost; each level contains visible definition IDs. For
   * List(List(localCombineId), List(semigroupCombineId, otherCombineId)), a local parameter named
   * combine hides both outer signatures. Without that local name, both signatures survive. Callers
   * supply visible signature or binding IDs, not the IDs of their containing protocols.
   */
-case class ProtocolLookupScope(levels: List[List[String]])
+case class ProtocolLookupScope(levels: List[List[String]]):
+
+  def within(params: List[FnParam]): ProtocolLookupScope =
+    copy(levels = params.flatMap(_.id) :: levels)
+
+object ProtocolLookupScope:
+
+  /** Instance bodies are indexed executable bindings, but source names expose their signatures. */
+  def module(module: Module): ProtocolLookupScope =
+
+    val instanceBindings = ProtocolRegistry.loweredMemberIds(module)
+    val visible = module.members.flatMap {
+      case binding:  Bnd if !binding.id.exists(instanceBindings.contains) => binding.id.toList
+      case protocol: Protocol => protocol.signatures.flatMap(_.id)
+      case _ => Nil
+    }
+
+    ProtocolLookupScope(List(visible))

@@ -118,16 +118,18 @@ def prettyPrintTerm(
           }
           .mkString("\n")
 
-    case App(sp, fn, arg, typeAsc, typeSpec) =>
-      val spanStr = if showSourceSpans then printSourceOrigin(sp) else ""
+    case app: App =>
+      val spanStr = if showSourceSpans then printSourceOrigin(app.source) else ""
       val typeStr =
         if showTypes then
-          s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(typeSpec)}\n" +
-            s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(typeAsc)}"
+          val calleeTypes = app.calleeAscriptions.map(tpe => prettyPrintTypeSpec(Some(tpe)))
+          s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(app.typeSpec)}\n" +
+            s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(app.typeAsc)}\n" +
+            s"${indentStr}  calleeAscriptions: ${calleeTypes.mkString(", ")}"
         else ""
       // Recursively pretty-print the function part
-      val fnStr  = prettyPrintTerm(fn, indent + 2, showSourceSpans, showTypes)
-      val argStr = prettyPrintExpr(arg, indent + 2, showSourceSpans, showTypes)
+      val fnStr  = prettyPrintTerm(app.fn, indent + 2, showSourceSpans, showTypes)
+      val argStr = prettyPrintExpr(app.arg, indent + 2, showSourceSpans, showTypes)
       s"${indentStr}App $spanStr$typeStr\n" +
         s"${indentStr}  fn:\n$fnStr\n" +
         s"${indentStr}  arg:\n$argStr"

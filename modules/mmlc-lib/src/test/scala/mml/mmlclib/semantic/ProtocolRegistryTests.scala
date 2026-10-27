@@ -3,6 +3,7 @@ package mml.mmlclib.semantic
 import cats.data.NonEmptyList
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.errors.DiagnosticId
 import mml.mmlclib.test.BaseEffFunSuite
 
 class ProtocolRegistryTests extends BaseEffFunSuite:
@@ -76,6 +77,151 @@ class ProtocolRegistryTests extends BaseEffFunSuite:
     val result = ProtocolRegistry.empty.protocol(numId, numberIndex)
 
     assertEquals(result, Left(ProtocolLookupError.MissingProtocol(numId)))
+  }
+
+  test("a known signature without instances has an empty implementation list") {
+    val registry = success(ProtocolRegistry.empty.registerProtocol(numId, numberIndex))
+
+    val result = registry.signatureCandidates(plusId, numberIndex)
+
+    assertEquals(result, Right(ProtocolSignatureCandidates(num, plus, Nil)))
+  }
+
+  test("signature candidates read the current implementation from the index") {
+    val protocols = success(ProtocolRegistry.empty.registerProtocol(numId, numberIndex))
+    val instances = success(protocols.registerInstance(numInt, numberIndex))
+    val registry =
+      success(instances.registerMemberBinding(numIntId, plusId, addIntsId, numberIndex))
+    val replacement = addInts.copy(value = Expr(source, List(LiteralInt(source, 42, intType.some))))
+    val updatedIndex = numberIndex.updated(replacement)
+
+    val result = registry.signatureCandidates(plusId, updatedIndex)
+
+    assertEquals(
+      result,
+      Right(
+        ProtocolSignatureCandidates(
+          num,
+          plus,
+          List(ProtocolImplementation(numIntId, ProtocolTypeKey.Nominal(intId), replacement))
+        )
+      )
+    )
+  }
+
+  test("signature candidates report an instance whose implementation is missing") {
+    val protocols = success(ProtocolRegistry.empty.registerProtocol(numId, numberIndex))
+    val registry  = success(protocols.registerInstance(numInt, numberIndex))
+
+    val result = registry.signatureCandidates(plusId, numberIndex)
+
+    assertEquals(result, Left(ProtocolLookupError.MissingMemberBinding(numIntId, plusId)))
+  }
+
+  test("a rejected instance reserves its key without appearing among implementations") {
+    val protocols = success(ProtocolRegistry.empty.registerProtocol(numId, numberIndex))
+    val instances = success(protocols.registerInstance(numInt, numberIndex))
+    val causes    = Vector(DiagnosticId(7))
+    val registry  = success(instances.rejectInstance(numIntId, causes))
+
+    val result = registry.signatureCandidates(plusId, numberIndex)
+
+    assertEquals(result, Right(ProtocolSignatureCandidates(num, plus, Nil)))
+    assertEquals(registry.instance(numId, intType, numberIndex), Right(numIntId))
+    assertEquals(registry.instanceFailureCauses(numId, intType, numberIndex), causes)
+    assertEquals(
+      registry.memberBinding(numIntId, plusId, numberIndex),
+      Left(ProtocolLookupError.RejectedDeclaration(causes))
+    )
+    assertEquals(
+      registry.registerInstance(numInt.copy(id = "another-instance".some), numberIndex),
+      Left(
+        ProtocolLookupError.DuplicateInstance(
+          ProtocolInstanceKey(
+            numId,
+            ProtocolTypeKey.Nominal(intId)
+          )
+        )
+      )
+    )
+  }
+
+  test("a rejected signature name reports its known declaration roots") {
+    val causes   = Vector(DiagnosticId(8))
+    val registry = success(ProtocolRegistry.empty.rejectProtocol(numId, causes, numberIndex))
+    val scope    = ProtocolLookupScope(List(List(plusId)))
+
+    val result = registry.visibleCandidates("+", scope, numberIndex)
+
+    assertEquals(result, Left(ProtocolLookupError.RejectedDeclaration(causes)))
+    assertEquals(
+      registry.signatureCandidates(plusId, numberIndex),
+      Left(ProtocolLookupError.RejectedDeclaration(causes))
+    )
+  }
+
+  test("an unregistered signature without rejection evidence remains a registry error") {
+    val scope = ProtocolLookupScope(List(List(plusId)))
+
+    val result = ProtocolRegistry.empty.visibleCandidates("+", scope, numberIndex)
+
+    assertEquals(result, Left(ProtocolLookupError.WrongNode(plusId, "registered signature")))
+  }
+
+  test("signature candidates keep concrete implementations distinct") {
+    val floatDeclaration = TypeDef(
+      source   = source,
+      nameNode = Name.synth("Float"),
+      typeSpec = NativePrimitive(source, "double").some,
+      id       = "float-type".some
+    )
+    val floatType = TypeRef(source, "Float", floatDeclaration.id)
+    val addFloats = Bnd(
+      source   = source,
+      nameNode = Name.synth("addFloats"),
+      value    = Expr(source, List(LiteralFloat(source, 0.0f, floatType.some))),
+      id       = "float-addition".some
+    )
+    val numFloat = ProtocolInstance(
+      source,
+      ProtocolRef(source, num.nameNode, num.id),
+      floatType,
+      List(ProtocolInstanceMember(addFloats, BindingOrigin.Operator)),
+      id = "num-float-instance".some
+    )
+    val index       = numberIndex.updatedType(floatDeclaration).updated(addFloats)
+    val protocols   = success(ProtocolRegistry.empty.registerProtocol(numId, index))
+    val intInstance = success(protocols.registerInstance(numInt, index))
+    val instances   = success(intInstance.registerInstance(numFloat, index))
+    val intMember   = success(instances.registerMemberBinding(numIntId, plusId, addIntsId, index))
+    val registry = success(
+      intMember.registerMemberBinding(
+        "num-float-instance",
+        plusId,
+        "float-addition",
+        index
+      )
+    )
+
+    val result = registry.signatureCandidates(plusId, index)
+
+    assertEquals(
+      result,
+      Right(
+        ProtocolSignatureCandidates(
+          num,
+          plus,
+          List(
+            ProtocolImplementation(
+              "num-float-instance",
+              ProtocolTypeKey.Nominal("float-type"),
+              addFloats
+            ),
+            ProtocolImplementation(numIntId, ProtocolTypeKey.Nominal(intId), addInts)
+          )
+        )
+      )
+    )
   }
 
   test("a signature not belonging to Num is a missing signature") {
@@ -491,6 +637,41 @@ class ProtocolRegistryTests extends BaseEffFunSuite:
     assertEquals(result, Right(Nil))
   }
 
+  test("visible lookup retains unary and binary candidates before grouping") {
+    val unaryPlus =
+      addInts.copy(id = "unary-plus".some, meta = plus.meta.copy(arity = CallableArity.Unary).some)
+    val index    = numberIndex.updated(unaryPlus)
+    val registry = success(ProtocolRegistry.empty.registerProtocol(numId, index))
+    val scope    = ProtocolLookupScope(List(List(plusId, "unary-plus")))
+
+    val result = registry.visibleCandidates("+", scope, index)
+
+    assertEquals(
+      result,
+      Right(
+        List(
+          ProtocolCandidate.Signature(numId, plusId),
+          ProtocolCandidate.Declaration("unary-plus")
+        )
+      )
+    )
+    assertEquals(result.map(_.map(_.id)), Right(List(plusId, "unary-plus")))
+  }
+
+  test("operator arity filtering cannot uncover a declaration hidden by a local name") {
+    val local    = FnParam(source, Name.synth("+"), id = "local-plus".some)
+    val index    = numberIndex.updated(local)
+    val registry = success(ProtocolRegistry.empty.registerProtocol(numId, index))
+    val outer    = ProtocolLookupScope(List(List(plusId)))
+    val scope    = outer.within(List(local))
+
+    assertEquals(
+      registry.visibleCandidates("+", scope, index),
+      Right(List(ProtocolCandidate.Declaration("local-plus")))
+    )
+    assertEquals(registry.candidates("+", CallableArity.Binary.some, scope, index), Right(Nil))
+  }
+
   test("listing the same visible signature twice does not duplicate its candidate") {
     val registry = success(ProtocolRegistry.empty.registerProtocol(numId, numberIndex))
     val scope    = ProtocolLookupScope(List(List(plusId, plusId)))
@@ -605,7 +786,7 @@ class ProtocolRegistryTests extends BaseEffFunSuite:
       source,
       ProtocolRef(source, num.nameNode, num.id),
       intType,
-      List(addInts),
+      List(ProtocolInstanceMember(addInts, BindingOrigin.Operator)),
       id = numIntId.some
     )
     val numIntKey: ProtocolInstanceKey = ProtocolInstanceKey(numId, ProtocolTypeKey.Nominal(intId))

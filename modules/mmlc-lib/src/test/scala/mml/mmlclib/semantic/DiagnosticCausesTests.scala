@@ -7,6 +7,20 @@ import mml.mmlclib.test.BaseEffFunSuite
 
 class DiagnosticCausesTests extends BaseEffFunSuite:
 
+  test("callee annotation failures retain their diagnostic roots") {
+    val function = Lambda(source, Nil, integer(), Nil)
+    val missing  = UndefinedTypeError(source, TypeRef(source, "Missing"), firstRoots)
+    val application = App(
+      source,
+      function,
+      integer(),
+      typeSpec          = Some(intType),
+      calleeAscriptions = List(missing)
+    )
+
+    assertEvidence(DiagnosticCauses.empty.evidenceOf(application), firstRoots, complete = true)
+  }
+
   private val source      = SourceOrigin.Synth
   private val intType     = NativePrimitive(source, "i32")
   private val boolType    = NativePrimitive(source, "i1")

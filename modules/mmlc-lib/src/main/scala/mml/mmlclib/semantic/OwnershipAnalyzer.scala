@@ -842,19 +842,21 @@ object OwnershipAnalyzer:
 
     if !scope.callableValues.recovery.isAvailable(value) then analyzeExpr(value, scope)
     else
-      singleTerm(value).map(unwrapTerm) match
+      val scopedResult = singleTerm(value).map(unwrapTerm).flatMap {
 
-        case Some(cond: Cond) =>
-          val result = analyzeCond(cond, scope, requirement)
-          ExprResult(
-            result.scope,
-            value.copy(terms = List(result.term)),
-            result.errors,
-            result.ownership
-          )
+        case cond: Cond => analyzeCond(cond, scope, requirement).some
 
-        case Some(app @ App(_, lambda: Lambda, _, _, _)) =>
-          val result = analyzeLambdaApplication(app, lambda, scope, requirement)
+        case app: App =>
+          app.fn match
+            case lambda: Lambda => analyzeLambdaApplication(app, lambda, scope, requirement).some
+            case _ => none
+
+        case _ => none
+      }
+
+      scopedResult match
+
+        case Some(result) =>
           ExprResult(
             result.scope,
             value.copy(terms = List(result.term)),

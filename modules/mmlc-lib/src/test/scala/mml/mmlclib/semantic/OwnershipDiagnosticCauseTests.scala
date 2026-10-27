@@ -272,15 +272,7 @@ class OwnershipDiagnosticCauseTests extends BaseEffFunSuite:
     parseNotFailed(source).map { parsed =>
       val module  = injectCommonFunctions(injectStandardOperators(injectBasicTypes(parsed)))
       val initial = CompilerState.empty(module, SourceInfo(source), CompilerConfig.default)
-      val phases: List[CompilerState => CompilerState] = List(
-        IdAssigner.rewriteModule,
-        TypeResolver.rewriteModule,
-        ConstructorGenerator.rewriteModule,
-        MemoryFunctionGenerator.rewriteModule,
-        RefResolver.rewriteModule,
-        ExpressionRewriter.rewriteModule,
-        Simplifier.rewriteModule,
-        CaptureAnalyzer.rewriteModule,
+      val phases = phasesBeforeTypeChecking ++ List(
         TypeChecker.rewriteModule,
         PartialApplicationElaborator.rewriteModule,
         ClosureMemoryFnGenerator.rewriteModule,

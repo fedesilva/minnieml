@@ -73,16 +73,21 @@ object TypeResolver:
     typeMap: TypeMap
   ): Resolution[Member] =
     member match
-      case bnd: Bnd =>
+      case bnd: Bnd => resolveBindingWithMap(bnd, typeMap).widen
+
+      case protocol: Protocol =>
+        protocol.signatures
+          .traverse(resolveSignatureWithMap(_, typeMap))
+          .map(signatures => protocol.copy(signatures = signatures))
+
+      case instance: ProtocolInstance =>
         for
-          updatedValue <- resolveExpr(bnd.value, member, typeMap)
-          updatedTypeAsc <- bnd.typeAsc.traverse(resolveTypeSpecWithMap(_, member, typeMap))
-          updatedTypeSpec <- bnd.typeSpec.traverse(resolveTypeSpecWithMap(_, member, typeMap))
-        yield bnd.copy(
-          value    = updatedValue,
-          typeAsc  = updatedTypeAsc,
-          typeSpec = updatedTypeSpec
-        )
+          concreteType <- resolveTypeSpecWithMap(instance.concreteType, instance, typeMap)
+          members <- instance.members.traverse { member =>
+            resolveBindingWithMap(member.binding, typeMap)
+              .map(binding => member.copy(binding = binding))
+          }
+        yield instance.copy(concreteType = concreteType, members = members)
 
       case alias: TypeAlias =>
         resolveTypeSpecWithMap(alias.typeRef, member, typeMap)
@@ -104,6 +109,22 @@ object TypeResolver:
 
       case _ =>
         member.pure[Resolution]
+
+  private def resolveBindingWithMap(binding: Bnd, typeMap: TypeMap): Resolution[Bnd] =
+    for
+      value <- resolveExpr(binding.value, binding, typeMap)
+      typeAsc <- binding.typeAsc.traverse(resolveTypeSpecWithMap(_, binding, typeMap))
+      typeSpec <- binding.typeSpec.traverse(resolveTypeSpecWithMap(_, binding, typeMap))
+    yield binding.copy(value = value, typeAsc = typeAsc, typeSpec = typeSpec)
+
+  private def resolveSignatureWithMap(
+    signature: ProtocolSignature,
+    typeMap:   TypeMap
+  ): Resolution[ProtocolSignature] =
+    for
+      params <- signature.params.traverse(resolveParamWithMap(_, signature, typeMap))
+      returnType <- resolveTypeSpecWithMap(signature.returnType, signature, typeMap)
+    yield signature.copy(params = params, returnType = returnType)
 
   /** Resolve type references in a function parameter using pre-built type map. */
   private def resolveParamWithMap(
@@ -159,78 +180,11 @@ object TypeResolver:
     typeSpec match
       case typeRef: TypeRef => resolveTypeReference(typeRef, member, typeMap)
 
-      case ns: NativeStruct =>
-        // Resolve TypeSpecs in all struct fields
-        ns.fields.toList
-          .traverse { case (fieldName, fieldType) =>
-            resolveTypeSpecWithMap(fieldType, member, typeMap).map(fieldName -> _)
-          }
-          .map(resolvedFields => ns.copy(fields = resolvedFields))
-
-      case tf: TypeFn =>
-        // Resolve TypeSpecs in parameter types and return type
-        for
-          resolvedParams <- tf.paramTypes.traverse(resolveTypeSpecWithMap(_, member, typeMap))
-          resolvedReturn <- resolveTypeSpecWithMap(tf.returnType, member, typeMap)
-        yield tf.copy(paramTypes = resolvedParams, returnType = resolvedReturn)
-
-      case ta: TypeApplication =>
-        // Resolve base type and type arguments
-        for
-          resolvedBase <- resolveTypeSpecWithMap(ta.base, member, typeMap)
-          resolvedArgs <- ta.args.traverse(resolveTypeSpecWithMap(_, member, typeMap))
-        yield ta.copy(base = resolvedBase, args = resolvedArgs)
-
-      case tt: TypeTuple =>
-        // Resolve element types
-        tt.elements
-          .traverse(resolveTypeSpecWithMap(_, member, typeMap))
-          .map(resolvedElements => tt.copy(elements = resolvedElements))
-
-      case ts: TypeStruct =>
-        // Resolve field types
-        ts.fields
-          .traverse(field =>
-            resolveTypeSpecWithMap(field.typeSpec, member, typeMap)
-              .map(resolvedType => field.copy(typeSpec = resolvedType))
-          )
-          .map(resolvedFields => ts.copy(fields = resolvedFields))
-
-      case u: Union =>
-        // Resolve union member types
-        u.types
-          .traverse(resolveTypeSpecWithMap(_, member, typeMap))
-          .map(resolvedTypes => u.copy(types = resolvedTypes))
-
-      case i: Intersection =>
-        // Resolve intersection member types
-        i.types
-          .traverse(resolveTypeSpecWithMap(_, member, typeMap))
-          .map(resolvedTypes => i.copy(types = resolvedTypes))
-
-      case tg: TypeGroup =>
-        // Resolve grouped types
-        tg.types
-          .traverse(resolveTypeSpecWithMap(_, member, typeMap))
-          .map(resolvedTypes => tg.copy(types = resolvedTypes))
-
-      case scheme: TypeScheme =>
-        // Resolve body type (type variables don't need resolution)
-        resolveTypeSpecWithMap(scheme.bodyType, member, typeMap)
-          .map(resolvedBody => scheme.copy(bodyType = resolvedBody))
-
-      case record: TypeOpenRecord =>
-        record.fields
-          .traverse { case (name, fieldType) =>
-            resolveTypeSpecWithMap(fieldType, member, typeMap).map(name -> _)
-          }
-          .map(fields => record.copy(fields = fields))
-
       case refinement: TypeRefinement =>
         resolveExpr(refinement.expr, member, typeMap).map(expr => refinement.copy(expr = expr))
 
       case other =>
-        other.pure[Resolution]
+        TypeTraversal.traverseChildren(other)(resolveTypeSpecWithMap(_, member, typeMap))
 
   /** Resolve type references in an expression using the type map. */
   private def resolveExpr(
@@ -350,7 +304,10 @@ object TypeResolver:
       fn <- resolveAppFn(app.fn, member, typeMap)
       arg <- resolveExpr(app.arg, member, typeMap)
       typeAsc <- app.typeAsc.traverse(resolveTypeSpecWithMap(_, member, typeMap))
-    yield app.copy(fn = fn, arg = arg, typeAsc = typeAsc)
+      calleeAscriptions <- app.calleeAscriptions.traverse(
+        resolveTypeSpecWithMap(_, member, typeMap)
+      )
+    yield app.copy(fn = fn, arg = arg, typeAsc = typeAsc, calleeAscriptions = calleeAscriptions)
 
   private def resolveLambda(
     lambda:  Lambda,

@@ -320,7 +320,7 @@ class LspHandler(
           val line = pos.position.line + 1
           val col  = pos.position.character + 1
           val spans =
-            AstLookup.findReferencesAt(docState.state.module, line, col, includeDecl)
+            AstLookup.findReferencesAt(docState.state, line, col, includeDecl)
           val locations = spans.map(span => Location(pos.textDocument.uri, Range.fromSrcSpan(span)))
           val json      = ujson.Arr(locations.map(Location.toJson)*)
           sendResponse(id, json)

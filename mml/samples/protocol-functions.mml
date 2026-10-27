@@ -1,0 +1,44 @@
+// Named protocol functions: the value's type selects the implementation.
+// Run with: mmlc run mml/samples/protocol-functions.mml
+
+protocol Render 'T =
+  fn render(label: String, value: 'T): Unit;
+;
+
+// Parameter and result types come from the signature above.
+instance Render Int =
+  fn render(label, value) =
+    print label;
+    println (int_to_str value);
+  ;
+;
+
+instance Render Bool =
+  fn render(label, value) =
+    print label;
+    if value then println "true";
+    else println "false";
+    ;
+  ;
+;
+
+pub fn main(): Int =
+  // The later argument supplies the type, even though the label comes first.
+  render "answer: " 42;
+  render "ready: " true;
+
+  // A function value needs a concrete type at this binding.
+  let render_int: String -> Int -> Unit = render;
+  render_int "function value: " 5;
+
+  // The remaining function type selects Render Int before the partial is stored.
+  let render_again: Int -> Unit = render "partial: ";
+  render_again 15;
+  0;
+;
+
+// Expected output:
+// answer: 42
+// ready: true
+// function value: 5
+// partial: 15

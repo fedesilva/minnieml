@@ -2,6 +2,15 @@
 
 Durable product changes belong here. Current task state belongs in task files.
 
+## 2026-10-27
+
+- Add protocol signatures and concrete instances with type-directed function and operator
+  selection. Supply Int and Float arithmetic through Num, migrate numeric samples to unified
+  operators, and share ordinary function-value and partial-application lowering.
+- Preserve useful diagnostics around rejected protocols and instances, avoid repeated checking
+  of failed nested operands, and integrate protocol members with entry-point selection and editor
+  references. Share declaration recovery boundaries and add heap-ownership execution coverage.
+
 ## 2026-10-26
 
 - Add immutable shared protocol lookups for signatures, concrete instances, member bindings,

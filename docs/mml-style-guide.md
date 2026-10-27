@@ -99,7 +99,7 @@ advance_playback
   cells
   result
   interval
-  (Playback (playback.step + 1) (playback.elapsed -. interval))
+  (Playback (playback.step + 1) (playback.elapsed - interval))
 ;
 ```
 
@@ -108,7 +108,7 @@ arguments onto another line:
 
 ```text
 advance_playback grid cells result interval
-  (Playback (playback.step + 1) (playback.elapsed -. interval));
+  (Playback (playback.step + 1) (playback.elapsed - interval));
 ```
 
 The same rule applies to constructor calls. An argument may contain an inline nested
@@ -124,7 +124,7 @@ let next =
     cells
     result
     interval
-    (Playback playback.step (playback.elapsed +. (get_frame_time ())))
+    (Playback playback.step (playback.elapsed + (get_frame_time ())))
   ;
 ```
 

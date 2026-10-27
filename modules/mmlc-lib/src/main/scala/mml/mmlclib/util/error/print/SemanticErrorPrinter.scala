@@ -184,6 +184,10 @@ object SemanticErrorPrinter:
       case SemanticError.TypeCheckingError(error) =>
         prettyPrintTypeError(error)
 
+      case SemanticError.ProtocolErrorFound(error, phase) =>
+        val location = error.source.spanOpt.map(LocationPrinter.printSpan).getOrElse("[synthetic]")
+        s"${Console.RED}${error.message} at $location [phase: $phase]${Console.RESET}"
+
     // Add AST info and source code snippets if source code is available
     sourceInfo match
       case Some(info) =>

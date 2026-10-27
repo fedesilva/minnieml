@@ -20,13 +20,10 @@ private[parser] final case class ParsedParameters(
 ):
   def complete: Boolean = error.isEmpty
 
-private val memberOnlyStops =
-  List("op", "type", "struct", "pub", "prot", "priv", "inline").map(Recovery.Anchor.Keyword(_))
-
 private val expressionRecovery = Recovery.Context(
   List(";", ",", "/*").map(Recovery.Anchor.Token(_)) ++
     List("if", "then", "elif", "else").map(Recovery.Anchor.Keyword(_)),
-  memberOnlyStops,
+  declarationOnlyStops,
   recoverUnterminatedStrings = true
 )
 
@@ -55,7 +52,7 @@ private[parser] def requiredBindingTokenP(info: SourceInfo, token: String)(using
 private[parser] def parsedBindingNameP(info: SourceInfo)(using P[Any]): P[ParsedBindingName] =
   val context = Recovery.Context(
     List("(", ":", "=", ";", "/*").map(Recovery.Anchor.Token(_)),
-    memberOnlyStops ++ List("let", "fn", "then", "elif", "else").map(Recovery.Anchor.Keyword(_))
+    declarationStops ++ List("then", "elif", "else").map(Recovery.Anchor.Keyword(_))
   )
 
   def recoveredNameP: P[ParsedToken[Option[Either[String, String]]]] =
@@ -80,11 +77,14 @@ private[parser] def parsedBindingNameP(info: SourceInfo)(using P[Any]): P[Parsed
 
 /** Recovers the malformed tail of an opened list while preserving its successfully parsed prefix.
   */
-private[parser] def parsedParametersP(info: SourceInfo)(using P[Any]): P[ParsedParameters] =
+private[parser] def parsedParametersP(
+  info:        SourceInfo,
+  contextType: TypeContext = TypeContext.Parameter
+)(using P[Any]): P[ParsedParameters] =
   val context = Recovery.Context(
     List(")", "/*").map(Recovery.Anchor.Token(_)),
-    List("=", ";").map(Recovery.Anchor.Token(_)) ++ memberOnlyStops ++
-      List("let", "fn", "then", "elif", "else").map(Recovery.Anchor.Keyword(_))
+    List("=", ";").map(Recovery.Anchor.Token(_)) ++ declarationStops ++
+      List("then", "elif", "else").map(Recovery.Anchor.Keyword(_))
   )
 
   def closingP: P[Option[ParseTermError]] =
@@ -93,7 +93,7 @@ private[parser] def parsedParametersP(info: SourceInfo)(using P[Any]): P[ParsedP
         bindingError(info, start, info.pointAt(recovered.end), "Invalid parameter list").some
       }
 
-  P("(" ~ NoCut(fnParamP(info)).rep(sep = ",") ~ closingP)
+  P("(" ~ NoCut(fnParamP(info, contextType)).rep(sep = ",") ~ closingP)
     .map { case (params, error) => ParsedParameters(params.toList, error) } |
     pointP(info).map { point =>
       ParsedParameters(Nil, bindingError(info, point, point, "Expected '('").some)
@@ -104,7 +104,7 @@ private[parser] def parsedParametersP(info: SourceInfo)(using P[Any]): P[ParsedP
 private def expressionBoundaryP(using P[Any]): P[Unit] =
   P(
     End | ";" | "," | ")" | "]" | "}" | "/*" | thenKw | elifKw | elseKw |
-      opKw | typeKw | structKw | pubKw | protKw | privKw | inlineKw
+      declarationOnlyStartP
   )
 
 /** A term keeps the endpoint of consumed annotations even when AST attachment discards them. */
@@ -141,11 +141,11 @@ private def bindingFramePartP(info: SourceInfo, termParser: => P[ParsedTerm])(us
   }.map { case (start, parsedTerms, (scannerStart, recovered), _) =>
     val terms     = parsedTerms.toList.map(_.value)
     val prefixEnd = parsedTerms.lastOption.fold(start)(_.end)
+    // Written annotations belong to their terms; a Lambda annotation constrains its return value.
     val prefix = Expr(
       span(start, prefixEnd),
       terms,
-      if terms.size == 1 then terms.head.typeAsc else none,
-      if terms.size == 1 then terms.head.typeSpec else none
+      typeSpec = if terms.size == 1 then terms.head.typeSpec else none
     )
     if recovered.end > scannerStart.index then
       val end   = info.pointAt(recovered.end)

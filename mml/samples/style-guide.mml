@@ -37,7 +37,7 @@ type DocMyStr = @metal:repr[mem=heap, free=destroy_str] {
 struct Vec3 { x: Float, y: Float, z: Float };
 
 inline fn dot(u: Vec3, v: Vec3): Float =
-  (u.x *. v.x) +. (u.y *. v.y) +. (u.z *. v.z);
+  (u.x * v.x) + (u.y * v.y) + (u.z * v.z);
 ;
 
 struct Name { field1: Int, field2: String };

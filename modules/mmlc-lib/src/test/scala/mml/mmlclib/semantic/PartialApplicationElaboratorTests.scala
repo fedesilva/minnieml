@@ -2,35 +2,180 @@ package mml.mmlclib.semantic
 
 import cats.effect.IO
 import mml.mmlclib.ast.*
-import mml.mmlclib.compiler.{CompilerConfig, CompilerState}
-import mml.mmlclib.parser.SourceInfo
+import mml.mmlclib.compiler.CompilerState
 import mml.mmlclib.test.BaseEffFunSuite
 
 class PartialApplicationElaboratorTests extends BaseEffFunSuite:
 
+  test("partial application retains the annotation on its supplied call boundary") {
+    val source = """
+      fn add(first: Int, second: Int): Int = first + second;;
+      let partial = ((add): Int -> Int -> Int) 1;
+    """
+    typeCheck(source).map { typed =>
+      assertEquals(typed.errors, Vector.empty)
+      val original = member(typed, "partial").value.terms match
+        case (app: App) :: Nil => app
+        case other => fail(s"Expected one supplied application, got $other")
+      assertEquals(original.calleeAscriptions.size, 1)
+
+      val elaborated = PartialApplicationElaborator.rewriteModule(typed)
+      val functions  = partials(member(elaborated, "partial").value)
+      assertEquals(functions.size, 1)
+      val outer = functions.head.body.terms match
+        case (app: App) :: Nil => app
+        case other => fail(s"Expected the forwarding call, got $other")
+      val supplied = outer.fn match
+        case app: App => app
+        case other => fail(s"Expected the original supplied call boundary, got $other")
+
+      assertEquals(supplied.calleeAscriptions, original.calleeAscriptions)
+      assertEquals(supplied.source, original.source)
+      assertEquals(outer.calleeAscriptions, Nil)
+      assertEquals(elaborated.errors, Vector.empty)
+      assertStable(typed, elaborated)
+    }
+  }
+
+  test("a bare typed function expands with concrete parameters and their ownership") {
+    val source = """
+      fn take(~text: String, count: Int): Int = text.length + count;;
+      let function = take;
+    """
+    typeCheck(source).map { typed =>
+      assertEquals(typed.errors, Vector.empty)
+      val target = member(typed, "take")
+      val original = member(typed, "function").value.terms match
+        case (ref: Ref) :: Nil => ref
+        case other => fail(s"Expected a bare typed reference before elaboration, got $other")
+      val signature = target.typeSpec match
+        case Some(signature: TypeFn) => signature
+        case other => fail(s"Expected a concrete function type, got $other")
+      assertEquals(original.resolvedId, target.id)
+      assertEquals(original.typeSpec, target.typeSpec)
+
+      val elaborated = PartialApplicationElaborator.rewriteModule(typed)
+      val function   = forwardingFunction(member(elaborated, "function").value, target)
+      assert(!function.meta.exists(_.isPartialApplication))
+      assert(function.meta.forall(_.transferredCaptures.isEmpty))
+      assertEquals(function.params.size, 2)
+      val text  = function.params.head
+      val count = function.params(1)
+
+      assertEquals(function.typeSpec, original.typeSpec)
+      assertEquals(function.body.typeSpec, Some(signature.returnType))
+      assertEquals(text.typeSpec, Some(signature.paramTypes.head))
+      assertEquals(count.typeSpec, Some(signature.paramTypes.tail.head))
+      assert(text.consuming)
+      assert(!count.consuming)
+      assertNotEquals(text.id, count.id)
+      assertEquals(text.id.flatMap(elaborated.module.resolvables.lookup), Some(text))
+      assertEquals(count.id.flatMap(elaborated.module.resolvables.lookup), Some(count))
+      assertEquals(function.captures, Nil)
+
+      val application = function.body.terms match
+        case (app: App) :: Nil => app
+        case other => fail(s"Expected the expanded function call, got $other")
+      val (callee, arguments) = CallableValues.application(application)
+      assertEquals(callee, original)
+      assertEquals(arguments.size, 2)
+      assertEquals(
+        arguments.head.terms.collect { case ref: Ref => ref.resolvedId },
+        List(text.id)
+      )
+      assertEquals(
+        arguments(1).terms.collect { case ref: Ref => ref.resolvedId },
+        List(count.id)
+      )
+      assertEquals(elaborated.errors, Vector.empty)
+      assertStable(typed, elaborated)
+    }
+  }
+
+  test("a bare function returning another function keeps its invocation boundary") {
+    val source = """
+      fn makeAdder(first: Int): Int -> Int = { second: Int -> first + second; };;
+      let function = makeAdder;
+    """
+    typeCheck(source).map { typed =>
+      assertEquals(typed.errors, Vector.empty)
+      val target = member(typed, "makeAdder")
+      val signature = target.typeSpec match
+        case Some(signature: TypeFn) => signature
+        case other => fail(s"Expected makeAdder's function type, got $other")
+      assertEquals(signature.paramTypes.length, 1)
+      assert(signature.returnType.isInstanceOf[TypeFn])
+
+      val elaborated = PartialApplicationElaborator.rewriteModule(typed)
+      val function   = forwardingFunction(member(elaborated, "function").value, target)
+      assert(!function.meta.exists(_.isPartialApplication))
+      assert(function.meta.forall(_.transferredCaptures.isEmpty))
+      assertEquals(function.params.size, 1)
+      assertEquals(function.typeSpec, target.typeSpec)
+      assertEquals(function.body.typeSpec, Some(signature.returnType))
+      val applications = TermTraversal.collect(function.body) { case app: App => app }
+      assertEquals(applications.size, 1)
+      val targets = TermTraversal.collect(function.body) {
+        case ref: Ref if ref.resolvedId == target.id => ref
+      }
+      assertEquals(targets.size, 1)
+      assertEquals(elaborated.errors, Vector.empty)
+      assertStable(typed, elaborated)
+    }
+  }
+
+  test("a nullary function value remains a reference until its explicit Unit call") {
+    val source = """
+      fn answer(): Int = 42;;
+      let function = answer;
+    """
+    typeCheck(source).map { typed =>
+      assertEquals(typed.errors, Vector.empty)
+      val original = member(typed, "function").value
+      val ref = original.terms match
+        case (ref: Ref) :: Nil => ref
+        case other => fail(s"Expected a nullary function reference, got $other")
+      assertEquals(ref.resolvedId, member(typed, "answer").id)
+
+      val elaborated = PartialApplicationElaborator.rewriteModule(typed)
+
+      assertEquals(member(elaborated, "function").value, original)
+      assertEquals(partials(member(elaborated, "function").value), Nil)
+      assertEquals(elaborated.errors, Vector.empty)
+      assertStable(typed, elaborated)
+    }
+  }
+
+  test("a rejected bare function value retains its reference without materializing a lambda") {
+    val source = """
+      fn increment(value: Int): Int = value + 1;;
+      let rejected: Int = increment;
+    """
+    typeCheck(source).map { typed =>
+      assert(typed.hasErrors)
+      val rejected = member(typed, "rejected").value
+      val failures = TermTraversal.collect(rejected) { case invalid: InvalidExpression => invalid }
+      assertEquals(failures.size, 1)
+      val retained = failures.head.originalExpr.terms match
+        case (ref: Ref) :: Nil => ref
+        case other => fail(s"Expected the rejected function reference, got $other")
+      assertEquals(retained.resolvedId, member(typed, "increment").id)
+
+      val elaborated = PartialApplicationElaborator.rewriteModule(typed)
+
+      assertEquals(member(elaborated, "rejected").value, rejected)
+      assertEquals(partials(member(elaborated, "rejected").value), Nil)
+      assertEquals(elaborated.errors, typed.errors)
+      assertStable(typed, elaborated)
+    }
+  }
+
   private val addition = "fn add(a: Int, b: Int): Int = a + b;;"
 
   private def typeCheck(source: String): IO[CompilerState] =
-
     parseNotFailed(source).map { parsed =>
-      val module  = injectCommonFunctions(injectStandardOperators(injectBasicTypes(parsed)))
-      val initial = CompilerState.empty(module, SourceInfo(source), CompilerConfig.default)
-
-      val phases: List[CompilerState => CompilerState] = List(
-        IdAssigner.rewriteModule,
-        TypeResolver.rewriteModule,
-        ConstructorGenerator.rewriteModule,
-        MemoryFunctionGenerator.rewriteModule,
-        RefResolver.rewriteModule,
-        ExpressionRewriter.rewriteModule,
-        Simplifier.rewriteModule,
-        CaptureAnalyzer.rewriteModule,
-        TypeChecker.rewriteModule
-      )
-
-      phases.foldLeft(initial) { (state, phase) =>
-        ResolvablesIndexer.rewriteModule(phase(state))
-      }
+      val prepared = prepareForTypeChecking(source, parsed)
+      ResolvablesIndexer.rewriteModule(TypeChecker.rewriteModule(prepared))
     }
 
   private def member(state: CompilerState, name: String): Bnd =
@@ -228,42 +373,84 @@ class PartialApplicationElaboratorTests extends BaseEffFunSuite:
     }
   }
 
-  private val holder = """
-    struct Holder { f: Int -> Int -> Int };
-    fn pack(~f: Int -> Int, n: Int): Holder = let result = f n; Holder add;;
-  """
+  test("a direct callee qualifier elaborates its partial calls and retains its owner") {
+    val source = """
+      fn add(a: Int, b: Int): Int = a + b;;
+      struct Holder { f: Int -> Int -> Int };
+      fn pack(~f: Int -> Int, n: Int): Holder = let result = f n; Holder add;;
+      fn example(): Int = ({ a: Int -> pack (add a); } 1 2).f 3 4;;
+    """
+    typeCheck(source).map { typed =>
+      assertEquals(typed.errors, Vector.empty)
+      val elaborated  = PartialApplicationElaborator.rewriteModule(typed)
+      val body        = member(elaborated, "example").value
+      val addPartial  = forwardingFunction(body, member(elaborated, "add"))
+      val packPartial = forwardingFunction(body, member(elaborated, "pack"))
 
-  List(
-    "direct" -> "({ a: Int -> pack (add a); } 1 2)",
-    "conditional" -> "(if flag then { a: Int -> pack (add a); } 1 2; else Holder add;)"
-  ).foreach { (label, qualifier) =>
-    test(s"$label callee qualifier elaborates nested PAPs and retains its owner") {
-      typeCheck(s"""
-        $addition
-        $holder
-        fn example(flag: Bool): Int = $qualifier.f 3 4;;
-      """).map { typed =>
-        assert(!typed.hasErrors, typed.errors)
-        val elaborated = PartialApplicationElaborator.rewriteModule(typed)
-        assertStable(typed, elaborated)
-        val body = member(elaborated, "example").value
-        assertEquals(partials(body).size, 2)
-        val selections = TermTraversal.collect(body) {
-          case ref: Ref if ref.qualifier.nonEmpty => ref
-        }
-        assertEquals(selections.size, 1)
-        selections.head.qualifier match
-          case Some(owner: Ref) =>
-            assert(owner.resolvedId.flatMap(elaborated.module.resolvables.lookup).nonEmpty)
-          case other => fail(s"Expected a bound qualifier owner, found $other")
-        if label == "conditional" then
-          val branches = TermTraversal.collect(body) { case cond: Cond => cond }
-          assertEquals(branches.size, 1)
-          assertEquals(partials(branches.head.ifTrue).size, 2)
-          assertEquals(partials(branches.head.ifFalse).size, 0)
-      }
+      assertEquals(addPartial.params.size, 1)
+      assertEquals(packPartial.params.size, 1)
+      assert(addPartial.meta.exists(_.isPartialApplication))
+      assert(packPartial.meta.exists(_.isPartialApplication))
+      assertBoundQualifier(body, elaborated.module)
+      assertStable(typed, elaborated)
     }
   }
+
+  test("a conditional qualifier preserves partial calls and a bare function in separate branches") {
+    val source = """
+      fn add(a: Int, b: Int): Int = a + b;;
+      struct Holder { f: Int -> Int -> Int };
+      fn pack(~f: Int -> Int, n: Int): Holder = let result = f n; Holder add;;
+      fn example(flag: Bool): Int =
+        (if flag then { a: Int -> pack (add a); } 1 2; else Holder add;).f 3 4;
+      ;
+    """
+    typeCheck(source).map { typed =>
+      assertEquals(typed.errors, Vector.empty)
+      val elaborated = PartialApplicationElaborator.rewriteModule(typed)
+      val body       = member(elaborated, "example").value
+      val branches   = TermTraversal.collect(body) { case cond: Cond => cond }
+      assertEquals(branches.size, 1)
+      val add         = member(elaborated, "add")
+      val pack        = member(elaborated, "pack")
+      val addPartial  = forwardingFunction(branches.head.ifTrue, add)
+      val packPartial = forwardingFunction(branches.head.ifTrue, pack)
+      val addValue    = forwardingFunction(branches.head.ifFalse, add)
+
+      assertEquals(addPartial.params.size, 1)
+      assertEquals(packPartial.params.size, 1)
+      assert(addPartial.meta.exists(_.isPartialApplication))
+      assert(packPartial.meta.exists(_.isPartialApplication))
+      assertEquals(addValue.params.size, 2)
+      assert(!addValue.meta.exists(_.isPartialApplication))
+      assertEquals(addValue.typeSpec, add.typeSpec)
+      assertEquals(addValue.captures, Nil)
+      assertBoundQualifier(body, elaborated.module)
+      assertStable(typed, elaborated)
+    }
+  }
+
+  private def forwardingFunction(term: Term, target: Bnd): Lambda =
+    val matches = TermTraversal.collect(term) { case lambda: Lambda => lambda }.filter { lambda =>
+      lambda.body.terms match
+        case (app: App) :: Nil =>
+          CallableValues.application(app)._1 match
+            case ref: Ref => ref.resolvedId == target.id
+            case _ => false
+        case _ => false
+    }
+    assertEquals(matches.size, 1, s"Expected one function forwarding to ${target.name}")
+    matches.head
+
+  private def assertBoundQualifier(term: Term, module: Module): Unit =
+    val selections = TermTraversal.collect(term) {
+      case ref: Ref if ref.qualifier.nonEmpty => ref
+    }
+    assertEquals(selections.size, 1)
+    selections.head.qualifier match
+      case Some(owner: Ref) =>
+        assert(owner.resolvedId.flatMap(module.resolvables.lookup).nonEmpty)
+      case other => fail(s"Expected a bound qualifier owner, got $other")
 
   List(
     "named" -> "add 1 2",

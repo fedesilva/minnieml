@@ -143,7 +143,7 @@ class RuntimeTests extends BaseEffFunSuite:
           check (inferred == 30) + check (annotated == 30) +
           check (int32 == 30) + check (term == 30) +
           check (str_eq (int_to_str inferred) "30") +
-          check (str_eq message "hello") + check (fraction ==. 1.5);
+          check (str_eq message "hello") + check (fraction == 1.5);
         ;
       """
       val check        = "fn check(ok: Bool): Int = if ok then 0; else 1;;;"

@@ -190,6 +190,12 @@ object SourceCodeExtractor:
       case SemanticError.TypeCheckingError(error) =>
         extractTypeErrorSnippet(sourceInfo, error)
 
+      case SemanticError.ProtocolErrorFound(error, _) =>
+        error.source.spanOpt
+          .flatMap(extractSnippet(sourceInfo, _))
+          .map(s => s"\n$s")
+          .getOrElse("")
+
   /** Extract source code snippet for a type checking error */
   private def extractTypeErrorSnippet(sourceInfo: SourceInfo, error: TypeError): String =
     error match

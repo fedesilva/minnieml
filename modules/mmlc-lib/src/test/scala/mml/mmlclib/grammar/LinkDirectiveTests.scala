@@ -136,6 +136,39 @@ class LinkDirectiveTests extends BaseEffFunSuite:
     }
   }
 
+  test("a malformed link header preserves a following protocol declaration") {
+    val source = """
+      @link[42
+      protocol Keep 'T = fn keep(value: 'T): 'T; ;
+    """
+    justParse(source).map { module =>
+      assertEquals(
+        module.members.collect { case declaration: Protocol => declaration.name },
+        List("Keep")
+      )
+      val error = module.members
+        .collectFirst { case error: ParsingMemberError => error }
+        .getOrElse(fail("Expected the malformed link diagnostic"))
+      assert(!error.failedCode.exists(_.contains("protocol")))
+    }
+  }
+
+  test("a malformed link header preserves a following instance declaration") {
+    val source = """
+      @link[42
+      instance Keep Int = fn keep(value) = value;; ;
+    """
+    justParse(source).map { module =>
+      val instances = module.members.collect { case declaration: ProtocolInstance => declaration }
+      assertEquals(instances.size, 1)
+      assertEquals(instances.head.protocol.nameNode.value, "Keep")
+      val error = module.members
+        .collectFirst { case error: ParsingMemberError => error }
+        .getOrElse(fail("Expected the malformed link diagnostic"))
+      assert(!error.failedCode.exists(_.contains("instance")))
+    }
+  }
+
   test("directive is rejected inside an expression") {
     semFailed("fn bad(): Int = @link[\"x\"]; 42;;\nlet after = 1;")
   }

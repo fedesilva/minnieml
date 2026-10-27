@@ -76,6 +76,45 @@ class ExpressionSourceSpanTests extends BaseEffFunSuite:
     }
   }
 
+  test("a sole lambda owns its return annotation without copying it onto the expression"):
+    val source = "let value = { x: Int -> x; }: Int // tail\n;"
+
+    parseChecked(source).map { module =>
+      val expression = value(module)
+      val function   = lambda(expression)
+      val annotation = function.typeAsc.getOrElse(fail("Expected the lambda return annotation"))
+
+      assertEquals(expression.typeAsc, None)
+      assertEquals(function.body.typeAsc, None)
+      assertEquals(expression.typeSpec, function.typeSpec)
+      assertSpan(source, expression, 12, 33, "{ x: Int -> x; }: Int")
+      assertSpan(source, function, 12, 28, "{ x: Int -> x; }")
+      assertSpan(source, annotation, 30, 33, "Int")
+    }
+
+  test("a sole group owns its annotation while its computed type passes through the expression"):
+    val source = "let value = (1): Int // tail\n;"
+
+    parseChecked(source).map { module =>
+      val expression = value(module)
+      val group = onlyTerm(expression) match
+        case group: TermGroup => group
+        case other => fail(s"Expected an annotated group, found $other")
+      val literal    = onlyTerm(group.inner)
+      val annotation = group.typeAsc.getOrElse(fail("Expected the group annotation"))
+
+      assertEquals(expression.typeAsc, None)
+      assertEquals(group.inner.typeAsc, None)
+      assertEquals(literal.typeAsc, None)
+      assert(literal.typeSpec.nonEmpty)
+      assertEquals(group.typeSpec, literal.typeSpec)
+      assertEquals(expression.typeSpec, literal.typeSpec)
+      assertSpan(source, expression, 12, 20, "(1): Int")
+      assertSpan(source, group, 12, 15, "(1)")
+      assertSpan(source, literal, 13, 14, "1")
+      assertSpan(source, annotation, 17, 20, "Int")
+    }
+
   test("an empty tuple error retains the expression endpoint of a discarded annotation") {
     val source = "let value = ( ): Int; // next\n"
 

@@ -5,7 +5,7 @@ import mml.mmlclib.ast.{LinkEntry, Module}
 import mml.mmlclib.codegen.ClangTarget
 import mml.mmlclib.errors.{CompilationError, CompilerWarning, DiagnosticStore}
 import mml.mmlclib.parser.{ParserError, SourceInfo}
-import mml.mmlclib.semantic.{BindingIdSupply, SemanticError}
+import mml.mmlclib.semantic.{BindingIdSupply, ProtocolRegistry, SemanticError}
 
 final case class Timing(stage: String, name: String, durationNanos: Long)
 
@@ -26,7 +26,8 @@ case class CompilerState(
   resolvedTriple: Option[String]      = None,
   clangTarget:    Option[ClangTarget] = None,
   bindingIds:     BindingIdSupply     = BindingIdSupply(),
-  linkEntries:    List[LinkEntry]     = Nil
+  linkEntries:    List[LinkEntry]     = Nil,
+  protocols:      ProtocolRegistry    = ProtocolRegistry.empty
 ):
   def errors: Vector[CompilationError] = diagnostics.errors
 

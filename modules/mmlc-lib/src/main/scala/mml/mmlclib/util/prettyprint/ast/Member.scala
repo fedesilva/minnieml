@@ -29,6 +29,29 @@ def prettyPrintMember(
 ): String =
   val indentStr = "  " * indent
   member match {
+    case protocol: Protocol =>
+      val source = if showSourceSpans then printSourceOrigin(protocol.source) else ""
+      s"${indentStr}Protocol ${protocol.name} ${protocol.typeParameter.name}$source\n" +
+        protocol.signatures
+          .map(prettyPrintMember(_, indent + 1, showSourceSpans, showTypes))
+          .mkString("\n")
+
+    case signature: ProtocolSignature =>
+      val source = if showSourceSpans then printSourceOrigin(signature.source) else ""
+      val params = prettyPrintParams(signature.params, indent + 1, showSourceSpans, showTypes)
+      val result =
+        prettyPrintTypeSpec(Some(signature.returnType), showSourceSpans, showTypes, indent + 1)
+      s"${indentStr}Signature ${signature.meta.originalName}$source ($params): $result"
+
+    case instance: ProtocolInstance =>
+      val source = if showSourceSpans then printSourceOrigin(instance.source) else ""
+      val concreteType =
+        prettyPrintTypeSpec(Some(instance.concreteType), showSourceSpans, showTypes, indent + 1)
+      s"${indentStr}Instance ${instance.protocol.nameNode.value} $concreteType$source\n" +
+        instance.members
+          .map(member => prettyPrintMember(member.binding, indent + 1, showSourceSpans, showTypes))
+          .mkString("\n")
+
     case ParsingMemberError(span, message, failedCode) =>
       val spanStr = if showSourceSpans then printSourceOrigin(span) else ""
       s"${indentStr}MemberError $spanStr\n" +

@@ -9,12 +9,13 @@ enum UnresolvableTypeContext derives CanEqual:
   case Argument
   case Function
 
-private def showType(t: Type): String = t match
+private[semantic] def showType(t: Type): String = t match
   case TypeRef(_, name, _, _) => name
   case ts: TypeStruct => ts.name
   case TypeFn(_, params, ret) =>
     s"(${params.toList.map(showType).mkString(", ")}) -> ${showType(ret)}"
   case TypeUnit(_) => "Unit"
+  case TypeGroup(_, types) => s"(${types.map(showType).mkString(", ")})"
   case TypeTuple(_, elems) => s"(${elems.map(showType).mkString(", ")})"
   case NativePrimitive(_, llvm, _, _) => llvm
   case NativePointer(_, llvm, _, _) => s"*$llvm"
@@ -137,6 +138,7 @@ enum SemanticError extends CompilationError:
   case ParseTypeErrorFound(error: ParseTypeError, phase: String)
   case InvalidExpressionFound(invalidExpr: mml.mmlclib.ast.InvalidExpression, phase: String)
   case TypeCheckingError(error: TypeError)
+  case ProtocolErrorFound(error: ProtocolError, phase: String)
   case InvalidEntryPoint(msg: String, source: SourceOrigin)
   case VisibilityViolation(ref: Ref, decl: Resolvable, phase: String)
   // Ownership errors
@@ -183,6 +185,8 @@ enum SemanticError extends CompilationError:
       "Invalid expression"
     case TypeCheckingError(error) =>
       error.message
+    case ProtocolErrorFound(error, _) =>
+      error.message
     case InvalidEntryPoint(msg, _) =>
       msg
     case VisibilityViolation(ref, decl, _) =>
@@ -220,7 +224,7 @@ private def stdlibId(declSegment: String, name: String): Option[String] =
 
 private val stdlibAliasNames: Set[String] = Set("Int", "Byte", "Word")
 
-private def stdlibTypeId(name: String): Option[String] =
+private[semantic] def stdlibTypeId(name: String): Option[String] =
   val segment = if stdlibAliasNames.contains(name) then "typealias" else "typedef"
   stdlibId(segment, name)
 
@@ -453,188 +457,6 @@ def injectBasicTypes(module: Module): Module =
     resolvables = typeIndex
   )
 
-/** This is required because we don't have multiple file, cross module capabilities
-  */
-def injectStandardOperators(module: Module): Module =
-
-  val syntheticSource = SourceOrigin.Synth
-
-  // Helper to create a resolved TypeRef to a stdlib type
-  def stdlibTypeRef(name: String): TypeRef =
-    TypeRef(syntheticSource, name, stdlibTypeId(name), Nil)
-
-  // Helper function to create TypeRef for basic types
-  def intType   = stdlibTypeRef("Int")
-  def boolType  = stdlibTypeRef("Bool")
-  def floatType = stdlibTypeRef("Float")
-
-  // Helper to create a binary operator as Bnd(Lambda)
-  def mkBinOp(
-    name:       String,
-    prec:       Int,
-    assoc:      Associativity,
-    tpl:        String,
-    paramType:  Type,
-    returnType: Type
-  ): Bnd =
-    val param1 = FnParam(SourceOrigin.Synth, Name.synth("a"), typeAsc = Some(paramType))
-    val param2 = FnParam(SourceOrigin.Synth, Name.synth("b"), typeAsc = Some(paramType))
-    val body   = Expr(syntheticSource, List(NativeImpl(syntheticSource, nativeTpl = Some(tpl))))
-    val mangledName = OpMangling.mangleOp(name, 2)
-    val meta = BindingMeta(
-      origin        = BindingOrigin.Operator,
-      arity         = CallableArity.Binary,
-      precedence    = prec,
-      associativity = Some(assoc),
-      originalName  = name,
-      mangledName   = mangledName
-    )
-    val lambda = Lambda(
-      source   = SourceOrigin.Synth,
-      params   = List(param1, param2),
-      body     = body,
-      captures = Nil,
-      typeSpec = None,
-      typeAsc  = Some(returnType)
-    )
-    Bnd(
-      source     = SourceOrigin.Synth,
-      nameNode   = Name.synth(mangledName),
-      value      = Expr(syntheticSource, List(lambda)),
-      typeSpec   = None,
-      typeAsc    = Some(returnType),
-      docComment = None,
-      meta       = Some(meta),
-      id         = stdlibId("bnd", mangledName)
-    )
-
-  // Helper to create a unary operator as Bnd(Lambda)
-  def mkUnaryOp(
-    name:       String,
-    prec:       Int,
-    assoc:      Associativity,
-    tpl:        String,
-    paramType:  Type,
-    returnType: Type
-  ): Bnd =
-    val param = FnParam(SourceOrigin.Synth, Name.synth("a"), typeAsc = Some(paramType))
-    val body  = Expr(syntheticSource, List(NativeImpl(syntheticSource, nativeTpl = Some(tpl))))
-    val mangledName = OpMangling.mangleOp(name, 1)
-    val meta = BindingMeta(
-      origin        = BindingOrigin.Operator,
-      arity         = CallableArity.Unary,
-      precedence    = prec,
-      associativity = Some(assoc),
-      originalName  = name,
-      mangledName   = mangledName
-    )
-    val lambda = Lambda(
-      source   = SourceOrigin.Synth,
-      params   = List(param),
-      body     = body,
-      captures = Nil,
-      typeSpec = None,
-      typeAsc  = Some(returnType)
-    )
-    Bnd(
-      source     = SourceOrigin.Synth,
-      nameNode   = Name.synth(mangledName),
-      value      = Expr(syntheticSource, List(lambda)),
-      typeSpec   = None,
-      typeAsc    = Some(returnType),
-      docComment = None,
-      meta       = Some(meta),
-      id         = stdlibId("bnd", mangledName)
-    )
-
-  // Arithmetic operators: Int -> Int -> Int
-  val arithmeticOps = List(
-    ("*", 80, Associativity.Left, "mul %type %operand1, %operand2"),
-    ("/", 80, Associativity.Left, "sdiv %type %operand1, %operand2"),
-    ("%", 80, Associativity.Left, "srem %type %operand1, %operand2"),
-    ("+", 60, Associativity.Left, "add %type %operand1, %operand2"),
-    ("-", 60, Associativity.Left, "sub %type %operand1, %operand2"),
-    ("<<", 55, Associativity.Left, "shl %type %operand1, %operand2"),
-    (">>", 55, Associativity.Left, "ashr %type %operand1, %operand2")
-  ).map { case (name, prec, assoc, tpl) =>
-    mkBinOp(name, prec, assoc, tpl, intType, intType)
-  }
-
-  // Comparison operators: Int -> Int -> Bool
-  val comparisonOps = List(
-    ("==", 50, Associativity.Left, "icmp eq %type %operand1, %operand2"),
-    ("!=", 50, Associativity.Left, "icmp ne %type %operand1, %operand2"),
-    ("<", 50, Associativity.Left, "icmp slt %type %operand1, %operand2"),
-    (">", 50, Associativity.Left, "icmp sgt %type %operand1, %operand2"),
-    ("<=", 50, Associativity.Left, "icmp sle %type %operand1, %operand2"),
-    (">=", 50, Associativity.Left, "icmp sge %type %operand1, %operand2")
-  ).map { case (name, prec, assoc, tpl) =>
-    mkBinOp(name, prec, assoc, tpl, intType, boolType)
-  }
-
-  // Logical operators: Bool -> Bool -> Bool
-  val logicalOps = List(
-    ("and", 40, Associativity.Left, "and %type %operand1, %operand2"),
-    ("or", 30, Associativity.Left, "or %type %operand1, %operand2")
-  ).map { case (name, prec, assoc, tpl) =>
-    mkBinOp(name, prec, assoc, tpl, boolType, boolType)
-  }
-
-  // Unary arithmetic operators: Int -> Int
-  val unaryArithmeticOps = List(
-    ("-", 95, Associativity.Right, "sub %type 0, %operand"),
-    ("+", 95, Associativity.Right, "add %type 0, %operand")
-  ).map { case (name, prec, assoc, tpl) =>
-    mkUnaryOp(name, prec, assoc, tpl, intType, intType)
-  }
-
-  // Unary logical operators: Bool -> Bool
-  val unaryLogicalOps = List(
-    ("not", 95, Associativity.Right, "xor %type 1, %operand")
-  ).map { case (name, prec, assoc, tpl) =>
-    mkUnaryOp(name, prec, assoc, tpl, boolType, boolType)
-  }
-
-  // Float arithmetic: Float -> Float -> Float
-  val floatArithmeticOps = List(
-    ("+.", 60, Associativity.Left, "fadd %type %operand1, %operand2"),
-    ("-.", 60, Associativity.Left, "fsub %type %operand1, %operand2"),
-    ("*.", 80, Associativity.Left, "fmul %type %operand1, %operand2"),
-    ("/.", 80, Associativity.Left, "fdiv %type %operand1, %operand2")
-  ).map { case (name, prec, assoc, tpl) =>
-    mkBinOp(name, prec, assoc, tpl, floatType, floatType)
-  }
-
-  // Float comparison: Float -> Float -> Bool
-  val floatComparisonOps = List(
-    ("<.", 50, Associativity.Left, "fcmp olt %type %operand1, %operand2"),
-    (">.", 50, Associativity.Left, "fcmp ogt %type %operand1, %operand2"),
-    ("<=.", 50, Associativity.Left, "fcmp ole %type %operand1, %operand2"),
-    (">=.", 50, Associativity.Left, "fcmp oge %type %operand1, %operand2"),
-    ("==.", 50, Associativity.Left, "fcmp oeq %type %operand1, %operand2"),
-    ("!=.", 50, Associativity.Left, "fcmp une %type %operand1, %operand2")
-  ).map { case (name, prec, assoc, tpl) =>
-    mkBinOp(name, prec, assoc, tpl, floatType, boolType)
-  }
-
-  // Unary float: Float -> Float
-  val unaryFloatOps = List(
-    ("-.", 95, Associativity.Right, "fsub %type 0.0, %operand")
-  ).map { case (name, prec, assoc, tpl) =>
-    mkUnaryOp(name, prec, assoc, tpl, floatType, floatType)
-  }
-
-  val standardOps =
-    arithmeticOps ++ comparisonOps ++ logicalOps ++ unaryArithmeticOps ++ unaryLogicalOps ++
-      floatArithmeticOps ++ floatComparisonOps ++ unaryFloatOps
-
-  // Build resolvables index from stdlib operators
-  val opIndex = standardOps.foldLeft(module.resolvables) { (idx, bnd) =>
-    idx.updated(bnd)
-  }
-
-  module.copy(members = standardOps ++ module.members, resolvables = opIndex)
-
 /** Inject common native functions that are repeatedly defined across samples. Includes print,
   * println, readline, concat, to_string, and str_to_int functions.
   */
@@ -663,11 +485,7 @@ def injectCommonFunctions(module: Module): Module =
     memEffect:    Option[MemEffect] = None,
     nativeSymbol: Option[String]    = None
   ): Bnd =
-    val arity = params.size match
-      case 0 => CallableArity.Nullary
-      case 1 => CallableArity.Unary
-      case 2 => CallableArity.Binary
-      case n => CallableArity.Nary(n)
+    val arity = CallableArity.fromParameterCount(params.size)
     val meta = BindingMeta(
       origin        = BindingOrigin.Function,
       arity         = arity,
@@ -751,11 +569,7 @@ def injectCommonFunctions(module: Module): Module =
     returnType: Type,
     tpl:        String
   ): Bnd =
-    val arity = params.size match
-      case 0 => CallableArity.Nullary
-      case 1 => CallableArity.Unary
-      case 2 => CallableArity.Binary
-      case n => CallableArity.Nary(n)
+    val arity = CallableArity.fromParameterCount(params.size)
     val meta = BindingMeta(
       origin        = BindingOrigin.Function,
       arity         = arity,
@@ -1337,132 +1151,11 @@ def injectCommonFunctions(module: Module): Module =
 
   module.copy(members = allFunctions ++ module.members, resolvables = fnIndex)
 
-def collectBadRefs(expr: Expr, module: Module): List[Ref] =
-  expr.terms.foldLeft(List.empty[Ref]) {
-    case (acc, ref: Ref) =>
-      ref.qualifier match
-        case Some(qualifier) =>
-          val qualifierExpr = Expr(qualifier.source, List(qualifier))
-          acc ++ collectBadRefs(qualifierExpr, module)
-        case None =>
-          if lookupRef(ref, module).isDefined then acc
-          else ref :: acc
-    case (acc, group: TermGroup) =>
-      acc ++ collectBadRefs(group.inner, module)
-    case (acc, expr: Expr) =>
-      acc ++ collectBadRefs(expr, module)
-    case (acc, _) => acc
-  }
-
-def lookupRef(term: Ref, module: Module): Option[Member] =
-  if term.qualifier.isDefined then return None
-  // For operators, we need to match by originalName from meta
-  module.members.find {
-    case bnd: Bnd =>
-      bnd.name == term.name ||
-      bnd.meta.exists(_.originalName == term.name)
-    case _ => false
-  }
-
 def lookupNames(name: String, module: Module): Seq[Member] =
   // For operators, we need to match by originalName from meta
   module.members.collect {
     case bnd: Bnd if bnd.name == name || bnd.meta.exists(_.originalName == name) => bnd
   }
-
-// --- Extractors to cleanup pattern matching ---
-//
-// These extractors read from BindingMeta to determine operator/function properties.
-// Return type is (Ref, Bnd, precedence, associativity) for operators.
-
-/** Check if a term is an operator ref. Returns (Ref, Bnd, precedence, associativity) */
-def matchOpRef(
-  term:        Term,
-  resolvables: ResolvablesIndex
-): Option[(Ref, Bnd, Int, Associativity)] = term match
-  case ref: Ref =>
-    ref.candidateIds
-      .flatMap(resolvables.lookup)
-      .collectFirst {
-        case bnd: Bnd if bnd.meta.exists(_.origin == BindingOrigin.Operator) =>
-          bnd
-      }
-      .flatMap { bnd =>
-        bnd.meta.map(m => (ref, bnd, m.precedence, m.associativity.getOrElse(Associativity.Left)))
-      }
-  case _ => None
-
-/** Check if a term is a binary operator ref */
-def matchBinOpRef(
-  term:        Term,
-  resolvables: ResolvablesIndex
-): Option[(Ref, Bnd, Int, Associativity)] = term match
-  case ref: Ref =>
-    ref.candidateIds
-      .flatMap(resolvables.lookup)
-      .collectFirst {
-        case bnd: Bnd
-            if bnd.meta
-              .exists(m => m.origin == BindingOrigin.Operator && m.arity == CallableArity.Binary) =>
-          bnd
-      }
-      .flatMap { bnd =>
-        bnd.meta.map(m => (ref, bnd, m.precedence, m.associativity.getOrElse(Associativity.Left)))
-      }
-  case _ => None
-
-/** Check if a term is a prefix operator ref */
-def matchPrefixOpRef(
-  term:        Term,
-  resolvables: ResolvablesIndex
-): Option[(Ref, Bnd, Int, Associativity)] = term match
-  case ref: Ref =>
-    ref.candidateIds
-      .flatMap(resolvables.lookup)
-      .collectFirst {
-        case bnd: Bnd
-            if bnd.meta.exists(m =>
-              m.origin == BindingOrigin.Operator &&
-                m.arity == CallableArity.Unary &&
-                m.associativity.contains(Associativity.Right)
-            ) =>
-          bnd
-      }
-      .flatMap { bnd =>
-        bnd.meta.map(m => (ref, bnd, m.precedence, Associativity.Right))
-      }
-  case _ => None
-
-/** Check if a term is a postfix operator ref */
-def matchPostfixOpRef(
-  term:        Term,
-  resolvables: ResolvablesIndex
-): Option[(Ref, Bnd, Int, Associativity)] = term match
-  case ref: Ref =>
-    ref.candidateIds
-      .flatMap(resolvables.lookup)
-      .collectFirst {
-        case bnd: Bnd
-            if bnd.meta.exists(m =>
-              m.origin == BindingOrigin.Operator &&
-                m.arity == CallableArity.Unary &&
-                m.associativity.contains(Associativity.Left)
-            ) =>
-          bnd
-      }
-      .flatMap { bnd =>
-        bnd.meta.map(m => (ref, bnd, m.precedence, Associativity.Left))
-      }
-  case _ => None
-
-/** Check if a term is a function ref */
-def matchFnRef(term: Term, resolvables: ResolvablesIndex): Option[(Ref, Bnd)] = term match
-  case ref: Ref =>
-    ref.candidateIds.flatMap(resolvables.lookup).collectFirst {
-      case bnd: Bnd if bnd.meta.exists(_.origin == BindingOrigin.Function) =>
-        (ref, bnd)
-    }
-  case _ => None
 
 object IsAtom:
   def unapply(term: Term): Option[Term] = term match

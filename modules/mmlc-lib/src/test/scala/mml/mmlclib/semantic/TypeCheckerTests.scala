@@ -764,8 +764,11 @@ class TypeCheckerTests extends BaseEffFunSuite:
     }
   }
 
-  List("2147483648", "-2147483649", "99999999999999999999999999999999").foreach { literal =>
-    test(s"out-of-range literal $literal reports a diagnostic") {
-      semFailed(s"let invalid = $literal; let after = 42;")
-    }
-  }
+  test("a positive integer above Int32.MaxValue reports a diagnostic"):
+    semFailed("let invalid = 2147483648; let after = 42;")
+
+  test("a negative integer below Int32.MinValue reports a diagnostic"):
+    semFailed("let invalid = -2147483649; let after = 42;")
+
+  test("an integer magnitude beyond Long range reports a diagnostic"):
+    semFailed("let invalid = 99999999999999999999999999999999; let after = 42;")

@@ -20,6 +20,8 @@ import MmlWhitespace.*
 private[parser] def membersP(info: SourceInfo)(using P[Any]): P[Member] =
   P(
     misplacedLinkP(info) |
+      protocolP(info) |
+      instanceP(info) |
       binOpDefP(info) |
       unaryOpP(info) |
       letBindingP(info) |
@@ -157,11 +159,7 @@ private[parser] def fnDefP(info: SourceInfo)(using P[Any]): P[Member] =
             bodyExpr,
             parameters.error.toList ++ equalsError.toList ++ endError.toList
           )
-          val arity = parameters.values.size match
-            case 0 => CallableArity.Nullary
-            case 1 => CallableArity.Unary
-            case 2 => CallableArity.Binary
-            case n => CallableArity.Nary(n)
+          val arity = CallableArity.fromParameterCount(parameters.values.size)
           val meta = Option.when(parameters.complete)(
             BindingMeta(
               origin        = BindingOrigin.Function,
@@ -274,8 +272,8 @@ private[parser] def binOpDefP(info: SourceInfo)(using P[Any]): P[Member] =
         case Right(opName) =>
           val bndSpan     = name.location
           val lambdaSpan  = span(lambdaStart, bodyEnd)
-          val opPrec      = precedence.getOrElse(50)
-          val opAssoc     = assoc.getOrElse(Associativity.Left)
+          val opPrec      = precedence.getOrElse(OperatorDefaults.precedence)
+          val opAssoc     = assoc.getOrElse(OperatorDefaults.associativity(2))
           val mangledName = OpMangling.mangleOp(opName, 2)
           val nameN       = Name(name.location, mangledName)
           val meta = BindingMeta(
@@ -363,8 +361,8 @@ private[parser] def unaryOpP(info: SourceInfo)(using P[Any]): P[Member] =
         case Right(opName) =>
           val bndSpan     = name.location
           val lambdaSpan  = span(lambdaStart, bodyEnd)
-          val opPrec      = precedence.getOrElse(50)
-          val opAssoc     = assoc.getOrElse(Associativity.Right)
+          val opPrec      = precedence.getOrElse(OperatorDefaults.precedence)
+          val opAssoc     = assoc.getOrElse(OperatorDefaults.associativity(1))
           val mangledName = OpMangling.mangleOp(opName, 1)
           val nameN       = Name(name.location, mangledName)
           val meta = BindingMeta(
