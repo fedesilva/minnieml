@@ -2,6 +2,12 @@
 
 Durable product changes belong here. Current task state belongs in task files.
 
+## 2026-10-26
+
+- Add Zed tasks for executable and library compilation, cleaning, AST and IR generation,
+  and following the compiler server log. Document the task picker, keybindings, native
+  restart and protocol-log actions, and consistent LLVM toolchain setup.
+
 ## 2026-10-25
 
 - Preserve resolved type identity across heap, destruction, clone, and native-representation

@@ -1,0 +1,86 @@
+[
+  {
+    "label": "MML: Compile to Binary",
+    "command": "mmlc",
+    "args": [
+      "$ZED_FILE"
+    ],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "save": "current",
+    "reveal": "always",
+    "hide": "never",
+    "show_summary": true,
+    "show_command": true
+  },
+  {
+    "label": "MML: Compile as Library",
+    "command": "mmlc",
+    "args": [
+      "--target-type",
+      "lib",
+      "$ZED_FILE"
+    ],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "save": "current",
+    "reveal": "always",
+    "hide": "never",
+    "show_summary": true,
+    "show_command": true
+  },
+  {
+    "label": "MML: Clean Build Directory",
+    "command": "mmlc",
+    "args": [
+      "clean"
+    ],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "save": "none",
+    "reveal": "always",
+    "hide": "never",
+    "show_summary": true,
+    "show_command": true
+  },
+  {
+    "label": "MML: Generate AST",
+    "command": "mmlc",
+    "args": [
+      "ast",
+      "$ZED_FILE"
+    ],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "save": "current",
+    "reveal": "always",
+    "hide": "never",
+    "show_summary": true,
+    "show_command": true
+  },
+  {
+    "label": "MML: Generate IR",
+    "command": "mmlc",
+    "args": [
+      "ir",
+      "$ZED_FILE"
+    ],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "save": "current",
+    "reveal": "always",
+    "hide": "never",
+    "show_summary": true,
+    "show_command": true
+  },
+  {
+    "label": "MML: Follow Server Log",
+    "command": "tail",
+    "args": [
+      "-n",
+      "200",
+      "-F",
+      "build/lsp/server.log"
+    ],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "reveal": "always",
+    "hide": "never",
+    "show_summary": true,
+    "show_command": true
+  }
+]

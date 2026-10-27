@@ -56,6 +56,97 @@ dev-extension rebuild command on its source folder. The empty grammar source
 fields in the manifest are unused when loading the supplied WebAssembly file.
 Use **zed: open log** to investigate loading errors.
 
+## Compiler commands
+
+These commands appear in Zed's task picker, not directly in the command palette.
+Zed extension API 0.7.0 cannot register custom palette actions.
+
+With a saved `.mml` file active, press **Cmd-Shift-P**, run **task: spawn**,
+then search for `MML:` in the task picker.
+The extension supplies these tasks in every project; no project task file is needed.
+
+| VS Code command | Zed operation | Compiler command |
+| --- | --- | --- |
+| Restart Language Server | **editor: restart language server** | Zed restarts its managed server |
+| Compile to Binary | **MML: Compile to Binary** | `mmlc <file>` |
+| Compile as Library | **MML: Compile as Library** | `mmlc --target-type lib <file>` |
+| Clean Build Directory | **MML: Clean Build Directory** | `mmlc clean` |
+| Generate AST | **MML: Generate AST** | `mmlc ast <file>` |
+| Generate IR | **MML: Generate IR** | `mmlc ir <file>` |
+
+Compilation tasks save the current buffer and use its absolute file path. They run
+from the active project's root and write to `build/`. Clean removes that entire
+build directory. Avoid running clean while a compilation is in progress. Restart
+the language server after clean to recreate its log file.
+
+Tasks run the installed `mmlc` on the terminal's PATH independently of the language
+server. They do not read `lsp.mml.binary.path`, `arguments`, or `env`. For a custom
+compiler path or environment, use **zed: open project tasks** and define a task
+with a distinct label and your command/environment, then bind that label instead.
+Keep the compiler used by tasks and the language server aligned.
+
+Use one LLVM installation for `clang`, `llvm-as`, `llvm-link`, `opt`, and `llc`.
+On macOS with Homebrew LLVM, put its `bin` directory before Apple's tools in your
+shell PATH, then restart Zed so its terminals inherit that environment:
+
+```sh
+export PATH="$(brew --prefix llvm)/bin:$PATH"
+```
+
+Apple Clang 21 combined with Homebrew LLVM 23 can fail executable generation with
+`Unsupported stack probing method`; the complete Homebrew LLVM 23 toolchain passes
+the command smoke check. The compiler also currently fails native builds when the
+build-directory path contains spaces. These are compiler/toolchain limitations.
+
+Results, compiler errors, the executed command, and the exit summary stay in the
+terminal. AST and IR commands print their output paths; open those files through
+Zed's file finder. These operations do not automatically open generated files.
+
+For optional shortcuts, add entries to **zed: open keymap**:
+
+```json
+[
+  {
+    "context": "Editor && language == MinnieML",
+    "bindings": {
+      "alt-m b": ["task::Spawn", { "task_name": "MML: Compile to Binary" }],
+      "alt-m l": ["task::Spawn", { "task_name": "MML: Compile as Library" }],
+      "alt-m c": ["task::Spawn", { "task_name": "MML: Clean Build Directory" }],
+      "alt-m a": ["task::Spawn", { "task_name": "MML: Generate AST" }],
+      "alt-m i": ["task::Spawn", { "task_name": "MML: Generate IR" }],
+      "alt-m r": "editor::RestartLanguageServer",
+      "alt-m o": ["task::Spawn", { "task_name": "MML: Follow Server Log" }],
+      "alt-m p": "dev::OpenLanguageServerLogs"
+    }
+  }
+]
+```
+
+See [Zed tasks](https://zed.dev/docs/tasks) for task overrides and keybindings.
+
+## Logs
+
+- **dev: open language server logs** opens Zed's protocol-log viewer. Select the
+  MinnieML server; enable RPC tracing there when investigating requests, responses,
+  or diagnostic notifications. Reproduce the issue after enabling tracing.
+- **MML: Follow Server Log** in **task: spawn** shows the last 200 lines of
+  `build/lsp/server.log` and follows new messages. This contains the compiler's
+  server startup, document processing, diagnostic counts, and errors, including
+  debug messages. Stop following with Ctrl-C. Before the server creates its log,
+  `tail` reports the missing file and waits for it. `-F` follows log replacement
+  after restart/rotation. The path assumes the server uses the project root as
+  its working directory and the default build directory.
+- **zed: open log** shows Zed's own log, useful for extension-loading and server
+  launch failures.
+- Compiler task output stays in its terminal tab; it is separate from server logs
+  because tasks invoke the CLI directly.
+
+MML writes its detailed log to a file, not to the protocol stream. Cleaning
+`build/` removes that file; the running server retains its old file handle until
+restarted. Use **editor: restart language server** after clean, then reopen or
+continue the follow-log task. See [Zed's actions](https://zed.dev/docs/all-actions)
+for the native log-viewer and restart commands.
+
 ## Grammar scope
 
 The reusable grammar lives in `../tree-sitter-mml`. Its generated C parser and
