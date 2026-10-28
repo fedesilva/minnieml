@@ -46,7 +46,8 @@ protocol Semigroup 'T =
 ;
 
 // Monoid requires 'T to also satisfy Semigroup.
-protocol Monoid 'T: Semigroup =
+protocol Monoid 'T
+  where 'T: Semigroup =
   fn empty(): 'T;
 ;
 
@@ -56,22 +57,26 @@ protocol Functor 'F =
 ;
 
 // Apply requires 'F to also satisfy Functor.
-protocol Apply 'F: Functor =
+protocol Apply 'F
+  where 'F: Functor =
   fn ap(functions: 'F ('A -> 'B), values: 'F 'A): 'F 'B;
 ;
 
 // Applicative requires 'F to also satisfy Apply.
-protocol Applicative 'F: Apply =
+protocol Applicative 'F
+  where 'F: Apply =
   fn pure(value: 'A): 'F 'A;
 ;
 
 // FlatMap requires 'F to also satisfy Functor.
-protocol FlatMap 'F: Functor =
+protocol FlatMap 'F
+  where 'F: Functor =
   fn flatMap(f: 'A -> 'F 'B, values: 'F 'A): 'F 'B;
 ;
 
 // Monad requires 'M to also satisfy Functor, FlatMap, and Applicative.
-protocol Monad 'M: Functor & FlatMap & Applicative;
+protocol Monad 'M
+  where 'M: Functor & FlatMap & Applicative;
 
 protocol Foldable 'F =
   fn foldLeft(f: 'B -> 'A -> 'B, initial: 'B, values: 'F 'A): 'B;
@@ -127,7 +132,8 @@ instance Applicative Maybe =
 instance Monad Maybe =
 ;
 
-protocol Something 'T: Semigroup =
+protocol Something 'T
+  where 'T: Semigroup =
   fn combineWithPlus(left: 'T, right: 'T): 'T = left + right;;
   // Example of operator definitions using protocols
   // Here the precedence and associativity are randomly
@@ -142,7 +148,8 @@ union Option 'T =
   | None
 ;
 
-instance Semigroup (Option 'T: Semigroup) =
+instance Semigroup (Option 'T)
+  where 'T: Semigroup =
   fn combine(left: Option 'T, right: Option 'T): Option 'T =
     match left with
       | Option.None -> right;
@@ -155,10 +162,10 @@ instance Semigroup (Option 'T: Semigroup) =
   ;
 ;
 
-// Multiple constraints apply to the element type, for example:
-// instance Semigroup (Option 'T: Semigroup & Clone) = ...
+// Type parameters can be constrained using the `where` clause.
+// protocol Combine 'T
+//   where 'T: Semigroup = ...
 
-// Function constraints follow the signature, for example:
 // fn empty(x: Maybe 'T): Bool
 //   where 'T: Clone = ...
-// Multiple requirements use the same form: where 'T: Semigroup & Clone.
+// Multiple requirements use the intersection sigil: where 'T: Semigroup & Clone.

@@ -4,6 +4,10 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-10-27
 
+- Explain protocol checking, concrete signatures, instance lowering, and diagnostic recovery
+  beside their implementation. Use `where` consistently for proposed protocol and instance
+  constraints in the language draft and standard-library sketch.
+
 - Add protocol signatures and concrete instances with type-directed function and operator
   selection. Supply Int and Float arithmetic through Num, migrate numeric samples to unified
   operators, and share ordinary function-value and partial-application lowering.

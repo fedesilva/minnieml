@@ -109,14 +109,17 @@ fn combine(left: Option 'T, right: Option 'T): Option 'T
 These headers illustrate constraint placement; checking whether an option is empty
 does not itself require cloning. Multiple constraints on one variable use `&`.
 
-Protocol and instance headers retain constraints on their parameters, using `:` and `&`:
+Protocol and instance headers use the same `where` clause before `=` (or the
+terminating `;` for a bodyless declaration):
 
 ```text
-protocol Monoid 'T: Semigroup =
+protocol Monoid 'T
+  where 'T: Semigroup =
   fn empty(): 'T;
 ;
 
-instance Semigroup (Option 'T: Semigroup) = ...
+instance Semigroup (Option 'T)
+  where 'T: Semigroup = ...
 ```
 
 The instance header introduces `'T`; the constraint applies to that element type.
@@ -188,7 +191,7 @@ polymorphic function values or inference across separate definitions.
 ## Protocol requirements and default implementations
 
 A protocol constraint requires a separate instance for the same type. For example,
-`Monoid 'T: Semigroup` requires `Semigroup Int` before `Monoid Int` can be satisfied.
+`Monoid 'T where 'T: Semigroup` requires `Semigroup Int` before `Monoid Int` can be satisfied.
 The Monoid instance implements its own members; it cannot replace the Semigroup
 instance's `combine`. Defining `combine` inside `instance Monoid Int` is an error.
 There is one meaning for that operation, whether the caller
@@ -300,9 +303,10 @@ is required for defaults; it does not add general polymorphic functions to the f
 
 Expected result types must reach application candidate selection. The current
 [TypeChecker](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/TypeChecker.scala)
-passes expected types through expressions, but `checkNormalApplication` does not receive
-the application's expected result type. Extending that path is an implementation prerequisite
-for selecting `Monoid Int` from `let zero: Int = empty ();`.
+passes them through expressions and application checking into protocol signature matching.
+This lets a result annotation select a concrete instance for a nullary call, as covered by
+`let result: Bool = empty ();` in
+[ProtocolSelectionTests](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/ProtocolSelectionTests.scala).
 
 Choose the lowering strategy during implementation planning. Emitting concrete functions
 for selected instances and specializing default bodies is a candidate for the initial
