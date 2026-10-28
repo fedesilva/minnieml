@@ -22,11 +22,14 @@
 8. [x] **complete** — [P4: Select concrete members using arguments and expected types](#p4-type-directed-selection-and-lowering).
 9. [x] **complete** — [P5: Deliver Num and migrate numeric operators](#p5-num-and-numeric-migration).
 10. [ ] **ready_for_signoff** — [P6: Review the verified Num deliverable](#p6-num-review-checkpoint).
-    - **ready_for_signoff** — [Repair protocol error recovery and integration](protocols-review-repairs.md).
 11. [ ] **planned** — [P6a: Infer concrete protocol functions from local binding uses](#p6a-local-inference-through-bindings).
-12. [ ] **planned** — [P7: Integrate explicit Clone and generated instances](#p7-explicit-clone).
-13. [ ] **planned** — [P8: Require explicit cloning for global ownership transfers](#p8-global-ownership-transfers).
-14. [ ] **planned** — [P9: Complete documentation, verification, and final review](#p9-final-verification-and-documentation).
+12. [ ] **planned** — [P9: Complete documentation, verification, and final review](#p9-final-verification-and-documentation).
+
+Note:  Move the following items to their own task, link after this one in tracker.
+
+1. [ ] **planned** — [P7: Integrate explicit Clone and generated instances](#p7-explicit-clone).
+2. [ ] **planned** — [P8: Require explicit cloning for global ownership transfers](#p8-global-ownership-transfers).
+
 
 ## Problem
 
@@ -332,8 +335,8 @@ explicitly declared by the program. Current shipped programs use the supported s
 
 ### P6: Num review checkpoint
 
-- Verify and review [protocol error recovery and integration repairs](protocols-review-repairs.md)
-  before signoff. The child task records the corrections and renewed compiler-gate results.
+- [Protocol error recovery and integration repairs](protocols-review-repairs.md) are complete
+  and signed off. The child task records the corrections and renewed compiler-gate results.
 - Resolve broader choices through [separate design discussions](protocols-design-discussions.md),
   one topic per iteration. Function-value wrapping stays in place pending its discussion.
 - Run the applicable compiler verification and review gates described under P9 for P0 through
@@ -715,8 +718,9 @@ The definitions in
 represent protocols, signatures, and instances as declarations. P0 is verified and
 signed off. P0b is verified and signed off; P1 parsing and P2 signature checking/lowering are
 complete. P3 lookup and operator grouping are verified and complete. P4 type-directed selection
-is complete. P5 Num integration is complete. P6 repairs, renewed compiler verification, and
-independent review pass; Author signoff remains pending.
+is complete. P5 Num integration is complete. P6 error-recovery repairs and four additional standalone
+corrections pass compiler and Linux verification and independent review and are signed off.
+The broader Num checkpoint signoff remains pending.
 P6a and P7–P9 remain pending. The verification above does not cover local binding inference.
 
 ## Risks / Notes
@@ -735,30 +739,30 @@ Incidental findings and their fix status are collected in [Bug notes](bug-notes.
 
 - Workstream signoff: Bounded plan, P0 AST shape, and P0b lookup API approved. P0 and P0b
   verification and independent review are complete.
-- Num deliverable (P6): ready_for_signoff; repairs, verification, and independent review pass.
-  Author signoff is pending.
+- Num deliverable (P6): ready_for_signoff. The repair child, including the four standalone
+  corrections, is complete and signed off; broader Num checkpoint signoff remains pending.
 - Tracked item completion: Pending.
-- Commit authorization: granted for the implemented protocol/Num checkpoint and related records.
-  Synchronization is authorized. Task completion and Num signoff remain pending.
+- Commit authorization: granted for all implemented corrections and related records.
+  Push is not authorized. Parent task completion and Num checkpoint signoff remain pending.
 
 ## Task Working Memory
 
 P0 and P0b are verified, signed off, and committed in `98e4c831` and `be195134`.
-The implemented P1–P6 review checkpoint is committed in `7ce9c5dd`. P1–P5 are complete. P6 and its
-[review repairs](protocols-review-repairs.md) are ready for Author signoff;
-stop before P7 Clone. Commit and synchronization are authorized for this review checkpoint;
-the task remains open.
+The implemented P1–P6 review checkpoint is committed in `7ce9c5dd`. P1–P5 are complete.
+The [review repairs](protocols-review-repairs.md), including all four standalone corrections,
+are complete and signed off. P6 Num checkpoint signoff remains pending. Stop before local
+binding inference and Clone integration. The parent task remains open.
 
 P6a extends the scope with best-effort local inference of one concrete protocol function from
 later binding uses, independent of full SimpSeq. Its implementation design and verification
 are pending. Next action for P6a: define the bounded local propagation strategy and stopping
 conditions for approval. P6 signoff remains a separate pending gate before proceeding.
 
-The separate factorial-sample experiment in `db47e15a` removes grouping from the return annotation.
-`mmlc run mml/samples/partial-fac2-escape.mml` reports expected `Int`, got `(Int) -> Int`;
-the grouped-annotation control prints `120` and `6`. This experiment is preserved for review,
-outside the verified compiler repair scope. The function-type boundary belongs to the
-[callable representation discussion](protocols-design-discussions.md#4-which-callable-operations-should-share-one-api).
+The separate factorial sample omits the `make_fac` annotation.
+`sbtn 'run run mml/samples/partial-fac2-escape.mml'` prints `120` and `6`.
+The uncommented `println consumed_text` in `mml/samples/pap-ownership.mml` is rejected as a
+use after move by `sbtn 'run mml/samples/pap-ownership.mml'`. These sample edits are preserved
+separately from the compiler repair scope; the PAP sample is not a passing runnable fixture.
 
 Protocols, signatures, and instances are declarations. Protocols constrain a single type
 parameter; they are not ordinary value types. Required signatures and concrete instances are
@@ -791,10 +795,14 @@ for the known 1,000-let stack limitation; complete comparison evidence is under 
 B10–B13, B15, and B17 are corrected and verified. The B14 failed-operand repair passes focused
 and full tests and independent review. Findings and follow-up links are in [Bug notes](bug-notes.md).
 
-P6 review repairs pass all compiler gates: 366 focused tests, 2,277 library/9 CLI full-suite tests,
-eight smoke fixtures, local publishing, benchmark compilation, and 52 ASan/LSan memory fixtures.
-Formatting and linting pass. Fresh primary repair review and separate QA/style, test-quality,
-and human-readability checks complete with no actionable findings. Author review is next.
+The four standalone P6 corrections cover inference shadowing, native instance symbols, editor
+protocol syntax, and the expected-result description. Verification passes 2,292 library/9 CLI tests,
+eight smoke fixtures, local publishing, benchmark compilation, 52 ASan/LSan memory fixtures,
+and all 27 affected execution tests in each Linux builder. Formatting, linting, and grammar checks
+pass. Fresh narrow primary review and separate QA/style, test-quality, and readability checks
+complete without actionable findings. The repair child is signed off and complete; broader Num
+checkpoint review remains next. Optional cloud verification is deferred.
+Detailed commands, toolchains, and limits are in the repair task.
 Broader design choices have separate discussion subtasks.
 No ABI layout or calling-convention changes are present.
 P6a adds local binding inference before P7 integrates Clone; P8 requires explicit cloning

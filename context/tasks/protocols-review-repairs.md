@@ -3,7 +3,7 @@
 ## Metadata
 
 - **Owner:** The Author
-- **Status:** ready_for_signoff
+- **Status:** complete
 - **Kind:** CORRECTNESS
 - **Priority:** HIGH
 - **Created:** 2026-10-27
@@ -16,7 +16,8 @@
 2. [x] **complete** — Prevent repeated checking of nested expressions containing a type error.
 3. [x] **complete** — Repair entry-point selection, editor references, and declaration recovery.
 4. [x] **complete** — Add integration coverage, correct the grouping diagnostic cascade, and consolidate identical small rules.
-5. [ ] **ready_for_signoff** — Compiler gates and independent review pass; obtain Author review.
+5. [x] **complete** — Repair lexical inference identity, native instance symbols, editor protocol syntax, and the expected-result description.
+6. [x] **complete** — Pass compiler gates and independent review; obtain Author signoff.
 
 ## Problem
 
@@ -115,7 +116,7 @@ The descriptions above are authoritative; these labels only support comparison w
 | Heap execution, grouping, diagnostic coverage, shared test runner | T1–T4, T6 |
 | Identical small rules and focused readability | V1, V3–V5, V8–V10, V13, V16–V17, V25, V27, V32, V34 |
 
-## Verification
+## Error-recovery checkpoint verification
 
 Pre-repair source inspection independently confirmed the two registration/lookup failure paths and
 repeated checking of failed nested expressions. Entry-point execution and editor-reference
@@ -166,19 +167,69 @@ primary uses only the supplied review protocol and preserves the unaffected inde
 Review is static; the execution evidence above supplies the build, runtime, sanitizer, and bounded
 timing results.
 
+## Standalone protocol corrections
+
+Lambda inference keys constraints and lexical aliases by resolved binding identity. A nested Float
+binding cannot constrain an outer same-name Bool parameter; aliases retain their lexical scope.
+The regressions cover Num and named members in both statement orders, alias shadowing, missing
+outer evidence, and real conflicting constraints. Native instance lowering preserves the source
+external symbol for bare `@metal:ffi`, retaining explicit names and template metadata. Direct calls
+and function values exercise ordinary, implicit-instance, explicit-instance, and template cases.
+
+The Tree-sitter grammar accepts protocol and instance declarations, bodyless signatures, and type
+variables. Regenerated parser artifacts and Zed queries support their highlighting, outline, and
+indentation. Five corpus cases cover the added syntax and missing-signature-type recovery; both
+tracked protocol examples are reference inputs. A missing final protocol terminator can still absorb
+a following instance into an error node; general incomplete-block recovery is outside this repair.
+The protocol draft describes the implemented expected-result path and its nullary-selection test.
+
+Verification on macOS arm64 with Clang/LLVM 23.1.1 and Tree-sitter 0.27.0:
+
+- The inference regression run fails four of 85 cases before the correction. The corrected
+  `sbtn 'testOnly mml.mmlclib.semantic.NumSelectionTests mml.mmlclib.semantic.ProtocolSelectionTests mml.mmlclib.semantic.TypeCheckerTests'`
+  passes all 140 cases.
+- The implicit native-instance case fails symbol assertions and executable linking before the
+  correction; its three controls pass. The corrected
+  `sbtn 'testOnly mml.mmlclib.semantic.ProtocolCheckerTests mml.mmlclib.codegen.ProtocolExecutionTests'`
+  passes all 63 cases.
+- `sbtn 'scalafmtAll; scalafixAll'`, all eight smoke fixtures, and local publishing pass.
+- `sbtn testFull` passes 2,292 library and 9 CLI tests. Fifteen added test declarations account
+  for the increase from the 2,277-library-test error-recovery checkpoint. New inference executions
+  pass at O0/O3; native-symbol executions pass at O0, with address and leak sanitizer checks.
+- `make -C benchmark clean` and `make -C benchmark mml` pass. No performance measurements are claimed.
+- `./tests/mem/run.sh all` passes all 52 ASan/LSan fixtures in 77 seconds.
+- `bash tooling/zed/test.sh` passes all 16 corpus cases, eight reference programs, and four queries.
+  Outline, indentation, and named/unary operator highlight captures are inspected.
+- Both Linux builders pass all 27 tests from
+  `sbtn 'testOnly mml.mmlclib.codegen.ProtocolExecutionTests mml.mmlclib.codegen.NumExecutionTests'`,
+  invoked sequentially with `docker compose exec -T <service> bash -lc`.
+  `mml-linux-arm64` executes Linux aarch64 on native ARM hardware; `mml-linux-amd64` executes Linux
+  x86-64 under Docker/Rosetta emulation. Both use Ubuntu Clang/LLVM 20.1.8 and GraalVM JDK 25.0.4.1.1.
+  These are executed fixtures, not cross-compilation-only checks; emulated timings are not performance
+  evidence. No ABI layout or calling-convention changes are present.
+- Implementation QA and `git diff --check` pass. Fresh narrow primary review and separate fresh
+  QA/style, test-quality, and human-readability checks complete with no actionable findings.
+  No claim verifiers are needed because no candidates remain. Independent scratch regeneration
+  matches all three generated Tree-sitter artifacts byte-for-byte; all 16 corpus cases and inspected
+  outline/indentation captures pass. The review uses the compiler, sanitizer, and Linux execution
+  evidence above without rerunning unchanged suites.
+- Optional cloud verification is deferred; no hosted run is dispatched.
+- Final `sbtn 'scalafmtAll; scalafixAll; compile'` passes after the private
+  `ProtocolCheckState` rename and documentation pass. Executable tokens are unchanged apart
+  from the rename; the compiler, sanitizer, grammar, and Linux results above cover the fixes.
+
 ## Approval and signoff
 
 - Implementation: approved for immediately relevant protocol defects, regressions, and local cleanup.
 - Design follow-ups and unrelated repairs: separate approval required.
-- Workstream signoff: pending.
-- Tracked item completion: pending.
-- Commit authorization: granted for the review checkpoint; task completion remains pending.
+- Workstream signoff: approved for the error-recovery repairs and four standalone corrections.
+- Tracked item completion: complete.
+- Commit authorization: granted for all repairs and related records. Push is not authorized.
 
 ## Task Working Memory
 
-The repairs and coverage are ready for Author review. All 366 focused tests, 2,277 library/9 CLI
-full-suite tests, eight smoke fixtures, benchmark compilation, and 52 memory fixtures pass.
-Local publishing and formatting/linting pass. Independent primary review and all three separate
-dedicated checks complete without actionable findings. Commit and synchronization are authorized;
-Author signoff remains pending.
-Stop before Clone integration and the separate design-discussion iterations.
+The error-recovery repairs and four standalone corrections are complete and signed off.
+Compiler, sanitizer, grammar, required Linux checks, and independent review pass as recorded above.
+Optional cloud verification is deferred. No implementation work remains in this task.
+The parent Protocols task stays open: Num checkpoint signoff, local binding inference, Clone
+integration, and separate design discussions remain outside this closure.

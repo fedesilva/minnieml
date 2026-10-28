@@ -4,6 +4,10 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-10-27
 
+- Keep lambda inference tied to resolved bindings across shadowing and preserve external symbols
+  for native protocol instances. Add protocol declarations, signatures, and type variables to
+  the Tree-sitter grammar and Zed highlighting, outlines, and indentation.
+
 - Explain protocol checking, concrete signatures, instance lowering, and diagnostic recovery
   beside their implementation. Use `where` consistently for proposed protocol and instance
   constraints in the language draft and standard-library sketch.

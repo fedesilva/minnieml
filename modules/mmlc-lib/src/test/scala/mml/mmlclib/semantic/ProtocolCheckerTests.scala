@@ -128,6 +128,45 @@ class ProtocolCheckerTests extends BaseEffFunSuite:
       )
     }
 
+  List(
+    ("implicit FFI", "@metal:ffi[mem=static]", Some("abs")),
+    ("explicit FFI", """@metal:ffi[name="host_abs", mem=static]""", Some("host_abs")),
+    ("unnamed template", """@metal:tpl["add i32 %operand, 0", mem=static]""", None),
+    (
+      "named template",
+      """@metal:tpl["add i32 %operand, 0", name="template_metadata", mem=static]""",
+      Some("template_metadata")
+    )
+  ).foreach { (label, implementation, expectedSymbol) =>
+    test(s"lowering preserves $label symbol semantics and declaration identity"):
+      val source = s"""
+        protocol Absolute 'T = fn abs(value: 'T): 'T; ;
+        instance Absolute Int = fn abs(value) = $implementation;; ;
+      """
+      parseNotFailed(source).map { parsed =>
+        val initial         = phaseInput(source, parsed)
+        val originalBinding = instances(initial.module).head.members.head.binding
+        val originalLambda  = lambda(originalBinding)
+        val originalNative  = nativeImplementation(originalBinding)
+
+        val result  = ProtocolChecker.rewriteModule(initial)
+        val binding = protocolImplementation(result, "Absolute", "Int", "abs")
+        val body    = lambda(binding)
+        val native  = nativeImplementation(binding)
+        val again   = ProtocolChecker.rewriteModule(result)
+
+        assertEquals(result.errors, Vector.empty)
+        assertEquals(binding.id, originalBinding.id)
+        assertEquals(body.params.map(_.id), originalLambda.params.map(_.id))
+        assertEquals(binding.id.flatMap(result.module.resolvables.lookup), Some(binding))
+        assertEquals(native.nativeSymbol, expectedSymbol)
+        assertEquals(native.copy(nativeSymbol = originalNative.nativeSymbol), originalNative)
+        assertEquals(again.errors, Vector.empty)
+        assertEquals(again.module, result.module)
+        assertEquals(again.protocols, result.protocols)
+      }
+  }
+
   test("explicit alias types and repeated operator attributes match the signature"):
     val source = """
       type Count = Int;
@@ -1178,6 +1217,10 @@ class ProtocolCheckerTests extends BaseEffFunSuite:
   private def lambda(binding: Bnd): Lambda = binding.value.terms match
     case (body: Lambda) :: Nil => body
     case other => fail(s"Expected one ordinary lambda, got $other")
+
+  private def nativeImplementation(binding: Bnd): NativeImpl = lambda(binding).body.terms match
+    case (native: NativeImpl) :: Nil => native
+    case other => fail(s"Expected one native implementation, got $other")
 
   private def functionType(tpe: Option[Type], index: ResolvablesIndex): TypeFn =
     tpe.flatMap(TypeUtils.canonical(_, index)) match

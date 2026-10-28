@@ -307,8 +307,17 @@ object ProtocolChecker:
       )
     val callable = TypeFn(binding.source, callableParams, expected.returnType)
     val name     = s"__instance_${ordinal}_${expected.signature.meta.mangledName}"
+    // A bare FFI implementation names the source function, not its private implementation binding.
+    val terms = lambda.body.terms.map {
+      case native: NativeImpl if native.nativeTpl.isEmpty =>
+        native.copy(
+          nativeSymbol = native.nativeSymbol.orElse(ProtocolRegistry.sourceName(binding).some)
+        )
+      case term => term
+    }
     val body = lambda.copy(
       params   = params,
+      body     = lambda.body.copy(terms = terms),
       typeAsc  = lambda.typeAsc.orElse(expected.returnType.some),
       typeSpec = callable.some
     )

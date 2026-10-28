@@ -1504,6 +1504,44 @@ class ProtocolSelectionTests extends BaseEffFunSuite:
       )
     }
 
+  test("named protocol inference keeps shadowed bindings separate in either statement order"):
+    val source = """
+      protocol Combine 'T = fn combine(left: 'T, right: 'T): 'T; ;
+      instance Combine Float = fn combine(left, right) = right;; ;
+
+      let before = { value ->
+        let result = (let value = 1.0; combine value 2.0);
+        let gate = not value;
+        result;
+      };
+      let after = { value ->
+        let gate = not value;
+        let result = (let value = 1.0; combine value 2.0);
+        result;
+      };
+    """
+    parseNotFailed(source).map { parsed =>
+      val initial  = prepareForTypeChecking(source, parsed)
+      val expected = protocolImplementation(initial, "Combine", "Float", "combine")
+
+      val result = TypeChecker.rewriteModule(initial)
+      val bool   = namedType("Bool", result.module)
+      val float  = namedType("Float", result.module)
+
+      assertEquals(result.errors, Vector.empty)
+      List("before", "after").foreach { name =>
+        val original = lambda(binding(initial.module, name).value)
+        val body     = lambda(binding(result.module, name).value)
+        val selected = TermTraversal.collect(body.body) {
+          case ref: Ref if ref.resolvedId == expected.id => ref
+        }
+
+        assertEquals(body.params.head.id, original.params.head.id)
+        assertEquals(computedType(body, result.module), ProtocolTypeKey.Function(List(bool), float))
+        assertEquals(selected.size, 1)
+      }
+    }
+
   private val identityInstances = """
     protocol Identity 'T = fn identity(value: 'T): 'T; ;
     instance Identity Int = fn identity(value) = value;; ;

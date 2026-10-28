@@ -186,6 +186,50 @@ class NumExecutionTests extends BaseEffFunSuite:
       )
     )
 
+  test("Num and named protocols execute with distinct shadowed parameters at O0"):
+    runSanitizedProgram(
+      shadowedParameterInference,
+      "ProtocolShadowedParametersO0",
+      optLevel       = 0,
+      expectedOutput = List("2", "2", "2")
+    )
+
+  test("Num and named protocols execute with distinct shadowed parameters at O3"):
+    runSanitizedProgram(
+      shadowedParameterInference,
+      "ProtocolShadowedParametersO3",
+      optLevel       = 3,
+      expectedOutput = List("2", "2", "2")
+    )
+
+  private val shadowedParameterInference = """
+    protocol Combine 'T = fn combine(left: 'T, right: 'T): 'T; ;
+    instance Combine Float = fn combine(left, right) = right;; ;
+
+    let numeric = { value ->
+      let result = (let value = 1.0; value + 1.0);
+      let gate = not value;
+      result;
+    };
+    let named = { value ->
+      let result = (let value = 1.0; combine value 2.0);
+      let gate = not value;
+      result;
+    };
+    let aliased = { value ->
+      let alias = value;
+      let result = (let alias = 1.0; alias + 1.0);
+      let gate = not alias;
+      result;
+    };
+
+    pub fn main(): Unit =
+      println (float_to_str (numeric true));
+      println (float_to_str (named true));
+      println (float_to_str (aliased true));
+    ;
+  """
+
   private val integerOperations = """
     fn report(value: Bool): Unit =
       if value then println "true";

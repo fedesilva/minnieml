@@ -187,6 +187,118 @@ These are short notes for later triage, not approved repair plans.
   Full-pipeline tests retain the primary conflict, unaffected unary uses, and independent errors;
   see [protocol review repairs](protocols-review-repairs.md).
 
+- **B28 — Open, P1: oversized buffered writes exceed the allocation.**
+  [buffer_write](../../modules/mmlc-lib/src/main/resources/mml_runtime.c) flushes when a write
+  exceeds the remaining capacity, then copies the entire payload into the same allocation.
+  Flushing cannot accommodate a payload larger than the buffer itself. A capacity of four and
+  the five-byte string `abcde` produce an ASan heap-buffer-overflow in `memcpy`.
+  Numeric and newline writes also fail with capacity one; exact-fit string writes and repeated
+  single-byte writes pass. Size-aware writes must handle payloads larger than the total capacity.
+
+- **B29 — Open, P1: dropping an unfilled StringArray frees uninitialized pointers.**
+  [ar_str_new](../../modules/mmlc-lib/src/main/resources/mml_runtime.c) allocates slots with
+  `malloc` without initializing them. `__free_StringArray` destroys every slot, including those
+  never assigned. Creating two slots and immediately destroying the array produces an ASan
+  invalid free from `__free_String`; filling only the first slot also fails. Empty arrays and
+  fully initialized arrays pass. Each slot needs a valid empty or initialized ownership state.
+
+- **B30 — Open, P2: dropping a local Buffer discards pending output.**
+  [__free_Buffer](../../modules/mmlc-lib/src/main/resources/mml_runtime.c) frees its data without
+  flushing, contrary to the [buffer I/O contract](../../docs/language-reference.md#buffered-io).
+  Writing `local-tail\n`, destroying the buffer, then calling `mml_sys_flush` exits successfully
+  with empty output at O0 and O3. Explicitly flushing the local buffer emits the text; the global
+  stdout buffer also works. System flushing only reaches the global buffer. A correction must
+  reconcile [StorageOnlyDestruction](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/StorageOnlyDestruction.scala),
+  which treats this destructor as having no observable effect beyond releasing storage.
+
+- **B31 — Open, P2: build-directory paths containing spaces fail LLVM assembly.**
+  [LlvmToolchain](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/LlvmToolchain.scala)
+  interpolates paths into the string command `llvm-as $sourceFile -o $outputFile` and invokes
+  `Process(cmd, dir)`, splitting spaced paths into separate arguments.
+  `sbtn 'run -v --build-dir "build/review space" tests/smoke/hola.mml'` reproduces
+  `llvm-as: Too many positional arguments`. The same source with a path without spaces passes;
+  quoted direct assembly of the generated IR passes. A spaced final `--output` with a build
+  directory without spaces also passes. Use the existing argument-vector execution API at
+  the remaining string-command sites; this finding does not establish a final-output-path bug.
+
+- **B32 — Open, P2: non-ASCII string literals produce wrong bytes or invalid LLVM IR.**
+  [escapeString](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/emitter/expression/package.scala)
+  escapes UTF-16 characters as if each were one byte. Literal array lengths in
+  [Literals](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/emitter/expression/Literals.scala)
+  and [Module](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/emitter/Module.scala)
+  likewise use character counts. A literal `λ` emits `[1 x i8] c"\3BB"`, which LLVM parses as
+  two bytes and rejects; `😀` declares two bytes but emits six. Both global and expression
+  literals are affected. `é` builds but prints byte `e9` instead of UTF-8 `c3 a9`; an ASCII
+  control prints correctly. Escape encoded bytes and derive lengths from that same byte sequence.
+
+- **B33 — Open, P2: editor compile commands do not decode file URIs.**
+  [LspHandler.uriToPath](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/lsp/LspHandler.scala)
+  strips `file://` and passes the percent-encoded remainder to path-based compilation.
+  The VS Code extension sends `uri.toString()` to binary, AST, and IR commands. Files named
+  `demo#file.mml`, `demo file.mml`, and `demo%file.mml` are therefore opened using literal
+  `%23`, `%20`, and `%25` names. JDK filesystem reproductions fail with `NoSuchFileException`,
+  while URI-decoded paths and an ordinary filename succeed. Use shared URI decoding rather
+  than prefix stripping. This is source tracing plus a filesystem reproduction; editor execution
+  was not run.
+
+### Reproduction evidence for B28–B33
+
+Independent checks confirm these findings at commit
+`4cd89e56cbb47e8a52b3103235492b6b7eca66f0` on macOS arm64 with Clang/LLVM 23.1.1.
+The unchanged compiler passes `sbtn testFull` (2,277 library and 9 CLI tests) and all eight
+smoke fixtures. These passes do not cover the failing controls above.
+
+For B28–B30, create a C fixture containing `#include "mml_runtime.c"` and one of these
+`main` definitions, then compile from the repository root with
+`clang -std=c17 -g -O0 -fsanitize=address -fno-omit-frame-pointer -I modules/mmlc-lib/src/main/resources fixture.c -o fixture`.
+The observed failures come from direct runtime execution; compiler allocation and cleanup
+paths were traced but these three cases were not run as newly compiled MML programs.
+B28 was verified at O2 with AddressSanitizer and UndefinedBehaviorSanitizer; B29 at O0 with
+AddressSanitizer; B30 at O0/O3 with AddressSanitizer and leak detection disabled.
+
+```c
+// B28: writing five bytes into a four-byte buffer triggers ASan.
+int main(void) {
+    Buffer b = mkBufferWithSize(4);
+    buffer_write(b, (String){5, "abcde"});
+    __free_Buffer(b);
+    return 0;
+}
+
+// B29: destruction visits both uninitialized elements.
+int main(void) {
+    StringArray a = ar_str_new(2);
+    __free_StringArray(a);
+    return 0;
+}
+
+// B30: no output; inserting flush(b) before destruction prints the text.
+int main(void) {
+    Buffer b = mkBuffer();
+    buffer_write(b, (String){11, "local-tail\n"});
+    __free_Buffer(b);
+    mml_sys_flush();
+    return 0;
+}
+```
+
+B32's compiler fixture is UTF-8 source. Compile it with `sbtn 'run fixture.mml'`;
+replace both occurrences of `λ` with `A`, `é`, or `😀` for the controls described above.
+Use `sbtn 'run run fixture.mml'` to inspect the successful controls' output bytes.
+
+```mml
+let greeting = "λ";
+pub fn main(): Unit =
+  println greeting;
+  println "λ";
+;
+```
+
+B33's filesystem check uses a real existing file `original`, obtains
+`u = original.toUri().toASCIIString()`, and compares
+`Files.readString(Path.of(u.substring("file://".length())))` with
+`Files.readString(Path.of(new URI(u).getPath()))` for each filename listed above.
+
 ## Scope / Approval
 
 Collect and update notes as development proceeds. Follow-up task creation and immediately relevant
@@ -215,5 +327,7 @@ B3 passed P1 full-suite and independent review. B4/B5 are covered by the 31 pass
 Append short findings with impact, evidence, and fix status. B1/B2/B16 have separate existing-bug
 tasks; B23 needs bounded parser reproduction. B14/B20/B21/B22/B24–B27 pass focused and full
 verification: 366 focused cases, 2,277 library/9 CLI tests, eight smoke fixtures, benchmark compilation,
-and all 52 memory fixtures. Independent repair review passes; Author signoff remains pending.
+and all 52 memory fixtures. The [repair task](protocols-review-repairs.md) is complete and signed off.
 Keep broad design choices in their discussion subtasks.
+B28–B33 are independently confirmed and open for runtime/tooling triage. Reproductions and
+controls are embedded above.

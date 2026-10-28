@@ -24,8 +24,8 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 
 - **Tracker:** [Implement protocols](tasks/protocols.md)
 - **Status:** in_progress
-- **Current focus:** Author review of the verified
-  [protocol repairs](tasks/protocols-review-repairs.md) and Num checkpoint before Clone integration.
+- **Current focus:** Author review of the Num checkpoint. The
+  [protocol repairs](tasks/protocols-review-repairs.md) are complete and signed off.
 
 ### Protocol navigation
 

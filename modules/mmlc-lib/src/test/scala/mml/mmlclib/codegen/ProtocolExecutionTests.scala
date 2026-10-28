@@ -5,6 +5,47 @@ import mml.mmlclib.test.BaseEffFunSuite
 
 class ProtocolExecutionTests extends BaseEffFunSuite:
 
+  List(
+    ("OrdinaryImplicitFfi", "fn abs(value: Int): Int = @metal:ffi;;", "abs"),
+    (
+      "ProtocolImplicitFfi",
+      """
+        protocol Absolute 'T = fn abs(value: 'T): 'T; ;
+        instance Absolute Int = fn abs(value) = @metal:ffi;; ;
+      """,
+      "abs"
+    ),
+    (
+      "ProtocolExplicitFfi",
+      """
+        protocol Absolute 'T = fn absolute(value: 'T): 'T; ;
+        instance Absolute Int = fn absolute(value) = @metal:ffi[name="abs"];; ;
+      """,
+      "absolute"
+    ),
+    (
+      "ProtocolTemplate",
+      """
+        protocol Absolute 'T = fn abs(value: 'T): 'T; ;
+        instance Absolute Int =
+          fn abs(value) = @metal:tpl["sub i32 0, %operand", name="template_metadata"];;
+        ;
+      """,
+      "abs"
+    )
+  ).foreach { (name, declaration, memberName) =>
+    test(s"$name executes direct and callable-value implementations"):
+      val source = s"""
+        $declaration
+        pub fn main(): Unit =
+          println (int_to_str ($memberName (-3)));
+          let selected: Int -> Int = $memberName;
+          println (int_to_str (selected (-4)));
+        ;
+      """
+      runSanitizedProgram(source, name, optLevel = 0, expectedOutput = List("3", "4"))
+  }
+
   test("protocol calls, callable values, and partials evaluate arguments once in order at O0"):
     runSanitizedProgram(
       orderedCalls,

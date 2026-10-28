@@ -247,6 +247,114 @@ class NumSelectionTests extends BaseEffFunSuite:
       assertEquals(computedType(body, result), ProtocolTypeKey.Function(List(float), float))
     }
 
+  test("Num inference keeps shadowed locals separate in either statement order"):
+    val source = """
+      let before = { value ->
+        let result = (let value = 1.0; value + 1.0);
+        let gate = not value;
+        result;
+      };
+      let after = { value ->
+        let gate = not value;
+        let result = (let value = 1.0; value + 1.0);
+        result;
+      };
+    """
+    parseNotFailed(source).map { parsed =>
+      val initial  = prepareForTypeChecking(source, parsed)
+      val expected = numericMember(initial, "Float", "+")
+
+      val result = TypeChecker.rewriteModule(initial)
+      val bool   = namedType("Bool", result)
+      val float  = namedType("Float", result)
+
+      assertEquals(result.errors, Vector.empty)
+      List("before", "after").foreach { name =>
+        val original = lambda(binding(initial, name).value)
+        val body     = lambda(binding(result, name).value)
+        val selected = TermTraversal.collect(body.body) {
+          case ref: Ref if ref.resolvedId == expected.id => ref
+        }
+
+        assertEquals(body.params.head.id, original.params.head.id)
+        assertEquals(computedType(body, result), ProtocolTypeKey.Function(List(bool), float))
+        assertEquals(selected.size, 1)
+      }
+    }
+
+  test("Num inference follows an outer alias past a same-name local in a nested scope"):
+    val source = """
+      let inspect = { value ->
+        let alias = value;
+        let result = (let alias = 1.0; alias + 1.0);
+        let gate = not alias;
+        result;
+      };
+    """
+    parseNotFailed(source).map { parsed =>
+      val initial  = prepareForTypeChecking(source, parsed)
+      val original = lambda(binding(initial, "inspect").value).params.head
+
+      val result = TypeChecker.rewriteModule(initial)
+      val body   = lambda(binding(result, "inspect").value)
+      val bool   = namedType("Bool", result)
+      val float  = namedType("Float", result)
+
+      assertEquals(result.errors, Vector.empty)
+      assertEquals(body.params.head.id, original.id)
+      assertEquals(computedType(body, result), ProtocolTypeKey.Function(List(bool), float))
+    }
+
+  test("a shadowed Num operand cannot supply the outer parameter's missing evidence"):
+    val source = """
+      let inspect = { value ->
+        let result = (let value = 1.0; value + 1.0);
+        result;
+      };
+    """
+    parseNotFailed(source).map { parsed =>
+      val initial  = prepareForTypeChecking(source, parsed)
+      val original = lambda(binding(initial, "inspect").value).params.head
+
+      val result = TypeChecker.rewriteModule(initial)
+      val missing = result.visibleErrors.collect {
+        case SemanticError.TypeCheckingError(TypeError.UninferrableLambdaParam(param, _)) => param
+      }
+
+      assert(result.hasErrors)
+      assertEquals(missing.map(_.id), Vector(original.id))
+      assertEquals(missing.map(_.source), Vector(original.source))
+    }
+
+  test("Num and Boolean uses through aliases still conflict on the same parameter"):
+    val source = """
+      let inspect = { value ->
+        let alias = value;
+        let number = alias + 1.0;
+        not value;
+      };
+    """
+    parseNotFailed(source).map { parsed =>
+      val initial  = prepareForTypeChecking(source, parsed)
+      val original = lambda(binding(initial, "inspect").value).params.head
+
+      val result = TypeChecker.rewriteModule(initial)
+      val conflicts = result.visibleErrors.collect {
+        case SemanticError.TypeCheckingError(error: TypeError.ConflictingLambdaParamInference) =>
+          error
+      }
+
+      assert(result.hasErrors)
+      assertEquals(conflicts.map(_.param.id), Vector(original.id))
+      assertEquals(conflicts.map(_.param.source), Vector(original.source))
+      assertEquals(
+        conflicts.map { error =>
+          Set(typeKey(error.firstType, result), typeKey(error.nextType, result))
+        },
+        Vector(Set(namedType("Float", result), namedType("Bool", result)))
+      )
+    }
+
   test("a captured Float parameter supplies evidence to an otherwise untyped inner lambda"):
     val source = "fn factory(seed: Float) = ~{ value -> value + seed; };;"
     parseNotFailed(source).map { parsed =>
