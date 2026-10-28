@@ -209,12 +209,17 @@ Borrowing and shared ownership are different concepts.
 - plain parameters still borrow by default
 - `&T` is not a borrow, it is a shared owner handle
 
-A function parameter of type `&T` participates in retain/release like any other
-`&T` binding. A function parameter of type `T` borrows whatever the caller
-hands it. Passing an `&T` to a `T` parameter is not allowed without an
-explicit `^` to clone the inner value out.
+A function parameter borrows by default, including when its type is `&T`.
+Passing an `&T` to a `T` parameter borrows the inner value without cloning it
+or changing the reference count. Creating another owned shared handle requires
+explicit `&`.
 
-This distinction should stay crisp in the type system and in diagnostics.
+Pattern matching follows the same ownership rules as other operations.
+
+### Moving shared references
+
+Moving an `&T` does not change the reference count. It transfers responsibility
+for releasing the handle from the previous owner to the new owner.
 
 ---
 
@@ -391,13 +396,6 @@ Resolved for the value-level operators:
 - `^expr` produces a fresh `T` from a `T` or an `&T` (requires `T: Clone`)
 - the type form is `&T` in annotations and fields
 
-Still open:
-
-- pattern-level support for shared refs (binding through `&` in patterns)
-- whether parameter sigils (analogous to `~` for consume) make sense for
-  expressing "this parameter takes a shared ref and bumps the count for the
-  duration of the call" vs the default of plain participation in retain/release
-
 ### 3. Runtime representation
 
 Possible representations:
@@ -426,17 +424,6 @@ Resolved:
 - Retain semantics are built in to `&` (not protocol-dispatched). Refcount
   bumps and drops are compiler-emitted, the same way `drop` calls are
   auto-inserted at scope end.
-
-### 5. Borrowing from shared refs
-
-Resolved:
-
-- a function parameter of type `&T` participates in retain/release like any
-  other `&T` binding
-- a function parameter of type `T` borrows whatever the caller hands it;
-  passing an `&T` to a `T` parameter is rejected
-- to feed an `&T` to a function that wants a plain `T`, clone the inner value
-  out with `^` and pass the result
 
 ---
 
