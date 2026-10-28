@@ -21,15 +21,9 @@
 7. [x] **complete** — [P3: Enforce precedence/associativity coherence before grouping; preserve candidates](#p3-lookup-and-operator-grouping).
 8. [x] **complete** — [P4: Select concrete members using arguments and expected types](#p4-type-directed-selection-and-lowering).
 9. [x] **complete** — [P5: Deliver Num and migrate numeric operators](#p5-num-and-numeric-migration).
-10. [ ] **ready_for_signoff** — [P6: Review the verified Num deliverable](#p6-num-review-checkpoint).
+10. [x] **complete** — [P6: Review the verified Num deliverable](#p6-num-review-checkpoint).
 11. [ ] **planned** — [P6a: Infer concrete protocol functions from local binding uses](#p6a-local-inference-through-bindings).
 12. [ ] **planned** — [P9: Complete documentation, verification, and final review](#p9-final-verification-and-documentation).
-
-Note:  Move the following items to their own task, link after this one in tracker.
-
-1. [ ] **planned** — [P7: Integrate explicit Clone and generated instances](#p7-explicit-clone).
-2. [ ] **planned** — [P8: Require explicit cloning for global ownership transfers](#p8-global-ownership-transfers).
-
 
 ## Problem
 
@@ -40,9 +34,9 @@ equality requires concrete instances, and memory evolution depends on compiler-r
 ## Outcome
 
 A functional protocol system unifies numeric operator spellings for `Int` and `Float`
-and introduces the `Clone` protocol through the unary `^` operator. Protocol declarations,
-concrete instances, signature checking, member resolution, and executable lowering support
-both capabilities through the same mechanism.
+and supports concrete protocol functions inferred from local binding uses. Protocol declarations,
+concrete instances, signature checking, member resolution, and executable lowering provide
+the foundation for [explicit Clone and global ownership transfers](explicit-clone.md).
 
 ## Scope
 
@@ -52,8 +46,8 @@ below. Completing this slice does not mean implementing the entire specification
 
 ### First implementation slice
 
-Deliver the protocol system through `Num` first. Then integrate `Clone` and require explicit
-cloning of globals at ownership sinks, in the order shown in the execution checklist.
+Deliver the protocol system through `Num`, then local binding inference and final verification.
+[Explicit Clone and global ownership transfers](explicit-clone.md) follow as a separate task.
 
 - Protocol declarations with one type parameter, required function and operator members,
   and concrete instances. Every required member has a source-defined or compiler-generated
@@ -71,15 +65,8 @@ cloning of globals at ownership sinks, in the order shown in the execution check
   - Unary negation: `-` replaces `-.` for Float.
   - Preserve existing numeric behavior and grouping; migrate affected library declarations,
     samples, and tests. Addition is only one case of this migration.
-- After Num verifies the protocol system, inject `Clone`, declaring unary `^`. Adapt the
-  existing memory-functions phase to generate Clone instances for eligible concrete types,
-  reusing its cloning machinery. This does not require a general derivation facility.
-  `^value` borrows its input and returns a separate owned value, leaving the input valid.
-  Follow the contract in [Memory evolution](../../docs/brainstorming/mem/mem-evolution.md#layer-2-clone-protocol).
-  Include the native clone implementations needed by generated instances.
-- Remove implicit cloning of globals at ownership sinks. Reject transfers of global-backed
-  values into owned storage; the programmer must explicitly use `^` to produce an owned copy.
-  This applies to transfers requiring ownership, not ordinary scalar value copies.
+- Explicit Clone and global ownership transfers belong to
+  [Explicit Clone and global ownership transfers](explicit-clone.md).
 
 The operator inventory above follows `injectStandardOperators` in
 [StandardOperators.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/StandardOperators.scala),
@@ -90,8 +77,8 @@ the plan keeps them as free operators.
 ### Beyond the first slice
 
 - General [protocol derivation](protocol-derivation.md), including compiler-derived enum
-  equality, is separate follow-up work. The targeted adaptation of Clone generation above
-  belongs to this task.
+  equality, is separate follow-up work. Targeted Clone generation
+  belongs to [Explicit Clone and global ownership transfers](explicit-clone.md).
 - General parametric functions and data types, parameterized instances, higher-kinded
   parameters, explicit imports, and `FromInt` are outside this slice.
 - Full `Unique` integration and the broader memory evolution design are outside this slice.
@@ -154,12 +141,13 @@ and constraints remain outside this plan. Their broader semantics are described 
 
 ## Plan (Approval Gate)
 
-P0–P9 are approved, subject to their explicit review checkpoints. The added P6a scope is
+P0–P6 and P9 are approved, subject to their explicit review checkpoints. The added P6a scope is
 accepted; its bounded implementation design requires approval. P0 defines the AST
 and stops for Author review.
 P0b adds shared lookups and a second Author review checkpoint before compiler-phase integration.
 P1–P6 deliver the protocol mechanism through Num. Stop after P6 for review and signoff before
-P6a adds local binding inference, then P7–P9 integrate Clone and global transfers.
+P6a adds local binding inference, then P9 verifies this task. P7 and P8 belong to
+[Explicit Clone and global ownership transfers](explicit-clone.md).
 Each stage has a concrete exit condition; record its evidence in Task Working Memory and
 update the execution checklist before advancing. Stage completion does not authorize a commit.
 
@@ -375,54 +363,10 @@ Exit: the unannotated local example compiles and executes using `Render Int`; un
 inconsistent local evidence produces a clear diagnostic. The binding remains monomorphic.
 Implementation plan approval and verification are pending.
 
-### P7: Explicit Clone
-
-- Inject the compiler-recognized Clone protocol with borrowing unary `^`; propose precedence
-  95 and right associativity, matching existing prefix operators.
-- Register explicit native Clone instances using the existing runtime implementations for
-  String, Buffer, Rng, IntArray, StringArray, and FloatArray. Check their allocating-result
-  metadata and borrow-input contracts; add missing native support only where required by
-  the approved eligible types. Heap representation alone must not imply Clone support.
-- Adapt memory-function generation to register eligible concrete struct Clone instances and
-  their ordinary member bindings. Register signatures before generating bodies so
-  nested struct dependencies resolve by identity rather than declaration order.
-- Copy scalar fields and invoke registered Clone members for non-scalar fields. Preserve
-  rejection of unsupported function-bearing structs and types without cloneable members.
-  Include scalar-only struct copies without introducing general protocol derivation or Unique.
-- Use the shared instance/member lookup API for explicit Clone calls and the existing internal
-  clone machinery. Retain internal helpers where needed for literal promotion; do not remove mixed
-  witnesses, conditional cleanup, or unrelated destruction generation.
-- Ensure generated and user-supplied Clone instances satisfy ordinary ownership checking
-  and return a separate owned result for ownership-tracked types. Native bodies remain trusted
-  implementations with runtime verification. Merely returning the borrowed input is invalid.
-
-Exit: explicit cloning of native and nested struct values executes correctly; the source stays
-valid and the copy has independent owned storage. Missing support and duplicate explicit/generated
-instances fail clearly. Test Clone calls as ordinary callable values and partial applications,
-plus cleanup of both source and result under sanitizers.
-
-### P8: Global ownership transfers
-
-- Trace global origin through local aliases, aggregate field projections, conditional results,
-  and statically proven helper returns. Do not relabel a global-backed value as owned merely
-  because it passes through a local binding or aggregate.
-- Reject global-backed alternatives where a consuming parameter, owning field, owning return,
-  move capture, or partial-application payload requires ownership. Diagnose the transfer site
-  and suggest an explicit `^` copy. Continue accepting ordinary borrowing and scalar copies.
-- Remove global-specific implicit clone insertion at those boundaries, including mixed
-  alternatives. Preserve literal-only promotion and witness-based moves and cleanup.
-- Verify that `^` produces independent ownership and ends the cloned result's global provenance.
-  Migrate affected executable examples and fixtures to explicit cloning before transfer.
-
-Exit: paired rejection/acceptance tests cover each boundary, including aliases and nested fields.
-Mixed owned/literal cases keep their existing behavior; global alternatives require explicit
-cloning only when ownership is demanded. Runtime tests establish that local cleanup never frees
-original global storage and explicit copies are cleaned up exactly once.
-
 ### P9: Final verification and documentation
 
 - Update the language reference, compiler design, memory-model documentation, and current
-  examples to describe implemented protocol syntax, resolution, Num, Clone, and global transfers.
+  examples to describe implemented protocol syntax, resolution, Num, and local binding inference.
   Keep broader derivation and implicit-cloning proposals identified as separate work.
 - Follow [coding rules](../coding-rules.md) and [development tools](../dev-tools.md): formatting
   and linting, smoke collection before publishing or expensive checks, full `testFull`, local
@@ -438,7 +382,8 @@ original global storage and explicit copies are cleaned up exactly once.
 Exit: all scoped acceptance criteria and applicable checks pass, documentation matches behavior,
 and final review is ready for signoff. No unverified stage is marked complete.
 
-Approval: first-slice scope, delivery order, and P0–P9 plan (including P0b) approved.
+Approval: protocol scope, delivery order, and P0–P6/P9 plan (including P0b) approved.
+The approved P7/P8 plan is in [Explicit Clone and global ownership transfers](explicit-clone.md).
 P0, P0b, and P6 retain their explicit review and signoff gates.
 P6a local binding inference is included in scope before Clone; implementation design approval
 is pending. Existing checkpoint verification does not cover P6a.
@@ -487,10 +432,6 @@ Acceptance criteria for the first slice:
 - Compile and execute integer and floating-point arithmetic, equality, ordering, and unary
   negation using the unified spellings listed above, preserving their numeric behavior
   and operator grouping.
-- Compile and execute `^` through generated Clone instances and their native dependencies;
-  verify the returned value's ownership and the original value's continued validity.
-- Reject global-backed values at ownership sinks without implicit cloning; accept explicit
-  `^` copies at those sinks, including cases reached through aliases and aggregate fields.
 - Accept omitted or matching instance types and metadata; reject divergent restatements.
 - Exercise user-declared protocols and concrete instances through named members as well as
   operators, establishing a usable protocol mechanism beyond built-in numeric operations.
@@ -571,7 +512,6 @@ P2 verification:
   and an array-identity comparison in a new token test. Both are corrected and the focused suite passes.
 - Shared type traversal replaces repeated walks in parsing, resolution, signature substitution,
   and invalid-type checks. Its seven focused regressions pass within the full suite.
-
 
 P3 verification:
 
@@ -720,15 +660,16 @@ signed off. P0b is verified and signed off; P1 parsing and P2 signature checking
 complete. P3 lookup and operator grouping are verified and complete. P4 type-directed selection
 is complete. P5 Num integration is complete. P6 error-recovery repairs and four additional standalone
 corrections pass compiler and Linux verification and independent review and are signed off.
-The broader Num checkpoint signoff remains pending.
-P6a and P7–P9 remain pending. The verification above does not cover local binding inference.
+The broader Num checkpoint is signed off.
+P6a and P9 remain pending; P7/P8 are tracked in [explicit Clone](explicit-clone.md). The
+verification above does not cover local binding inference.
 
 ## Risks / Notes
 
 [Enums](enums.md) depends on protocol instance resolution for derived equality, but derivation
 is outside this slice and tracked in [Protocol derivation](protocol-derivation.md).
-Clone generation adapts the existing memory-functions phase. It does not approve a general
-derivation facility or the full memory evolution design. The global-cloning change must
+The separate [explicit Clone task](explicit-clone.md) adapts the memory-functions phase. It does not
+approve a general derivation facility or the full memory evolution design. The global-cloning change must
 cover global provenance through aliases and aggregates; broader literal-cloning policy
 is tracked separately in [Revisit implicit cloning](implicit-cloning.md).
 The language draft defines semantics beyond the approved bounded plan.
@@ -739,24 +680,24 @@ Incidental findings and their fix status are collected in [Bug notes](bug-notes.
 
 - Workstream signoff: Bounded plan, P0 AST shape, and P0b lookup API approved. P0 and P0b
   verification and independent review are complete.
-- Num deliverable (P6): ready_for_signoff. The repair child, including the four standalone
-  corrections, is complete and signed off; broader Num checkpoint signoff remains pending.
+- Num deliverable (P6): complete and signed off, including the repair child and its four
+  standalone corrections.
 - Tracked item completion: Pending.
 - Commit authorization: granted for all implemented corrections and related records.
-  Push is not authorized. Parent task completion and Num checkpoint signoff remain pending.
+  Push is not authorized. Parent task completion remains pending.
 
 ## Task Working Memory
 
 P0 and P0b are verified, signed off, and committed in `98e4c831` and `be195134`.
 The implemented P1–P6 review checkpoint is committed in `7ce9c5dd`. P1–P5 are complete.
 The [review repairs](protocols-review-repairs.md), including all four standalone corrections,
-are complete and signed off. P6 Num checkpoint signoff remains pending. Stop before local
-binding inference and Clone integration. The parent task remains open.
+are complete and signed off. P6 Num checkpoint is complete and signed off. The parent task
+remains open; P6a implementation requires approval of its bounded design.
 
 P6a extends the scope with best-effort local inference of one concrete protocol function from
 later binding uses, independent of full SimpSeq. Its implementation design and verification
 are pending. Next action for P6a: define the bounded local propagation strategy and stopping
-conditions for approval. P6 signoff remains a separate pending gate before proceeding.
+conditions for approval.
 
 The separate factorial sample omits the `make_fac` annotation.
 `sbtn 'run run mml/samples/partial-fac2-escape.mml'` prints `120` and `6`.
@@ -800,12 +741,13 @@ protocol syntax, and the expected-result description. Verification passes 2,292 
 eight smoke fixtures, local publishing, benchmark compilation, 52 ASan/LSan memory fixtures,
 and all 27 affected execution tests in each Linux builder. Formatting, linting, and grammar checks
 pass. Fresh narrow primary review and separate QA/style, test-quality, and readability checks
-complete without actionable findings. The repair child is signed off and complete; broader Num
-checkpoint review remains next. Optional cloud verification is deferred.
+complete without actionable findings. The repair child and broader Num checkpoint are
+complete and signed off. Optional cloud verification is deferred.
 Detailed commands, toolchains, and limits are in the repair task.
 Broader design choices have separate discussion subtasks.
 No ABI layout or calling-convention changes are present.
-P6a adds local binding inference before P7 integrates Clone; P8 requires explicit cloning
-for global ownership transfers. Literal promotion and mixed ownership witnesses remain supported.
+P6a adds local binding inference before final verification.
+[Explicit Clone and global ownership transfers](explicit-clone.md) owns P7 and P8. Literal promotion
+and mixed ownership witnesses remain supported.
 General derivation and broader
 implicit-cloning policy remain separate tasks.

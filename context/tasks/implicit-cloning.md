@@ -33,7 +33,7 @@ exactly-once cleanup, with explicit cloning available through `Clone` and `^`.
   require unconditional ownership. Stack, heap, and static storage alone do not determine
   the ownership contract.
 - Keep explicit `Clone` and `^`. Their implementation and the explicit global-cloning
-  requirement belong to [Implement protocols](protocols.md).
+  requirement belong to [Explicit Clone and global ownership transfers](explicit-clone.md).
 
 ## Plan (Approval Gate)
 

@@ -24,8 +24,16 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 
 - **Tracker:** [Implement protocols](tasks/protocols.md)
 - **Status:** in_progress
-- **Current focus:** Author review of the Num checkpoint. The
-  [protocol repairs](tasks/protocols-review-repairs.md) are complete and signed off.
+- **Current focus:** Prepare the bounded P6a local binding inference design for approval.
+  The Num checkpoint (P6) and [protocol repairs](tasks/protocols-review-repairs.md)
+  are complete and signed off.
+
+### Explicit Clone and global ownership transfers
+
+- **Tracker:** [Explicit Clone and global ownership transfers](tasks/explicit-clone.md)
+- **Status:** planned
+- **Current focus:** After Protocols: explicit Clone and generated instances (P7), then
+  explicit cloning for global ownership transfers (P8).
 
 ### Protocol navigation
 
@@ -52,7 +60,7 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 - **Tracker:** [Protocol derivation](tasks/protocol-derivation.md)
 - **Status:** design
 - **Current focus:** General derivation after the initial protocol task; targeted Clone
-  generation belongs to that initial task.
+  generation belongs to [explicit Clone](tasks/explicit-clone.md).
 
 ### Implicit cloning
 
