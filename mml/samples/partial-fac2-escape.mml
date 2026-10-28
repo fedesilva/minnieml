@@ -8,7 +8,7 @@ pub fn main() =
     }
   ;
 
-  let make_fac: Int -> Int -> Int =
+  let make_fac =
     { n: Int -> factorial_tco n }
   ;
 

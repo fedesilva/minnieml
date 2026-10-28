@@ -43,7 +43,7 @@ pub fn main(): Unit =
   // At this point, consuming owns the String; take_length has not run yet.
   let consuming = take_length consumed_text;
 
-  //println consumed_text;
+  println consumed_text;
 
   // Invocation moves the String FROM the PAP TO take_length.
   // take_length destroys it after computing the result; the PAP is consumed.
