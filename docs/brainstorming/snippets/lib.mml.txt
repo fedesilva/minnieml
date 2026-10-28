@@ -22,11 +22,12 @@ fn empty(x: Maybe 'T): Bool =
   ;
 ;
 
-fn nonEmpty(maybe: Maybe 'T): Bool =
+fn non_empty(maybe: Maybe 'T): Bool =
   not (empty maybe);
 ;
 
-union Result 'T 'E =
+// Fixing the error type leaves Result 'E with one parameter for a future Functor instance.
+union Result 'E 'T =
   | Ok 'T
   | Err 'E
 ;
@@ -38,7 +39,7 @@ enum Ordering =
   | Greater
 ;
 
-let equalOrdering = Ordering.Equal;
+let equal_ordering = Ordering.Equal;
 
 // Semigroup represents an associative binary operation.
 protocol Semigroup 'T =
@@ -71,7 +72,7 @@ protocol Applicative 'F
 // FlatMap requires 'F to also satisfy Functor.
 protocol FlatMap 'F
   where 'F: Functor =
-  fn flatMap(f: 'A -> 'F 'B, values: 'F 'A): 'F 'B;
+  fn flat_map(f: 'A -> 'F 'B, values: 'F 'A): 'F 'B;
 ;
 
 // Monad requires 'M to also satisfy Functor, FlatMap, and Applicative.
@@ -79,16 +80,18 @@ protocol Monad 'M
   where 'M: Functor & FlatMap & Applicative;
 
 protocol Foldable 'F =
-  fn foldLeft(f: 'B -> 'A -> 'B, initial: 'B, values: 'F 'A): 'B;
-  fn foldRight(f: 'A -> 'B -> 'B, initial: 'B, values: 'F 'A): 'B;
+  fn fold_left(f: 'B -> 'A -> 'B, initial: 'B, values: 'F 'A): 'B;
+  fn fold_right(f: 'A -> 'B -> 'B, initial: 'B, values: 'F 'A): 'B;
 ;
 
-// Int forms a semigroup under addition
+// Illustrative additive instance, not a settled standard-library choice for bare Int.
+// Canonical instances allow one Semigroup Int; supporting both addition and multiplication
+// requires distinct nominal types, such as Sum and Product, with their own instances.
 instance Semigroup Int =
   fn combine(left: Int, right: Int): Int = left + right;;
 ;
 
-// Int forms a monoid under addition with 0 as identity
+// The matching illustrative Monoid uses 0 as the additive identity.
 instance Monoid Int =
   fn empty(): Int = 0;;
 ;
@@ -115,7 +118,7 @@ instance Apply Maybe =
 
 // Maybe implements the FlatMap protocol
 instance FlatMap Maybe =
-  fn flatMap(f: 'A -> Maybe 'B, maybe: Maybe 'A): Maybe 'B =
+  fn flat_map(f: 'A -> Maybe 'B, maybe: Maybe 'A): Maybe 'B =
     match maybe with
       | One x -> f x;
       | None  -> None;
@@ -129,17 +132,15 @@ instance Applicative Maybe =
 ;
 
 // Monad's requirements are supplied by the separate instances above.
-instance Monad Maybe =
-;
+instance Monad Maybe;
 
 protocol Something 'T
   where 'T: Semigroup =
-  fn combineWithPlus(left: 'T, right: 'T): 'T = left + right;;
-  // Example of operator definitions using protocols
-  // Here the precedence and associativity are randomly
-  // selected for demonstration only.
-  op +(left: 'T, right: 'T): 'T 20 right;
-  op >>(left: 'T, right: 'T): 'T 25 left;
+  fn combine_with_plus(left: 'T, right: 'T): 'T = left + right;;
+  // Every visible declaration of a symbol and arity must agree on grouping.
+  // These match Num's binary + and the standard integer >> operator.
+  op +(left: 'T, right: 'T): 'T 60 left;
+  op >>(left: 'T, right: 'T): 'T 55 left;
 ;
 
 // Future parameterized instance using the proposed union syntax.

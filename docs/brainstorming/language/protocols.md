@@ -144,6 +144,11 @@ for the same combination is an error; instance selection never chooses between d
 implementations. Compiler-derived instances participate in the same uniqueness check;
 an explicit instance duplicating an enum's derived equality instance is an error.
 
+The additive `Semigroup Int` and `Monoid Int` examples illustrate this rule; they do not
+settle the standard-library instance for bare `Int`. Addition and multiplication cannot
+both supply `Semigroup Int`. Distinct nominal wrappers such as `Sum` and `Product` would
+allow both interpretations, each with its own canonical instance.
+
 Protocol members participate in ordinary function-name lookup without requiring the
 protocol name. Lookup collects matching functions and protocol members as candidates;
 final selection is deferred until the type checker has the necessary type information.
