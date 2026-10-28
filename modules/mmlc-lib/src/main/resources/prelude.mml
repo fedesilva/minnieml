@@ -1,3 +1,11 @@
+// Reference transcription of the compiler-injected standard library; this file is not loaded.
+// Sources: ../scala/mml/mmlclib/semantic/package.scala (types and common functions)
+//          ../scala/mml/mmlclib/semantic/StandardOperators.scala (Num and free operators)
+// Names, native symbols, ownership markers, and templates match those injectors.
+// The native void and named-struct pointer spellings below describe injected AST types;
+// the source parser does not currently accept those two representation forms.
+
+// Native types and aliases
 type Int64 = @metal:repr[t=i64];
 type Int32 = @metal:repr[t=i32];
 type Int16 = @metal:repr[t=i16];
@@ -9,7 +17,7 @@ type CharPtr = @metal:repr[t=*i8];
 type RawPtr = @metal:repr[t=ptr];
 type CString = @metal:repr[t=*i8, mem=heap, free=free_cstr];
 
-type String = @metal:repr[mem=heap, free=free_string] {
+type String = @metal:repr[mem=heap] {
   length: Int32,
   data: CharPtr
 };
@@ -22,145 +30,179 @@ type Int = Int32;
 type Byte = Int8;
 type Word = Int8;
 
-type Buffer = @metal:repr[t=*i8, mem=heap, free=free_buffer];
+type Buffer = @metal:repr[t=*i8, mem=heap];
+type Rng = @metal:repr[t=*i8, mem=heap];
 
 type Int64Ptr = @metal:repr[t=*i64];
 type Int32Ptr = @metal:repr[t=*i32];
 type StringPtr = @metal:repr[t=*%struct.String];
 type FloatPtr = @metal:repr[t=*float];
 
-type IntArray = @metal:repr[mem=heap, free=free_int_array] {
+type IntArray = @metal:repr[mem=heap] {
   length: Int32,
   data: Int32Ptr
 };
-type StringArray = @metal:repr[mem=heap, free=free_string_array] {
+type StringArray = @metal:repr[mem=heap] {
   length: Int32,
   data: StringPtr
 };
-type FloatArray = @metal:repr[mem=heap, free=free_float_array] {
+type FloatArray = @metal:repr[mem=heap] {
   length: Int32,
   data: FloatPtr
 };
 
-op *(a: Int, b: Int): Int 80 left = @metal:tpl["mul %type %operand1, %operand2"];
-op /(a: Int, b: Int): Int 80 left = @metal:tpl["sdiv %type %operand1, %operand2"];
-op %(a: Int, b: Int): Int 80 left = @metal:tpl["srem %type %operand1, %operand2"];
-op +(a: Int, b: Int): Int 60 left = @metal:tpl["add %type %operand1, %operand2"];
-op -(a: Int, b: Int): Int 60 left = @metal:tpl["sub %type %operand1, %operand2"];
-op <<(a: Int, b: Int): Int 55 left = @metal:tpl["shl %type %operand1, %operand2"];
-op >>(a: Int, b: Int): Int 55 left = @metal:tpl["ashr %type %operand1, %operand2"];
+// Numeric operations share one protocol; instance members inherit its types and metadata.
+protocol Num 'T =
+  op +(a: 'T, b: 'T): 'T 60 left;
+  op -(a: 'T, b: 'T): 'T 60 left;
+  op *(a: 'T, b: 'T): 'T 80 left;
+  op /(a: 'T, b: 'T): 'T 80 left;
+  op ==(a: 'T, b: 'T): Bool 50 left;
+  op !=(a: 'T, b: 'T): Bool 50 left;
+  op <(a: 'T, b: 'T): Bool 50 left;
+  op >(a: 'T, b: 'T): Bool 50 left;
+  op <=(a: 'T, b: 'T): Bool 50 left;
+  op >=(a: 'T, b: 'T): Bool 50 left;
+  op -(a: 'T): 'T 95 right;
+;
 
-op ==(a: Int, b: Int): Bool 50 left = @metal:tpl["icmp eq %type %operand1, %operand2"];
-op !=(a: Int, b: Int): Bool 50 left = @metal:tpl["icmp ne %type %operand1, %operand2"];
-op <(a: Int, b: Int): Bool 50 left = @metal:tpl["icmp slt %type %operand1, %operand2"];
-op >(a: Int, b: Int): Bool 50 left = @metal:tpl["icmp sgt %type %operand1, %operand2"];
-op <=(a: Int, b: Int): Bool 50 left = @metal:tpl["icmp sle %type %operand1, %operand2"];
-op >=(a: Int, b: Int): Bool 50 left = @metal:tpl["icmp sge %type %operand1, %operand2"];
+instance Num Int =
+  op +(a, b) = @metal:tpl["add %type %operand1, %operand2"];;
+  op -(a, b) = @metal:tpl["sub %type %operand1, %operand2"];;
+  op *(a, b) = @metal:tpl["mul %type %operand1, %operand2"];;
+  op /(a, b) = @metal:tpl["sdiv %type %operand1, %operand2"];;
+  op ==(a, b) = @metal:tpl["icmp eq %type %operand1, %operand2"];;
+  op !=(a, b) = @metal:tpl["icmp ne %type %operand1, %operand2"];;
+  op <(a, b) = @metal:tpl["icmp slt %type %operand1, %operand2"];;
+  op >(a, b) = @metal:tpl["icmp sgt %type %operand1, %operand2"];;
+  op <=(a, b) = @metal:tpl["icmp sle %type %operand1, %operand2"];;
+  op >=(a, b) = @metal:tpl["icmp sge %type %operand1, %operand2"];;
+  op -(a) = @metal:tpl["sub %type 0, %operand"];;
+;
 
-op and(a: Bool, b: Bool): Bool 40 left = @metal:tpl["and %type %operand1, %operand2"];
-op or(a: Bool, b: Bool): Bool 30 left = @metal:tpl["or %type %operand1, %operand2"];
+instance Num Float =
+  op +(a, b) = @metal:tpl["fadd %type %operand1, %operand2"];;
+  op -(a, b) = @metal:tpl["fsub %type %operand1, %operand2"];;
+  op *(a, b) = @metal:tpl["fmul %type %operand1, %operand2"];;
+  op /(a, b) = @metal:tpl["fdiv %type %operand1, %operand2"];;
+  op ==(a, b) = @metal:tpl["fcmp oeq %type %operand1, %operand2"];;
+  op !=(a, b) = @metal:tpl["fcmp une %type %operand1, %operand2"];;
+  op <(a, b) = @metal:tpl["fcmp olt %type %operand1, %operand2"];;
+  op >(a, b) = @metal:tpl["fcmp ogt %type %operand1, %operand2"];;
+  op <=(a, b) = @metal:tpl["fcmp ole %type %operand1, %operand2"];;
+  op >=(a, b) = @metal:tpl["fcmp oge %type %operand1, %operand2"];;
+  op -(a) = @metal:tpl["fsub %type 0.0, %operand"];;
+;
 
-op -(a: Int): Int 95 right = @metal:tpl["sub %type 0, %operand"];
-op +(a: Int): Int 95 right = @metal:tpl["add %type 0, %operand"];
-op not(a: Bool): Bool 95 right = @metal:tpl["xor %type 1, %operand"];
+// Integer-only and Boolean operators remain free functions.
+op %(a: Int, b: Int): Int 80 left = @metal:tpl["srem %type %operand1, %operand2"];;
+op <<(a: Int, b: Int): Int 55 left = @metal:tpl["shl %type %operand1, %operand2"];;
+op >>(a: Int, b: Int): Int 55 left = @metal:tpl["ashr %type %operand1, %operand2"];;
+op +(a: Int): Int 95 right = @metal:tpl["add %type 0, %operand"];;
+op and(a: Bool, b: Bool): Bool 40 left = @metal:tpl["and %type %operand1, %operand2"];;
+op or(a: Bool, b: Bool): Bool 30 left = @metal:tpl["or %type %operand1, %operand2"];;
+op not(a: Bool): Bool 95 right = @metal:tpl["xor %type 1, %operand"];;
 
-op +.(a: Float, b: Float): Float 60 left = @metal:tpl["fadd %type %operand1, %operand2"];
-op -.(a: Float, b: Float): Float 60 left = @metal:tpl["fsub %type %operand1, %operand2"];
-op *.(a: Float, b: Float): Float 80 left = @metal:tpl["fmul %type %operand1, %operand2"];
-op /.(a: Float, b: Float): Float 80 left = @metal:tpl["fdiv %type %operand1, %operand2"];
+// I/O and strings
+fn mml_sys_flush(): Unit = @metal:ffi;;
 
-op <.(a: Float, b: Float): Bool 50 left = @metal:tpl["fcmp olt %type %operand1, %operand2"];
-op >.(a: Float, b: Float): Bool 50 left = @metal:tpl["fcmp ogt %type %operand1, %operand2"];
-op <=.(a: Float, b: Float): Bool 50 left = @metal:tpl["fcmp ole %type %operand1, %operand2"];
-op >=.(a: Float, b: Float): Bool 50 left = @metal:tpl["fcmp oge %type %operand1, %operand2"];
-op ==.(a: Float, b: Float): Bool 50 left = @metal:tpl["fcmp oeq %type %operand1, %operand2"];
-op !=.(a: Float, b: Float): Bool 50 left = @metal:tpl["fcmp une %type %operand1, %operand2"];
+fn readline(): String = @metal:ffi[mem=alloc];;
 
-op -.(a: Float): Float 95 right = @metal:tpl["fsub %type 0.0, %operand"];
+fn print(a: String): Unit = @metal:ffi;;
+fn println(a: String): Unit = @metal:ffi;;
 
-fn mml_sys_flush(): Unit = @metal:ffi;
+fn concat(a: String, b: String): String = @metal:ffi[mem=alloc];;
+fn str_eq(a: String, b: String): Bool = @metal:ffi;;
+fn str_strip_margin(a: String): String = @metal:ffi[mem=alloc];;
+fn int_to_str(a: Int): String = @metal:ffi[mem=alloc];;
+fn float_to_str(a: Float): String = @metal:ffi[mem=alloc];;
+fn str_to_int(a: String): Int = @metal:ffi;;
+fn to_cstr(s: String): CString = @metal:ffi[mem=alloc];;
 
-fn readline(): String = @metal:ffi[mem=alloc];
+op ++(a: String, b: String): String 61 right = concat a b;;
 
-fn print(a: String): Unit = @metal:ffi;
-fn println(a: String): Unit = @metal:ffi;
+// Random number generation
+fn rng_new(seed: Int): Rng = @metal:ffi[mem=alloc];;
+fn rng_new_random(): Rng = @metal:ffi[mem=alloc];;
+fn rng_next(rng: Rng): Int = @metal:ffi;;
+fn rng_between(rng: Rng, min: Int, max: Int): Int = @metal:ffi;;
 
-fn concat(a: String, b: String): String = @metal:ffi[mem=alloc];
-fn str_eq(a: String, b: String): Bool = @metal:ffi;
-fn int_to_str(a: Int): String = @metal:ffi[mem=alloc];
-fn float_to_str(a: Float): String = @metal:ffi[mem=alloc];
-fn str_to_int(a: String): Int = @metal:ffi;
-fn to_cstr(s: String): CString = @metal:ffi[mem=alloc];
+// Buffer constructors retain their current injected names.
+fn mkBuffer(): Buffer = @metal:ffi[mem=alloc];;
+fn mkBufferWithFd(fd: Int): Buffer = @metal:ffi[mem=alloc];;
+fn mkBufferWithFdAndSize(fd: Int, size: Int): Buffer = @metal:ffi[mem=alloc];;
+fn mkBufferWithSize(size: Int): Buffer = @metal:ffi[mem=alloc];;
+fn flush(b: Buffer): Unit = @metal:ffi;;
+fn buffer_write(b: Buffer, s: String): Unit = @metal:ffi;;
+fn buffer_writeln(b: Buffer, s: String): Unit = @metal:ffi;;
+fn buffer_write_byte(b: Buffer, n: Int): Unit = @metal:ffi;;
+fn buffer_write_int(b: Buffer, n: Int): Unit = @metal:ffi;;
+fn buffer_writeln_int(b: Buffer, n: Int): Unit = @metal:ffi;;
+fn buffer_write_float(b: Buffer, n: Float): Unit = @metal:ffi;;
+fn buffer_writeln_float(b: Buffer, n: Float): Unit = @metal:ffi;;
 
-op ++(a: String, b: String): String 61 right = concat a b;
+// Numeric conversions and math
+fn int_to_float(i: Int): Float = @metal:tpl["sitofp i32 %operand to float"];;
+fn float_to_int(f: Float): Int = @metal:tpl["fptosi float %operand to i32"];;
+fn sqrt(x: Float): Float = @metal:tpl["call float @llvm.sqrt.f32(float %operand)"];;
+fn fabs(x: Float): Float = @metal:tpl["call float @llvm.fabs.f32(float %operand)"];;
 
-fn mkBuffer(): Buffer = @metal:ffi[mem=alloc];
-fn mkBufferWithFd(fd: Int): Buffer = @metal:ffi[mem=alloc];
-fn mkBufferWithFdAndSize(fd: Int, size: Int): Buffer = @metal:ffi[mem=alloc];
-fn mkBufferWithSize(size: Int): Buffer = @metal:ffi[mem=alloc];
-fn flush(b: Buffer): Unit = @metal:ffi;
-fn buffer_write(b: Buffer, s: String): Unit = @metal:ffi;
-fn buffer_writeln(b: Buffer, s: String): Unit = @metal:ffi;
-fn buffer_write_byte(b: Buffer, n: Int): Unit = @metal:ffi;
-fn buffer_write_int(b: Buffer, n: Int): Unit = @metal:ffi;
-fn buffer_writeln_int(b: Buffer, n: Int): Unit = @metal:ffi;
-fn buffer_write_float(b: Buffer, n: Float): Unit = @metal:ffi;
-fn buffer_writeln_float(b: Buffer, n: Float): Unit = @metal:ffi;
+// Files
+fn open_file_read(path: String): Int = @metal:ffi;;
+fn open_file_write(path: String): Int = @metal:ffi;;
+fn open_file_append(path: String): Int = @metal:ffi;;
+fn close_file(fd: Int): Unit = @metal:ffi;;
+fn read_line_fd(fd: Int): String = @metal:ffi[mem=alloc];;
 
-fn int_to_float(i: Int): Float = @metal:tpl["sitofp i32 %operand to float"];
-fn float_to_int(f: Float): Int = @metal:tpl["fptosi float %operand to i32"];
-fn sqrt(x: Float): Float = @metal:tpl["call float @llvm.sqrt.f32(float %operand)"];
-fn fabs(x: Float): Float = @metal:tpl["call float @llvm.fabs.f32(float %operand)"];
+// Runtime destructors consume their arguments. Heap types use __free_<Type> by default.
+fn __free_String(~s: String): Unit = @metal:ffi;;
+fn free_cstr(~s: CString): Unit = @metal:ffi[name="free"];;
+fn __free_Buffer(~b: Buffer): Unit = @metal:ffi;;
+fn __free_Rng(~rng: Rng): Unit = @metal:ffi;;
+fn mml_free_raw(p: RawPtr): Unit = @metal:ffi;;
 
-fn open_file_read(path: String): Int = @metal:ffi;
-fn open_file_write(path: String): Int = @metal:ffi;
-fn open_file_append(path: String): Int = @metal:ffi;
-fn close_file(fd: Int): Unit = @metal:ffi;
-fn read_line_fd(fd: Int): String = @metal:ffi[mem=alloc];
-
-fn free_string(~s: String): Unit = @metal:ffi;
-fn free_cstr(~s: CString): Unit = @metal:ffi[name="free"];
-fn free_buffer(~b: Buffer): Unit = @metal:ffi;
-fn mml_free_raw(p: RawPtr): Unit = @metal:ffi;
-
-fn ar_int_new(size: Int): IntArray = @metal:ffi[mem=alloc];
+// Arrays
+fn ar_int_new(size: Int): IntArray = @metal:ffi[mem=alloc];;
 // Fill every element; an empty array is unchanged. Borrows arr.
-fn ar_int_fill(arr: IntArray, value: Int): Unit = @metal:ffi;
-fn ar_int_set(arr: IntArray, idx: Int, value: Int): Unit = @metal:ffi;
-fn ar_int_get(arr: IntArray, idx: Int): Int = @metal:ffi;
-fn unsafe_ar_int_set(arr: IntArray, idx: Int, value: Int): Unit = @metal:ffi;
-fn unsafe_ar_int_get(arr: IntArray, idx: Int): Int = @metal:ffi;
-fn ar_int_len(arr: IntArray): Int = @metal:ffi;
+fn ar_int_fill(arr: IntArray, value: Int): Unit = @metal:ffi;;
+fn ar_int_set(arr: IntArray, idx: Int, value: Int): Unit = @metal:ffi;;
+fn ar_int_get(arr: IntArray, idx: Int): Int = @metal:ffi;;
+fn unsafe_ar_int_set(arr: IntArray, idx: Int, value: Int): Unit = @metal:ffi;;
+fn unsafe_ar_int_get(arr: IntArray, idx: Int): Int = @metal:ffi;;
+fn ar_int_len(arr: IntArray): Int = @metal:ffi;;
 
-fn ar_str_new(size: Int): StringArray = @metal:ffi[mem=alloc];
-fn ar_str_set(arr: StringArray, idx: Int, ~value: String): Unit = @metal:ffi;
-fn ar_str_get(arr: StringArray, idx: Int): String = @metal:ffi;
-fn ar_str_len(arr: StringArray): Int = @metal:ffi;
+fn ar_str_new(size: Int): StringArray = @metal:ffi[mem=alloc];;
+fn ar_str_set(arr: StringArray, idx: Int, ~value: String): Unit = @metal:ffi;;
+fn ar_str_get(arr: StringArray, idx: Int): String = @metal:ffi;;
+fn ar_str_len(arr: StringArray): Int = @metal:ffi;;
 
-fn ar_float_new(size: Int): FloatArray = @metal:ffi[mem=alloc];
-fn ar_float_set(arr: FloatArray, idx: Int, value: Float): Unit = @metal:ffi;
-fn ar_float_get(arr: FloatArray, idx: Int): Float = @metal:ffi;
-fn unsafe_ar_float_set(arr: FloatArray, idx: Int, value: Float): Unit = @metal:ffi;
-fn unsafe_ar_float_get(arr: FloatArray, idx: Int): Float = @metal:ffi;
-fn ar_float_len(arr: FloatArray): Int = @metal:ffi;
+fn ar_float_new(size: Int): FloatArray = @metal:ffi[mem=alloc];;
+fn ar_float_set(arr: FloatArray, idx: Int, value: Float): Unit = @metal:ffi;;
+fn ar_float_get(arr: FloatArray, idx: Int): Float = @metal:ffi;;
+fn unsafe_ar_float_set(arr: FloatArray, idx: Int, value: Float): Unit = @metal:ffi;;
+fn unsafe_ar_float_get(arr: FloatArray, idx: Int): Float = @metal:ffi;;
+fn ar_float_len(arr: FloatArray): Int = @metal:ffi;;
 
-fn free_int_array(~a: IntArray): Unit = @metal:ffi;
-fn free_string_array(~a: StringArray): Unit = @metal:ffi;
-fn free_float_array(~a: FloatArray): Unit = @metal:ffi;
+fn __free_IntArray(~a: IntArray): Unit = @metal:ffi;;
+fn __free_StringArray(~a: StringArray): Unit = @metal:ffi;;
+fn __free_FloatArray(~a: FloatArray): Unit = @metal:ffi;;
 
-fn clone_String(s: String): String = @metal:ffi[mem=alloc, name="__clone_String"];
-fn clone_Buffer(b: Buffer): Buffer = @metal:ffi[mem=alloc, name="__clone_Buffer"];
-fn clone_IntArray(a: IntArray): IntArray = @metal:ffi[mem=alloc, name="__clone_IntArray"];
-fn clone_StringArray(a: StringArray): StringArray = @metal:ffi[mem=alloc, name="__clone_StringArray"];
-fn clone_FloatArray(a: FloatArray): FloatArray = @metal:ffi[mem=alloc, name="__clone_FloatArray"];
+// Compiler-facing cloning helpers return newly allocated values.
+fn __clone_String(s: String): String = @metal:ffi[mem=alloc];;
+fn __clone_Buffer(b: Buffer): Buffer = @metal:ffi[mem=alloc];;
+fn __clone_Rng(rng: Rng): Rng = @metal:ffi[mem=alloc];;
+fn __clone_IntArray(a: IntArray): IntArray = @metal:ffi[mem=alloc];;
+fn __clone_StringArray(a: StringArray): StringArray = @metal:ffi[mem=alloc];;
+fn __clone_FloatArray(a: FloatArray): FloatArray = @metal:ffi[mem=alloc];;
 
-op write(a: Buffer, b: String): Unit 20 left = buffer_write a b;
-op writeln(a: Buffer, b: String): Unit 20 left = buffer_writeln a b;
-op write_byte(a: Buffer, b: Int): Unit 20 left = buffer_write_byte a b;
-op write_int(a: Buffer, b: Int): Unit 20 left = buffer_write_int a b;
-op writeln_int(a: Buffer, b: Int): Unit 20 left = buffer_writeln_int a b;
-op write_float(a: Buffer, b: Float): Unit 20 left = buffer_write_float a b;
-op writeln_float(a: Buffer, b: Float): Unit 20 left = buffer_writeln_float a b;
+// Buffer-writing operators
+op write(a: Buffer, b: String): Unit 20 left = buffer_write a b;;
+op writeln(a: Buffer, b: String): Unit 20 left = buffer_writeln a b;;
+op write_byte(a: Buffer, b: Int): Unit 20 left = buffer_write_byte a b;;
+op write_int(a: Buffer, b: Int): Unit 20 left = buffer_write_int a b;;
+op writeln_int(a: Buffer, b: Int): Unit 20 left = buffer_writeln_int a b;;
+op write_float(a: Buffer, b: Float): Unit 20 left = buffer_write_float a b;;
+op writeln_float(a: Buffer, b: Float): Unit 20 left = buffer_writeln_float a b;;
 
-fn int_to_int64(i: Int): Int64 = @metal:tpl["sext i32 %operand to i64"];
-fn int64_to_str(i: Int64): String = @metal:ffi[mem=alloc];
+fn int_to_int64(i: Int): Int64 = @metal:tpl["sext i32 %operand to i64"];;
+fn int64_to_str(a: Int64): String = @metal:ffi[mem=alloc];;

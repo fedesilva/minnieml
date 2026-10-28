@@ -4,6 +4,10 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-10-27
 
+- Align the placeholder prelude with the injected standard library: Num instances for Int and
+  Float, runtime helpers, native symbols, and ownership annotations. Identify its reference-only
+  native type spellings.
+
 - Keep lambda inference tied to resolved bindings across shadowing and preserve external symbols
   for native protocol instances. Add protocol declarations, signatures, and type variables to
   the Tree-sitter grammar and Zed highlighting, outlines, and indentation.
