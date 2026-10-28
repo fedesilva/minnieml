@@ -30,7 +30,7 @@ Do not read or act on them unless directed to do so explicitely.
   * Set: xs[2] = 1;
 * Enums (but not yet unions)
 * modules (nested module, single compilation unit)
-* multiple compilation units (as of today I can only compile a single file), 
+* multiple compilation units (as of today I can only compile a single file), each one is a module
   * abridged version, include mode. not parallel or concurrent.
 * with multiple compilation units I can make the prelude a file itself instead of a bunch or programatically injected ast nodes that uses ffi to call the c libcmml (a bunch of c functions I link against).
   * and we can reimplement most of the c runtime in mml, afaiu.
