@@ -126,9 +126,7 @@ object ProtocolSelection:
             case Some(function: TypeFn) =>
               val next = application.argumentType
                 .fold(constrained)(matchType(function.paramTypes.head, _, constrained))
-              val result = NonEmptyList
-                .fromList(function.paramTypes.tail)
-                .fold(function.returnType)(params => function.copy(paramTypes = params))
+              val result = remainingCallableType(function, function.source)
               consume(result, rest, next)
 
             case Some(variable: TypeVariable) if variable.name == protocol.typeParameter.name =>

@@ -1311,7 +1311,7 @@ object TypeChecker:
     val argAvailable = context.availability.isAvailable(app.arg)
     val fnType       = extractTypeFnFromCallee(fn.value, context.module)
     val partialType = fnType.map { tpe =>
-      buildRemainingFunctionTypeFromTypes(tpe.paramTypes.tail, tpe.returnType, app.source)
+      remainingCallableType(tpe, app.source)
     }
     val typedApp = app.copy(typeSpec = partialType)
 
@@ -1589,15 +1589,6 @@ object TypeChecker:
       .map(paramTypes =>
         TypeFn(source, canonicalCallableParamTypes(source, paramTypes), returnType)
       )
-
-  private def buildRemainingFunctionTypeFromTypes(
-    remainingTypes: List[Type],
-    returnType:     Type,
-    source:         SourceOrigin
-  ): Type =
-    remainingTypes match
-      case head :: tail => TypeFn(source, NonEmptyList(head, tail), returnType)
-      case Nil => returnType
 
   /** Validate type ascription against computed type */
   private def validateTypeAscription(node: Typeable, module: Module): List[TypeError] =

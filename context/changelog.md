@@ -2,6 +2,11 @@
 
 Durable product changes belong here. Current task state belongs in task files.
 
+## 2026-10-28
+
+- Share the construction of remaining callable types in ordinary application checking and
+  protocol selection, preserving return types and source locations.
+
 ## 2026-10-27
 
 - Align the placeholder prelude with the injected standard library: Num instances for Int and

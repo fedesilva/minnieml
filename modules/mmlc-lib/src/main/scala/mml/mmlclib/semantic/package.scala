@@ -1,8 +1,17 @@
 package mml.mmlclib.semantic
 
+import cats.data.NonEmptyList
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.errors.CompilationError
+
+/** Type after one argument is consumed. A residual callable uses the supplied source location; a
+  * fully applied callable preserves its declared return type and location.
+  */
+private[semantic] def remainingCallableType(function: TypeFn, source: SourceOrigin): Type =
+  NonEmptyList
+    .fromList(function.paramTypes.tail)
+    .fold(function.returnType)(params => TypeFn(source, params, function.returnType))
 
 enum UnresolvableTypeContext derives CanEqual:
   case NamedValue(name: String)
