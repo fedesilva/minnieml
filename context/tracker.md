@@ -81,3 +81,10 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 - **Status:** design
 - **Current focus:** Settle remaining module and inclusion semantics and prepare a bounded
   plan for Package and nested modules in one source file, followed by source inclusion.
+
+### Struct capture ownership
+
+- **Tracker:** [Struct capture ownership](tasks/struct-capture-ownership.md)
+- **Status:** design
+- **Current focus:** Revisit borrowing construction and explicit all-field move construction,
+  following the lambda capture model.
