@@ -27,6 +27,13 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 - **Current focus:** After Protocols: explicit Clone and generated instances (P7), then
   explicit cloning for global ownership transfers (P8).
 
+### Centralize, and Unify ast queries
+
+- **Tracker:** [Centralize, and Unify ast queries](tasks/centralize-and-unify-ast-queries.md)
+- **Status:** needs_design
+- **Current focus:** After protocol work: settle a shared AST-query subpackage and unification
+  pattern, starting with the queries used by operator coherence and expression rewriting.
+
 ### Protocol navigation
 
 - **Tracker:** [Extend LSP navigation for protocols](tasks/lsp-protocol-navigation.md)
