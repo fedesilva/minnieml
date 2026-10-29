@@ -186,7 +186,8 @@ object SemanticErrorPrinter:
 
       case SemanticError.ProtocolErrorFound(error, phase) =>
         val location = error.source.spanOpt.map(LocationPrinter.printSpan).getOrElse("[synthetic]")
-        s"${Console.RED}${error.message} at $location [phase: $phase]${Console.RESET}"
+        val (headline, details) = error.message.span(_ != '\n')
+        s"${Console.RED}$headline at $location [phase: $phase]${Console.RESET}$details"
 
     // Add AST info and source code snippets if source code is available
     sourceInfo match

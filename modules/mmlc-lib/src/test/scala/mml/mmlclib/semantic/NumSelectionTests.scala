@@ -417,7 +417,9 @@ class NumSelectionTests extends BaseEffFunSuite:
 
       assertEquals(original.candidateIds.toSet, Set(signature.id.get, custom.id.get))
       result.visibleErrors match
-        case Vector(SemanticError.ProtocolErrorFound(ProtocolError.AmbiguousSelection(ref), _)) =>
+        case Vector(
+              SemanticError.ProtocolErrorFound(ProtocolError.AmbiguousSelection(ref, _), _)
+            ) =>
           assertEquals(ref.source, original.source)
           assertEquals(ref.resolvedId, None)
         case other => fail(s"Expected ambiguity between source and injected operators, got $other")

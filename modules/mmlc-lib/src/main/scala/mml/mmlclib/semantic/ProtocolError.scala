@@ -22,8 +22,8 @@ enum ProtocolError:
   case OperatorGroupingConflict(first: Resolvable, other: Resolvable)
   case MissingInstance(ref: Ref, protocol: Protocol, concreteType: Type)
   case IncompatibleArguments(ref: Ref)
-  case InsufficientTypeInformation(ref: Ref)
-  case AmbiguousSelection(ref: Ref)
+  case InsufficientTypeInformation(ref: Ref, alternatives: List[ProtocolAlternative] = Nil)
+  case AmbiguousSelection(ref: Ref, alternatives: List[ProtocolAlternative] = Nil)
 
   /** The declaration, annotation, ownership marker, or reference that caused the error. */
   def source: SourceOrigin = this match
@@ -45,8 +45,8 @@ enum ProtocolError:
     case OperatorGroupingConflict(_, other) => other.nameNode.source
     case MissingInstance(ref, _, _) => ref.source
     case IncompatibleArguments(ref) => ref.source
-    case InsufficientTypeInformation(ref) => ref.source
-    case AmbiguousSelection(ref) => ref.source
+    case InsufficientTypeInformation(ref, _) => ref.source
+    case AmbiguousSelection(ref, _) => ref.source
 
   /** Describe the failed protocol rule without exposing internal AST representations. */
   def message: String = this match
@@ -118,11 +118,21 @@ enum ProtocolError:
     case IncompatibleArguments(ref) =>
       s"No signature of '${ref.name}' matches the arguments and expected type"
 
-    case InsufficientTypeInformation(ref) =>
-      s"Not enough type information to select '${ref.name}'; add a type annotation"
+    case InsufficientTypeInformation(ref, alternatives) =>
+      s"Not enough type information to select '${ref.name}'; add a type annotation" +
+        formatAlternatives(alternatives)
 
-    case AmbiguousSelection(ref) =>
-      s"More than one signature of '${ref.name}' matches the arguments and expected type"
+    case AmbiguousSelection(ref, alternatives) =>
+      s"More than one signature of '${ref.name}' matches the arguments and expected type" +
+        formatAlternatives(alternatives)
+
+  /** Show every remaining concrete choice when alternatives are available. */
+  private def formatAlternatives(alternatives: List[ProtocolAlternative]): String =
+    if alternatives.isEmpty then ""
+    else
+      alternatives
+        .map(alternative => s"  ${alternative.description}")
+        .mkString("\nAlternatives:\n", "\n", "")
 
   private def memberName(binding: Bnd): String =
     binding.meta.fold(binding.name)(_.originalName)
@@ -151,3 +161,10 @@ enum ProtocolError:
       s"signature '$id' already has a registered instance member"
     case ProtocolLookupError.InvalidConcreteType(tpe) =>
       s"${showType(tpe)} is not a supported concrete instance type"
+
+/** A concrete callable choice uses source names and a type, never its lowered symbol spelling. */
+case class ProtocolAlternative(protocolName: Option[String], name: String, functionType: Type):
+
+  def description: String =
+    val owner = protocolName.fold("")(name => s"$name.")
+    s"$owner$name: ${showType(functionType)}"

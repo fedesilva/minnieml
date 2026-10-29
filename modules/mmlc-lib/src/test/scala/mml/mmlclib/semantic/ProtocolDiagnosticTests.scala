@@ -47,7 +47,10 @@ class ProtocolDiagnosticTests extends BaseEffFunSuite:
       assertEquals(
         Diagnostics.fromCompilerState(state).map(error => error.message -> error.range),
         List(
-          "Not enough type information to select 'make'; add a type annotation" ->
+          """Not enough type information to select 'make'; add a type annotation
+            |Alternatives:
+            |  Make.make: (Unit) -> Bool
+            |  Make.make: (Unit) -> Int""".stripMargin ->
             Range(Position(3, 13), Position(3, 17))
         )
       )
@@ -65,7 +68,10 @@ class ProtocolDiagnosticTests extends BaseEffFunSuite:
       assertEquals(
         Diagnostics.fromCompilerState(state).map(error => error.message -> error.range),
         List(
-          "More than one signature of 'keep' matches the arguments and expected type" ->
+          """More than one signature of 'keep' matches the arguments and expected type
+            |Alternatives:
+            |  First.keep: (Int) -> Int
+            |  Second.keep: (Int) -> Int""".stripMargin ->
             Range(Position(4, 13), Position(4, 17))
         )
       )

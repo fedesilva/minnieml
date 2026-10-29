@@ -845,6 +845,7 @@ object TypeChecker:
   )
 
   private case class SelectionTrial(
+    bindingId:   String,
     checked:     Checked[Callee],
     diagnostics: DiagnosticStore,
     applicable:  Boolean
@@ -1001,7 +1002,7 @@ object TypeChecker:
     }
     // A failed implementation still has a signature. Consequences of its recorded body error
     // cannot favor another implementation with the same signature.
-    SelectionTrial(checked, diagnostics, !newFailure && expectedMatches)
+    SelectionTrial(bindingId, checked, diagnostics, !newFailure && expectedMatches)
 
   private def selectCallable(
     ref:          Ref,
@@ -1033,14 +1034,15 @@ object TypeChecker:
           )
 
         case Right(choices) =>
+          val applicationEvidence = applications.zip(probes).map { (application, probe) =>
+            ProtocolSelection.ApplicationEvidence(
+              probe.knownType,
+              calleeAscriptions(application).filterNot(failedType(_, context))
+            )
+          }
           val evidence = ProtocolSelection.matchSignatures(
             choices,
-            applications.zip(probes).map { (application, probe) =>
-              ProtocolSelection.ApplicationEvidence(
-                probe.knownType,
-                calleeAscriptions(application).filterNot(failedType(_, context))
-              )
-            },
+            applicationEvidence,
             selectionExpected,
             context.module.resolvables,
             localUses
@@ -1072,12 +1074,66 @@ object TypeChecker:
                     ) =>
                   ProtocolError.MissingInstance(ref, registered.protocol, tpe)
               }
+              val alternatives =
+                if probes.exists(_.independentErrors.nonEmpty) ||
+                  (!needsEvidence && applicable.size <= 1)
+                then Nil
+                else
+                  val ids =
+                    if applicable.size > 1 then applicable.map(_.bindingId)
+                    else
+                      applicable.map(_.bindingId) ++ evidence.flatMap { result =>
+                        result.evidence match
+                          case SignatureEvidence.Unknown =>
+                            result.registered.implementations.flatMap(_.binding.id)
+                          case _ => Nil
+                      }
+                  val uses =
+                    ProtocolSelection.UseEvidence(
+                      applicationEvidence,
+                      selectionExpected
+                    ) :: localUses
+                  selectionAlternatives(
+                    choices,
+                    ids,
+                    uses,
+                    context
+                  )
               val error =
-                if applicable.size > 1 then ProtocolError.AmbiguousSelection(ref)
-                else if needsEvidence then ProtocolError.InsufficientTypeInformation(ref)
+                if applicable.size > 1 then ProtocolError.AmbiguousSelection(ref, alternatives)
+                else if needsEvidence then
+                  ProtocolError.InsufficientTypeInformation(ref, alternatives)
                 else missing.getOrElse(ProtocolError.IncompatibleArguments(ref))
               failedSelection(ref, applications, probes, error, expectedType, context)
     }
+
+  /** Diagnostic choices use only concrete signatures compatible with the evidence already known.
+    * This does not check expressions or supply evidence to instance selection.
+    */
+  private def selectionAlternatives(
+    choices: ProtocolSelection.CandidateSet,
+    ids:     List[String],
+    uses:    List[ProtocolSelection.UseEvidence],
+    context: CheckContext
+  ): List[ProtocolAlternative] =
+    val index = context.module.resolvables
+    val owners = choices.signatures.flatMap { registered =>
+      registered.implementations.flatMap { implementation =>
+        implementation.binding.id.map(_ -> registered.protocol.name)
+      }
+    }.toMap
+    ids.distinct
+      .flatMap { id =>
+        index.lookup(id).collect { case binding: Bnd => binding }.flatMap { binding =>
+          binding.typeSpec
+            .filterNot(failedType(_, context))
+            .filter(ProtocolSelection.matchesUses(_, uses, index))
+            .map { tpe =>
+              ProtocolAlternative(owners.get(id), bindingDisplayName(binding), tpe)
+            }
+        }
+      }
+      .sortBy(_.description)
 
   /** Context-dependent probe errors are provisional: an expected lambda or hole type may resolve
     * them. Independent argument errors are emitted once when no selection can be committed.

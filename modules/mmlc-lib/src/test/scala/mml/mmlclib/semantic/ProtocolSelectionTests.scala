@@ -759,7 +759,7 @@ class ProtocolSelectionTests extends BaseEffFunSuite:
       result.visibleErrors match
         case Vector(
               SemanticError.ProtocolErrorFound(
-                ProtocolError.InsufficientTypeInformation(ref),
+                ProtocolError.InsufficientTypeInformation(ref, _),
                 _
               )
             ) =>
@@ -926,7 +926,7 @@ class ProtocolSelectionTests extends BaseEffFunSuite:
       result.visibleErrors match
         case Vector(
               SemanticError.ProtocolErrorFound(
-                ProtocolError.InsufficientTypeInformation(ref),
+                ProtocolError.InsufficientTypeInformation(ref, _),
                 _
               )
             ) =>
@@ -945,7 +945,7 @@ class ProtocolSelectionTests extends BaseEffFunSuite:
       result.visibleErrors match
         case Vector(
               SemanticError.ProtocolErrorFound(
-                ProtocolError.InsufficientTypeInformation(ref),
+                ProtocolError.InsufficientTypeInformation(ref, _),
                 _
               )
             ) =>
@@ -964,7 +964,7 @@ class ProtocolSelectionTests extends BaseEffFunSuite:
       result.visibleErrors match
         case Vector(
               SemanticError.ProtocolErrorFound(
-                ProtocolError.InsufficientTypeInformation(ref),
+                ProtocolError.InsufficientTypeInformation(ref, _),
                 _
               )
             ) =>
@@ -1041,7 +1041,9 @@ class ProtocolSelectionTests extends BaseEffFunSuite:
       val result = TypeChecker.rewriteModule(initial)
 
       result.visibleErrors match
-        case Vector(SemanticError.ProtocolErrorFound(ProtocolError.AmbiguousSelection(ref), _)) =>
+        case Vector(
+              SemanticError.ProtocolErrorFound(ProtocolError.AmbiguousSelection(ref, _), _)
+            ) =>
           assertEquals(ref.source, original.source)
         case other => fail(s"Expected one ambiguous-selection diagnostic, got $other")
     }
@@ -1064,7 +1066,7 @@ class ProtocolSelectionTests extends BaseEffFunSuite:
       result.visibleErrors match
         case Vector(
               SemanticError.ProtocolErrorFound(
-                ProtocolError.InsufficientTypeInformation(ref),
+                ProtocolError.InsufficientTypeInformation(ref, _),
                 _
               )
             ) =>
@@ -1118,7 +1120,9 @@ class ProtocolSelectionTests extends BaseEffFunSuite:
 
       assertEquals(original.candidateIds.size, 2)
       result.visibleErrors match
-        case Vector(SemanticError.ProtocolErrorFound(ProtocolError.AmbiguousSelection(ref), _)) =>
+        case Vector(
+              SemanticError.ProtocolErrorFound(ProtocolError.AmbiguousSelection(ref, _), _)
+            ) =>
           assertEquals(ref.source, original.source)
           assertEquals(ref.resolvedId, None)
         case other => fail(s"Expected both completed signatures to remain applicable, got $other")
@@ -1295,7 +1299,7 @@ class ProtocolSelectionTests extends BaseEffFunSuite:
       }
 
       selections match
-        case Vector(ProtocolError.AmbiguousSelection(ref)) =>
+        case Vector(ProtocolError.AmbiguousSelection(ref, _)) =>
           assertEquals(ref.source, original.source)
         case other => fail(s"Expected ambiguous selection despite the body error, got $other")
       assertEquals(mismatches.size, 1)

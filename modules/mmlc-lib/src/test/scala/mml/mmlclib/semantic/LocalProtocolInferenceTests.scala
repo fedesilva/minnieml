@@ -185,7 +185,7 @@ class LocalProtocolInferenceTests extends BaseEffFunSuite:
         fn example(): Int = let selected = identity; selected 42;;
       """,
       {
-        case ProtocolError.AmbiguousSelection(_) => true
+        case ProtocolError.AmbiguousSelection(_, _) => true
         case _ => false
       }
     )
@@ -287,5 +287,5 @@ class LocalProtocolInferenceTests extends BaseEffFunSuite:
     }
 
   private def insufficient(error: ProtocolError): Boolean = error match
-    case ProtocolError.InsufficientTypeInformation(_) => true
+    case ProtocolError.InsufficientTypeInformation(_, _) => true
     case _ => false

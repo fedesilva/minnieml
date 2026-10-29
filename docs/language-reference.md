@@ -360,6 +360,9 @@ Explicit annotations remain constraints on every use.
 
 An unconstrained reference is an error even if only one instance happens to be declared.
 Missing instances, incompatible operands, and multiple applicable signatures also produce errors.
+Insufficient-information and ambiguity errors list every remaining concrete callable alternative,
+regardless of how many are available. Each listed alternative shows its callable type and protocol
+name where applicable.
 Ordinary lexical bindings and parameters shadow protocol member names.
 
 See the runnable [named-function sample](../mml/samples/protocol-functions.mml) and

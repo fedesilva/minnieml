@@ -4,6 +4,9 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-10-28
 
+- Display every remaining concrete alternative in insufficient-information and ambiguous
+  protocol-selection errors, including callable types and protocol names in CLI and editor output.
+
 - Show the annotation fallback beside unannotated bindings in the named-function and operator
   protocol samples.
 

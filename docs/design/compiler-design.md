@@ -1084,8 +1084,11 @@ types when possible.
 - Emits `TypeError.TypeMismatch`, `InvalidApplication`, `UndersaturatedApplication`, or
   `OversaturatedApplication` depending on the shape of the call.
 - Protocol selection distinguishes missing instances, incompatible arguments, insufficient
-  information, and multiple applicable members. A successful module contains no executable
-  reference to an unselected protocol signature.
+  information, and multiple applicable members. Insufficient-information and ambiguity errors
+  retain typed display alternatives, filtered by known constraints and applicable binding IDs.
+  Their shared CLI/LSP message displays every remaining alternative;
+  diagnostics do not perform another round of candidate checking or change selection.
+  A successful module contains no executable reference to an unselected protocol signature.
 - The parser retains the magnitude `2147483648` so `-2147483648` can be represented. Type checking
   folds that call only after selecting the built-in Int negation by binding identity. Other
   remaining out-of-range integer literals receive diagnostics at the literal's source span;
