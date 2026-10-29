@@ -372,7 +372,7 @@ Implementation plan approval and verification are pending.
   and linting, smoke collection before publishing or expensive checks, full `testFull`, local
   publish, benchmarks, and the memory harness for ownership/lambda changes. Run sbtn sequentially.
 - If ABI/C interoperability changes are required, run affected fixtures in both required Linux
-  containers and offer optional cloud verification under the repository rules.
+  containers.
 - Use local post-chores for compiler handoff, including QA enforcement and independent review.
   Record durable verification evidence in this task or versioned supporting files, distinguishing
   semantic tests, IR checks, execution, sanitizer results, and benchmark measurements.

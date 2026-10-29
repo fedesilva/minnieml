@@ -103,16 +103,6 @@ The compiler needs to be installed before it's used if changes were made.
     native execution, emulated execution, and cross-compilation. Report an unavailable or
     failing container check as an unmet gate; do not silently omit it or claim it passed.
 
-- **Optional cloud verification after required Docker checks**:
-  - Whenever the change category requires local Docker verification (currently ABI/C
-    interoperability), explicitly offer a manual cloud run. Ask; do not dispatch automatically.
-  - Local Docker checks remain mandatory. Declining the cloud run does not block completion.
-  - Before an accepted dispatch, identify the branch and exact commit. Obtain separate commit
-    or push authorization when needed, unless already granted. Uncommitted changes are not tested
-    by a hosted run. Verify the run's commit, then report its link and actual outcome.
-  - Follow [manual cloud verification](dev-tools.md#manual-cloud-verification). Missing or
-    deferred hosted evidence must be reported accurately and is not a completion gate.
-
 - **Publish the compiler** with `sbtn mmlcPublishLocal` before running benchmarks or the memory
     harness, since both use `mmlc`.
 
