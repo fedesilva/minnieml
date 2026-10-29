@@ -5,11 +5,11 @@ pub fn main() =
   let name = 1;
 
   let f = {
-    println ("Type a number, " ++ (int_to_str name));
+    println ("Type a number, " ++ (to_str name));
     let n = str_to_int (readline());
 
     let g = {
-      println ("Number is: " ++ (int_to_str n) ++ ", " ++ (int_to_str name));
+      println ("Number is: " ++ (to_str n) ++ ", " ++ (to_str name));
     }: Unit;
 
     g();

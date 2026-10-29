@@ -59,6 +59,30 @@ class ParseTypeErrorTests extends BaseEffFunSuite:
     case product: Product => product.productIterator.toList.flatMap(typeErrors)
     case _ => Nil
 
+  test("stamping visits retained callee annotations with their source evidence") {
+    parseNotFailed(code).map { module =>
+      val binding  = firstBinding(module)
+      val function = firstLambda(binding)
+      val argument = Expr(function.source, List(LiteralInt(function.source, 1, typeSpec = None)))
+      val call = App(
+        function.source,
+        function,
+        argument,
+        calleeAscriptions = List(malformed)
+      )
+      val input = replaceFirst(module, binding.copy(value = binding.value.copy(terms = List(call))))
+      val stamped = ParsingErrorChecker.checkModule(stateOf(input))
+      val errors  = typeErrors(stamped.module)
+
+      assertEquals(errors.size, 1)
+      assertEquals(stamped.diagnostics.records.size, 1)
+      assertEquals(errors.head.causes, stamped.diagnostics.records.map(_.id))
+      assertEquals(errors.head.source, malformed.source)
+      assertEquals(stamped.diagnostics.records.head.relation, DiagnosticRelation.Primary)
+      assertEquals(recoveredTree(stamped.module), recoveredTree(input))
+    }
+  }
+
   test("mirrored malformed annotations share one root while equal occurrences remain independent") {
     parseNotFailed(code).map { module =>
       val binding  = firstBinding(module)
@@ -291,7 +315,7 @@ class ParseTypeErrorTests extends BaseEffFunSuite:
       )
       assertEquals(
         AstLookup.findReferencesAt(
-          result.module,
+          result,
           errorSpan.start.line,
           errorSpan.start.col,
           includeDeclaration = true

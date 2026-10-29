@@ -7,7 +7,7 @@ fn makeGreeter(~name: String) =
 
 fn loop(n: Int): Unit =
   if true then
-    let greet = makeGreeter ("User" ++ (int_to_str n));
+    let greet = makeGreeter ("User" ++ (to_str n));
     greet ();
     loop (n - 1);
   ;

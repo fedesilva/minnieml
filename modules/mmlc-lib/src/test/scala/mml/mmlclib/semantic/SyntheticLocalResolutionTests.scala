@@ -20,8 +20,8 @@ class SyntheticLocalResolutionTests extends BaseEffFunSuite:
     term match
       case Expr(_, terms, _, _) => terms.flatMap(collectParams)
       case Lambda(_, params, body, _, _, _, _, _) => params ++ collectParams(body)
-      case App(_, fn, arg, _, _) =>
-        collectParamsFromAppFn(fn) ++ collectParams(arg)
+      case app: App =>
+        collectParamsFromAppFn(app.fn) ++ collectParams(app.arg)
       case Cond(_, cond, ifTrue, ifFalse, _, _) =>
         collectParams(cond) ++ collectParams(ifTrue) ++ collectParams(ifFalse)
       case TermGroup(_, inner, _) => collectParams(inner)
@@ -40,8 +40,8 @@ class SyntheticLocalResolutionTests extends BaseEffFunSuite:
     term match
       case expr:   Expr => expr.terms.flatMap(collectRefs)
       case lambda: Lambda => lambda.captures.map(_.ref) ++ collectRefs(lambda.body)
-      case App(_, fn, arg, _, _) =>
-        collectRefsFromAppFn(fn) ++ collectRefs(arg)
+      case app:    App =>
+        collectRefsFromAppFn(app.fn) ++ collectRefs(app.arg)
       case Cond(_, cond, ifTrue, ifFalse, _, _) =>
         collectRefs(cond) ++ collectRefs(ifTrue) ++ collectRefs(ifFalse)
       case TermGroup(_, inner, _) => collectRefs(inner)

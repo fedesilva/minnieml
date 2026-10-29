@@ -79,15 +79,8 @@ class ConditionalRecoveryIntegrationTests extends BaseEffFunSuite:
       case Left(error) => fail(s"Expected retained compiler state, got $error")
     }
 
-  private def assertAddition(value: Expr, module: Module): Unit =
-    val operator = module.members
-      .collectFirst {
-        case value: Bnd
-            if value.meta
-              .exists(meta => meta.originalName == "+" && meta.arity == CallableArity.Binary) =>
-          value
-      }
-      .getOrElse(fail("Expected addition declaration"))
+  private def assertAddition(value: Expr, state: CompilerState): Unit =
+    val operator = protocolImplementation(state, "Num", "Int", "+", Some(CallableArity.Binary))
     assert(operator.id.nonEmpty)
     value match
       case TXExprApp(reference, _, List(TXExprInt(3), TXExprInt(4))) =>
@@ -153,7 +146,7 @@ class ConditionalRecoveryIntegrationTests extends BaseEffFunSuite:
 
       val good  = binding(state.module, "good")
       val later = binding(state.module, "later")
-      assertAddition(good.value, state.module)
+      assertAddition(good.value, state)
       assert(good.id.nonEmpty)
       assertEquals(references(later.value).map(_.resolvedId), List(good.id))
       val availability = ValueAvailability.fromModule(state.module)
@@ -191,7 +184,7 @@ class ConditionalRecoveryIntegrationTests extends BaseEffFunSuite:
       assertEquals(references(first.cond).map(_.resolvedId), List(flag.id))
       assertEquals(references(first.ifTrue).map(_.resolvedId), List(value.id))
       assertEquals(onlyParseError(first.ifTrue).spanOpt, spanOf(code, "@").some)
-      assertAddition(second.ifFalse, state.module)
+      assertAddition(second.ifFalse, state)
       assertEquals(
         state.visibleErrors.map(_.message),
         Vector(

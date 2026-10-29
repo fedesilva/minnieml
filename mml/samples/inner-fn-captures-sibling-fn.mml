@@ -18,5 +18,5 @@ pub fn main(): Unit =
   fn applyInc(y: Int): Int = inc y;;
 
   let result = applyInc 41;
-  println (int_to_str result);
+  println (to_str result);
 ;

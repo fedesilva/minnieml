@@ -6,7 +6,7 @@ import mml.mmlclib.codegen.emitter.abis.NativeAbiPlan
 import mml.mmlclib.codegen.emitter.alias.AliasScopeEmitter
 import mml.mmlclib.codegen.emitter.expression.escapeString
 import mml.mmlclib.codegen.emitter.tbaa.TbaaEmitter
-import mml.mmlclib.codegen.{TargetAbi, TargetAttributes}
+import mml.mmlclib.codegen.{EntryPoint, TargetAbi, TargetAttributes}
 import mml.mmlclib.errors.CompilerWarning
 
 /** Holds the emitted module text and warnings accumulated while emitting its members. */
@@ -543,7 +543,8 @@ private def emitSynthesizedMain(
 
 /** Returns the validated LLVM result type of the entry point. */
 private def mainReturnType(module: Module, state: CodeGenState): String =
-  findMainFn(module)
+  EntryPoint
+    .find(module)
     .flatMap { (bnd, _) =>
       bnd.typeSpec.flatMap {
         case fnType: TypeFn => getLlvmType(fnType.returnType, state).toOption
@@ -555,7 +556,7 @@ private def mainReturnType(module: Module, state: CodeGenState): String =
     .getOrElse("void")
 
 private def mainTakesStringArrayArg(module: Module): Boolean =
-  findMainFn(module) match
+  EntryPoint.find(module) match
     case Some((_, lambda)) =>
       lambda.params match
         case param :: Nil =>
@@ -567,11 +568,3 @@ private def paramTypeIsStringArray(param: FnParam): Boolean =
   param.typeSpec.orElse(param.typeAsc) match
     case Some(TypeRef(_, name, _, _)) => name == "StringArray"
     case _ => false
-
-/** Finds the main function binding and its lambda in the module. */
-private def findMainFn(module: Module): Option[(Bnd, Lambda)] =
-  module.members.collectFirst {
-    case bnd: Bnd
-        if bnd.meta.exists(m => m.origin == BindingOrigin.Function && m.originalName == "main") =>
-      bnd.value.terms.headOption.collect { case lambda: Lambda => (bnd, lambda) }
-  }.flatten

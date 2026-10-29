@@ -109,7 +109,7 @@ has no later direct reference.
 
 ## Fit with ownership analysis
 
-The [ownership analyzer](../../design/compiler-design.md#semantic-phase-14-ownershipanalyzer)
+The [ownership analyzer](../../design/compiler-design.md#semantic-phase-16-ownershipanalyzer)
 threads ownership state forward through initializers and continuations, then inserts
 cleanup while unwinding scopes. It checks moves and borrow escape; mutation
 invalidation is not implemented.

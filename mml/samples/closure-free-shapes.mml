@@ -17,5 +17,5 @@ pub fn main(args: StringArray): Unit =
   let add_seed = make_adder seed;
   let with_env = consume add_seed seed;
 
-  println (int_to_str (no_env + with_env));
+  println (to_str (no_env + with_env));
 ;

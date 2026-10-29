@@ -27,11 +27,6 @@ the tracker, and the relevant task. Derive completion requirements from those so
    establish their changed behavior, following applicable repository rules.
 5. Record actual results, including failures, ignores, and explicit waivers. Never infer
    workstream signoff, task completion, or commit authority from passing checks.
-6. When the change category requires local Docker checks (currently ABI/C interoperability),
-   explicitly offer the optional manual cloud run described in `context/coding-rules.md`.
-   Keep local checks mandatory; declining cloud execution does not block completion.
-   Before an accepted dispatch, identify the branch and commit, obtain any missing commit/push
-   authorization separately, and verify the run's SHA before reporting its link and outcome.
 
 ## Focused tracking review
 

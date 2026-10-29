@@ -103,7 +103,7 @@ pub fn main() =
   let locals = local_cases 4;
   let nested = nested_case 3;
 
-  println (int_to_str (
+  println (to_str (
     direct +
     direct_tail +
     ho_named +

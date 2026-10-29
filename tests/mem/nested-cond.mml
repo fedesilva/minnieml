@@ -4,12 +4,12 @@
 fn all_heap(a: Int, b: Int): Unit =
   let s = if a > 0 then
     if b > 0 then
-      int_to_str a;
+      to_str a;
     else
-      int_to_str b;
+      to_str b;
     ;
   else
-    int_to_str (a + b);
+    to_str (a + b);
   ;
   println s;
 ;
@@ -19,12 +19,12 @@ fn all_heap(a: Int, b: Int): Unit =
 fn mixed_nested(a: Int, b: Int): Unit =
   let s = if a > 0 then
     if b > 0 then
-      int_to_str a;
+      to_str a;
     else
       "none";
     ;
   else
-    int_to_str (a + b);
+    to_str (a + b);
   ;
   println s;
 ;

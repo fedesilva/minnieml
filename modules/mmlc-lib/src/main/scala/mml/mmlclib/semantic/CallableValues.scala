@@ -345,12 +345,19 @@ object CallableValues:
     case other => TermTraversal.children(other).flatMap(applications)
 
   def application(app: App): (Ref | Lambda, List[Expr]) =
+    val (callee, nodes) = applicationNodes(app)
+    (callee, nodes.map(_.arg))
+
+  /** Retain original application nodes in argument order, from innermost to outermost, including
+    * each invocation's source, annotations, and result type.
+    */
+  def applicationNodes(app: App): (Ref | Lambda, List[App]) =
     @scala.annotation.tailrec
-    def loop(fn: Callee, args: List[Expr]): (Ref | Lambda, List[Expr]) =
-      fn match
-        case inner:  App => loop(inner.fn, inner.arg :: args)
-        case callee: (Ref | Lambda) => (callee, args)
-    loop(app.fn, List(app.arg))
+    def collect(current: App, outer: List[App]): (Ref | Lambda, List[App]) = current.fn match
+      case inner: App => collect(inner, current :: outer)
+      case root:  (Ref | Lambda) => (root, current :: outer)
+
+    collect(app, Nil)
 
   def fromModule(module: Module): CallableValues =
     val recovery = ValueAvailability.fromModule(module)

@@ -10,11 +10,8 @@ private val invalidLinkMessage =
   "Expected @link[\"library\", \"library\"]; " +
     "with nonempty library names, not paths or linker arguments"
 
-private def memberKeyword(using P[Any]): P[Unit] =
-  P(StringIn("let", "fn", "op", "type", "struct", "pub", "prot", "priv", "inline"))
-
 private def memberBoundary(using P[Any]): P[Unit] =
-  P(End | "@link" | "/*" | memberKeyword ~~ !CharIn("a-zA-Z0-9_"))
+  P(End | "@link" | "/*" | declarationStartP)
 
 private def validLinkName(name: String): Boolean =
   name.matches("[A-Za-z0-9_][A-Za-z0-9_.+\\-]*")

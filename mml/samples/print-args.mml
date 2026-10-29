@@ -1,3 +1,3 @@
 pub fn main(args: StringArray): Unit =
-  println (int_to_str (ar_str_len args));
+  println (to_str (ar_str_len args));
 ;

@@ -68,10 +68,11 @@ final case class ValueAvailability private (
       sourceAvailable && valueType.exists(typeAvailable)
 
     case app: App =>
-      app.fn match
+      val resultAvailable = app.fn match
         case scope: Lambda => isAvailable(scope.body)
         case _ =>
           app.typeSpec.exists(typeAvailable) && isAvailable(app.fn) && isAvailable(app.arg)
+      resultAvailable && app.calleeAscriptions.forall(typeAvailable)
 
     case lambda: Lambda =>
       lambda.params.forall(param => param.typeSpec.orElse(param.typeAsc).exists(typeAvailable)) &&

@@ -142,7 +142,7 @@ class LiteralTests extends BaseEffFunSuite:
     }
   }
 
-  test("parses leading-dot floats combined with stdlib float operator") {
+  test("parses leading-dot floats beside a dotted operator name") {
     parseNotFailed(
       """
         let x = .5 +. .25;

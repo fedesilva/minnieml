@@ -11,7 +11,7 @@ fn fizzbuzz(n: Int): Unit =
     elif mod n 5 == 0 then
       println "Buzz";
     else
-      println (int_to_str n);
+      println (to_str n);
     ;
     ;
   ;

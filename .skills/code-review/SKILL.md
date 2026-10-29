@@ -178,13 +178,16 @@ For every review, the primary reviewer launches three separate, fresh-context re
 with `fork_turns: "none"`:
 
 1. **Code style and QA:** enforce the repository's Scala, functional-state, pattern-matching,
-   shared-helper, comment, and spacing rules against the actual diff.
+   shared-helper, comment, and spacing rules within the review scope. Check documentation
+   coverage as well as comment accuracy against QA section 9 and its positive examples.
 2. **Test quality:** inspect what fixtures and assertions prove, boundary and negative controls,
    diagnostic and identity assertions, and whether tests would detect the claimed regression.
    Distinguish semantic checks, IR validity, execution, sanitizers, and measurements.
 3. **Human readability:** examine names, visible control and data flow, nesting, state plumbing,
-   duplication, and whether abstractions help a maintainer follow the code. Require concrete
-   reading or maintenance costs for findings, not personal taste.
+   duplication, and whether abstractions and documentation help an experienced, tired maintainer
+   follow the code. Apply **Documentation for a tired maintainer** below; missing explanations
+   can be findings without a runtime defect. Require concrete reading or maintenance costs,
+   not personal taste.
 
 These checks supplement the primary review. A general correctness review, formatter, linter,
 passing test suite, or parent-agent QA pass does not replace any of them. Narrow re-reviews
@@ -292,6 +295,37 @@ clever one-liners, repeated plumbing, copy-pasted state handling, and comments
 that narrate obvious statements. Do not demand verbosity, arbitrary function
 size limits, or abstraction for its own sake.
 
+### Documentation for a tired maintainer
+
+Assume an experienced reader whose attention is limited. Humane code makes purpose, contracts,
+and important decisions accessible without requiring the reader to reconstruct them from bodies
+and callers. Explain the local meaning of an operation, not elementary programming concepts.
+
+Read section 9 of `context/qa-rules-and-coding-style.md`, including its positive examples.
+Inspect documentation coverage across the approved scope, including private types and helpers;
+a whole-file pass includes undocumented declarations, not only existing comments or changed lines.
+Check whether the reader can understand:
+
+- what each nontrivial type represents, why its fields belong together, and how it differs from
+  similar representations;
+- what each nontrivial operation accomplishes, its relevant preconditions and results, and its
+  failure or recovery contract;
+- what phase-specific terms mean here: for a lowering operation, which representation becomes
+  which, what is preserved, and what remains for later phases;
+- why non-obvious choices, ordering constraints, and invariants are necessary.
+
+Flag missing explanations when these questions require reconstructing intent from implementation.
+Being able to trace the code or find a test does not by itself make the documentation adequate;
+that trace establishes what the explanation should say. Do not pass substantially undocumented
+code merely because the few existing comments are accurate. State the missing explanation and
+the specific reader effort it would remove; verifiers must assess that burden rather than require
+a correctness bug.
+
+Keep the remedy proportionate. A precise sentence can establish a helper's role; use an example
+when it clarifies a transformation or distinction. Names can suffice for trivial operations.
+Reject comments that merely paraphrase statements, generic tutorials, and verbosity without added
+meaning. Documentation complements clear structure; it does not excuse obscure code.
+
 ### Scala and functional design
 
 Apply `context/qa-rules-and-coding-style.md` and `context/coding-rules.md`
@@ -362,6 +396,8 @@ Check behavior, not just coverage.
 Audit comments, technical documentation, and TODOs touched by or directly
 affected by the change.
 
+- Check missing documentation using **Documentation for a tired maintainer**, not just the
+  correctness of prose already present.
 - Reject claims stronger than the available code, test, build, or runtime
   evidence.
 - Keep affected documents mutually consistent and synchronized with the

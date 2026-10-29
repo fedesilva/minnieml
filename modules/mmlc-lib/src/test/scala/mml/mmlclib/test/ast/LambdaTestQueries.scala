@@ -37,8 +37,8 @@ def collectUserLambdas(term: Term): List[Lambda] =
       lambda :: collectUserLambdas(lambda.body)
     case TXScopedBinding(bindingLambda, boundValue) =>
       collectUserLambdas(bindingLambda.body) ++ collectUserLambdas(boundValue)
-    case App(_, fn, arg, _, _) =>
-      collectUserLambdas(fn) ++ collectUserLambdas(arg)
+    case app: App =>
+      collectUserLambdas(app.fn) ++ collectUserLambdas(app.arg)
     case Cond(_, cond, ifTrue, ifFalse, _, _) =>
       collectUserLambdas(cond) ++
         collectUserLambdas(ifTrue) ++

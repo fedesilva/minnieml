@@ -8,9 +8,30 @@ import mml.mmlclib.errors.{DiagnosticId, DiagnosticStore}
 
 object RefResolver:
 
+  /** Resolve all references and retain each failed occurrence alongside its diagnostic roots. */
+  def rewriteModule(state: CompilerState): CompilerState =
+    val scope = ProtocolLookupScope.module(state.module)
+    val (diagnostics, members) = state.module.members
+      .traverse { member =>
+        resolveMember(member, Context(member, state.module, state.protocols, scope))
+      }
+      .run(state.diagnostics)
+      .value
+
+    state.copy(diagnostics = diagnostics).withModule(state.module.copy(members = members))
+
   private val phaseName = "mml.mmlclib.semantic.RefResolver"
 
   private type Resolution[A] = State[DiagnosticStore, A]
+
+  private case class Context(
+    member:    Member,
+    module:    Module,
+    protocols: ProtocolRegistry,
+    scope:     ProtocolLookupScope
+  ):
+
+    def within(params: List[FnParam]): Context = copy(scope = scope.within(params))
 
   /** A failed callee stays intact inside the smallest application that can carry its error. */
   private case class ResolvedCallee(value: Callee, causes: Vector[DiagnosticId] = Vector.empty):
@@ -26,148 +47,101 @@ object RefResolver:
           causes       = causes
         )
 
-  /** Resolve all references and retain each failed occurrence alongside its diagnostic roots. */
-  def rewriteModule(state: CompilerState): CompilerState =
-    val (diagnostics, members) = state.module.members
-      .traverse(resolveMember(_, state.module))
-      .run(state.diagnostics)
-      .value
-
-    state.copy(diagnostics = diagnostics).withModule(state.module.copy(members = members))
-
-  private def resolveMember(member: Member, module: Module): Resolution[Member] = member match
+  private def resolveMember(member: Member, context: Context): Resolution[Member] = member match
     case binding: Bnd =>
-      resolveExpr(binding.value, binding, module)
+      resolveExpr(binding.value, context)
         .map(value => binding.copy(value = value))
     case other => other.pure[Resolution]
 
-  private def resolveExpr(
-    expr:        Expr,
-    member:      Member,
-    module:      Module,
-    extraParams: List[FnParam] = Nil
-  ): Resolution[Expr] =
+  private def resolveExpr(expr: Expr, context: Context): Resolution[Expr] =
     expr.terms
-      .traverse(resolveTerm(_, member, module, extraParams))
+      .traverse(resolveTerm(_, context))
       .map(terms => expr.copy(terms = terms))
 
-  private def resolveTerm(
-    term:        Term,
-    member:      Member,
-    module:      Module,
-    extraParams: List[FnParam]
-  ): Resolution[Term] = term match
+  private def resolveTerm(term: Term, context: Context): Resolution[Term] = term match
 
     case ref: Ref =>
-      resolveRef(ref, member, module, extraParams).map(_.asTerm)
+      resolveRef(ref, context).map(_.asTerm)
 
     case app: App =>
-      resolveApp(app, member, module, extraParams).map(_.asTerm)
+      resolveApp(app, context).map(_.asTerm)
 
     case lambda: Lambda =>
-      resolveLambda(lambda, member, module, extraParams).widen
+      resolveLambda(lambda, context).widen
 
     case group: TermGroup =>
-      resolveExpr(group.inner, member, module, extraParams)
+      resolveExpr(group.inner, context)
         .map(inner => group.copy(inner = inner))
 
     case expr: Expr =>
-      resolveExpr(expr, member, module, extraParams).widen
+      resolveExpr(expr, context).widen
 
     case tuple: Tuple =>
       tuple.elements
-        .traverse(resolveExpr(_, member, module, extraParams))
+        .traverse(resolveExpr(_, context))
         .map(elements => tuple.copy(elements = elements))
 
     case cond: Cond =>
       for
-        predicate <- resolveExpr(cond.cond, member, module, extraParams)
-        yes <- resolveExpr(cond.ifTrue, member, module, extraParams)
-        no <- resolveExpr(cond.ifFalse, member, module, extraParams)
+        predicate <- resolveExpr(cond.cond, context)
+        yes <- resolveExpr(cond.ifTrue, context)
+        no <- resolveExpr(cond.ifFalse, context)
       yield cond.copy(cond = predicate, ifTrue = yes, ifFalse = no)
 
     case other => other.pure[Resolution]
 
-  private def resolveRef(
-    ref:         Ref,
-    member:      Member,
-    module:      Module,
-    extraParams: List[FnParam]
-  ): Resolution[ResolvedCallee] = ref.qualifier match
+  private def resolveRef(ref: Ref, context: Context): Resolution[ResolvedCallee] =
+    ref.qualifier match
 
-    case Some(qualifier) =>
-      resolveTerm(qualifier, member, module, extraParams)
-        .map(updated => ResolvedCallee(ref.copy(qualifier = updated.some)))
+      case Some(qualifier) =>
+        resolveTerm(qualifier, context)
+          .map(updated => ResolvedCallee(ref.copy(qualifier = updated.some)))
 
-    case None =>
-      val candidates = lookupRefs(ref, member, module, extraParams)
-      if candidates.isEmpty then
-        DiagnosticStore
-          .report(SemanticError.UndefinedRef(ref, member, phaseName))
-          .map(causes => ResolvedCallee(ref, causes))
-      else
-        val ids = candidates.flatMap(_.id)
-        val updated =
-          if candidates.length == 1 then ref.copy(candidateIds = ids, resolvedId = ids.headOption)
-          else ref.copy(candidateIds                           = ids)
-        ResolvedCallee(updated).pure[Resolution]
+      case None =>
+        val candidates = context.protocols
+          .visibleCandidates(ref.name, context.scope, context.module.resolvables)
+        candidates match
+          case Left(ProtocolLookupError.RejectedDeclaration(causes)) =>
+            ResolvedCallee(ref, causes).pure[Resolution]
 
-  private def resolveLambda(
-    lambda:      Lambda,
-    member:      Member,
-    module:      Module,
-    extraParams: List[FnParam]
-  ): Resolution[Lambda] =
-    resolveExpr(lambda.body, member, module, lambda.params ++ extraParams)
+          case Left(error) =>
+            DiagnosticStore
+              .report(
+                SemanticError
+                  .ProtocolErrorFound(ProtocolError.RegistryFailure(ref, error), phaseName)
+              )
+              .map(causes => ResolvedCallee(ref, causes))
+
+          case Right(Nil) =>
+            DiagnosticStore
+              .report(SemanticError.UndefinedRef(ref, context.member, phaseName))
+              .map(causes => ResolvedCallee(ref, causes))
+
+          case Right(visible) =>
+            val resolvedId = visible match
+              case ProtocolCandidate.Declaration(id) :: Nil => id.some
+              case _ => None
+            val updated = ref.copy(candidateIds = visible.map(_.id), resolvedId = resolvedId)
+            ResolvedCallee(updated).pure[Resolution]
+
+  private def resolveLambda(lambda: Lambda, context: Context): Resolution[Lambda] =
+    resolveExpr(lambda.body, context.within(lambda.params))
       .map(body => lambda.copy(body = body))
 
-  private def resolveApp(
-    app:         App,
-    member:      Member,
-    module:      Module,
-    extraParams: List[FnParam]
-  ): Resolution[ResolvedCallee] =
+  private def resolveApp(app: App, context: Context): Resolution[ResolvedCallee] =
     // A parser-lowered local binding is in scope in its initializer, enabling recursion.
-    val argParams = app.fn match
-      case lambda: Lambda => lambda.params ++ extraParams
-      case _ => extraParams
+    val argContext = app.fn match
+      case lambda: Lambda => context.within(lambda.params)
+      case _ => context
 
     for
-      fn <- resolveCallee(app.fn, member, module, extraParams)
-      arg <- resolveExpr(app.arg, member, module, argParams)
+      fn <- resolveCallee(app.fn, context)
+      arg <- resolveExpr(app.arg, argContext)
     yield ResolvedCallee(app.copy(fn = fn.value, arg = arg), fn.causes)
 
-  private def resolveCallee(
-    callee:      Callee,
-    member:      Member,
-    module:      Module,
-    extraParams: List[FnParam]
-  ): Resolution[ResolvedCallee] = callee match
-    case ref:    Ref => resolveRef(ref, member, module, extraParams)
-    case app:    App => resolveApp(app, member, module, extraParams)
-    case lambda: Lambda =>
-      resolveLambda(lambda, member, module, extraParams).map(ResolvedCallee(_))
-
-  /** Returns matching parameters or module declarations, preserving overload candidates. */
-  private def lookupRefs(
-    ref:         Ref,
-    member:      Member,
-    module:      Module,
-    extraParams: List[FnParam]
-  ): List[Resolvable] =
-    val enclosing = extraParams.find(_.name == ref.name).toList
-    val parameters = member match
-      case binding: Bnd =>
-        binding.value.terms.headOption match
-          case Some(lambda: Lambda) => lambda.params.filter(_.name == ref.name)
-          case _ => Nil
-      case _ => Nil
-
-    if enclosing.nonEmpty then enclosing
-    else if parameters.nonEmpty then parameters
-    else
-      module.members.collect {
-        case binding: Bnd
-            if binding.name == ref.name || binding.meta.exists(_.originalName == ref.name) =>
-          binding
-      }
+  private def resolveCallee(callee: Callee, context: Context): Resolution[ResolvedCallee] =
+    callee match
+      case ref:    Ref => resolveRef(ref, context)
+      case app:    App => resolveApp(app, context)
+      case lambda: Lambda =>
+        resolveLambda(lambda, context).map(ResolvedCallee(_))

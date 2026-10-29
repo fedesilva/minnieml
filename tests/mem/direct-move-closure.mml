@@ -7,5 +7,5 @@ pub fn main(): Unit =
   let a = 1;
   let f = ~{ x: Int -> x + a; };
   let r = f 41;
-  println (int_to_str r);
+  println (to_str r);
 ;

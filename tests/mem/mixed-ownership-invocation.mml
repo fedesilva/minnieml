@@ -4,14 +4,14 @@ fn inc(n: Int): Int = n + 1;;
 fn check(ok: Bool): Int = if ok then 0; else 1; ;;
 
 fn direct(flag: Bool, invoked: Bool): Int =
-  let text = int_to_str 123;
+  let text = to_str 123;
   let f = if flag then ~{ n: Int -> take text + n; }; else inc;;
   let expected = if flag then 4; else 2;;
   if invoked then check (f 1 == expected); else 0;;
 ;
 
 fn aliased(flag: Bool, invoked: Bool): Int =
-  let text = int_to_str 123;
+  let text = to_str 123;
   let f = if flag then ~{ n: Int -> take text + n; }; else inc;;
   let first = f;
   let second = first;
@@ -20,7 +20,7 @@ fn aliased(flag: Bool, invoked: Bool): Int =
 ;
 
 fn scoped(flag: Bool, invoked: Bool): Int =
-  let text = int_to_str 123;
+  let text = to_str 123;
   let f = if flag then ~{ n: Int -> take text + n; }; else inc;;
   let alias = (let inner = f; inner);
   let expected = if flag then 4; else 2;;

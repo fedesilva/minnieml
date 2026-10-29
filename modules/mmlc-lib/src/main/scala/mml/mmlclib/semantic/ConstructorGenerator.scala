@@ -17,13 +17,6 @@ import BindingIds.Allocation
   */
 object ConstructorGenerator:
 
-  private def arityOf(count: Int): CallableArity =
-    count match
-      case 0 => CallableArity.Nullary
-      case 1 => CallableArity.Unary
-      case 2 => CallableArity.Binary
-      case n => CallableArity.Nary(n)
-
   private def mkStructConstructor(struct: TypeStruct, moduleName: String): Allocation[Bnd] =
     val constructorName = s"__mk_${struct.name}"
     val returnType =
@@ -40,7 +33,7 @@ object ConstructorGenerator:
       .map { params =>
         val meta = BindingMeta(
           origin        = BindingOrigin.Constructor,
-          arity         = arityOf(params.size),
+          arity         = CallableArity.fromParameterCount(params.size),
           precedence    = Precedence.Function,
           associativity = None,
           originalName  = struct.name,
@@ -94,7 +87,7 @@ object ConstructorGenerator:
       .map { params =>
         val meta = BindingMeta(
           origin        = BindingOrigin.Constructor,
-          arity         = arityOf(params.size),
+          arity         = CallableArity.fromParameterCount(params.size),
           precedence    = Precedence.Function,
           associativity = None,
           originalName  = td.name,

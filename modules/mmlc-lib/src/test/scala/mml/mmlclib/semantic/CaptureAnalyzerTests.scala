@@ -20,8 +20,8 @@ class CaptureAnalyzerTests extends BaseEffFunSuite:
             .orElse(fromTerm(boundValue))
         case lambda: Lambda =>
           fromExpr(lambda.body)
-        case App(_, fn, arg, _, _) =>
-          fromTerm(fn).orElse(fromExpr(arg))
+        case app: App =>
+          fromTerm(app.fn).orElse(fromExpr(app.arg))
         case Cond(_, cond, ifTrue, ifFalse, _, _) =>
           fromExpr(cond).orElse(fromExpr(ifTrue)).orElse(fromExpr(ifFalse))
         case TermGroup(_, inner, _) =>

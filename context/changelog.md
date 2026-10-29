@@ -2,7 +2,58 @@
 
 Durable product changes belong here. Current task state belongs in task files.
 
+## 2026-10-28
+
+- Add ToString instances for scalar values, String, CString, and Unit, with owned string results.
+  Reuse canonical instances for aliases and migrate samples, benchmarks, and MML fixtures to to_str.
+
+- Display every remaining concrete alternative in insufficient-information and ambiguous
+  protocol-selection errors, including callable types and protocol names in CLI and editor output.
+
+- Show the annotation fallback beside unannotated bindings in the named-function and operator
+  protocol samples.
+
+- Infer one concrete protocol function from later local uses, aliases, branches, and known
+  consumer types. Preserve explicit constraints and diagnose unresolved or conflicting uses.
+  Document the local inference boundary and ordinary ownership rules of selected members.
+
+- Share the construction of remaining callable types in ordinary application checking and
+  protocol selection, preserving return types and source locations.
+
+## 2026-10-27
+
+- Align the placeholder prelude with the injected standard library: Num instances for Int and
+  Float, runtime helpers, native symbols, and ownership annotations. Identify its reference-only
+  native type spellings.
+
+- Keep lambda inference tied to resolved bindings across shadowing and preserve external symbols
+  for native protocol instances. Add protocol declarations, signatures, and type variables to
+  the Tree-sitter grammar and Zed highlighting, outlines, and indentation.
+
+- Explain protocol checking, concrete signatures, instance lowering, and diagnostic recovery
+  beside their implementation. Use `where` consistently for proposed protocol and instance
+  constraints in the language draft and standard-library sketch.
+
+- Add protocol signatures and concrete instances with type-directed function and operator
+  selection. Supply Int and Float arithmetic through Num, migrate numeric samples to unified
+  operators, and share ordinary function-value and partial-application lowering.
+- Preserve useful diagnostics around rejected protocols and instances, avoid repeated checking
+  of failed nested operands, and integrate protocol members with entry-point selection and editor
+  references. Share declaration recovery boundaries and add heap-ownership execution coverage.
+
 ## 2026-10-26
+
+- Add immutable shared protocol lookups for signatures, concrete instances, member bindings,
+  and lexical candidates. Resolve aliases while preserving nominal type identity, and retrieve
+  current AST nodes through stable IDs. Name callable requirements `ProtocolSignature`.
+
+- Add AST declarations for protocols, member contracts, and concrete instances. Separate
+  declaration identity from optional typing and name lookup; retain type fields on bindings,
+  type definitions, and aliases. Document the AST shapes pending protocol phase integration.
+
+- Clarify the protocol design draft's shared resolution mechanism for calls, function values,
+  and partial applications, and its rules for inherited instance types and operator metadata.
+  Document explicit Clone operations for globals entering ownership sinks.
 
 - Add Zed tasks for executable and library compilation, cleaning, AST and IR generation,
   and following the compiler server log. Document the task picker, keybindings, native

@@ -9,11 +9,11 @@ import mml.mmlclib.test.BaseEffFunSuite
 class ExpressionRecoveryTests extends BaseEffFunSuite:
 
   private def phaseInput(code: String, parsed: Module): CompilerState =
-    val module   = injectStandardOperators(injectBasicTypes(parsed))
-    val initial  = CompilerState.empty(module, SourceInfo(code), CompilerConfig.default)
-    val typed    = TypeResolver.rewriteModule(IdAssigner.rewriteModule(initial))
-    val resolved = RefResolver.rewriteModule(typed)
-    resolved.withModule(ResolvablesIndexer.refresh(resolved.module))
+    val module  = injectStandardOperators(injectBasicTypes(parsed))
+    val initial = CompilerState.empty(module, SourceInfo(code), CompilerConfig.default)
+    phasesBeforeExpressionRewriting.foldLeft(initial) { (state, phase) =>
+      ResolvablesIndexer.rewriteModule(phase(state))
+    }
 
   private def authoredBinding(module: Module): Bnd =
     val bindings = module.members.collect {
@@ -36,22 +36,16 @@ class ExpressionRecoveryTests extends BaseEffFunSuite:
     case other => fail(s"Expected one invalid region, got $other")
 
   private def assertAddition(value: Expr, left: Long, right: Long, module: Module): Unit =
-    val additionId = module.members
-      .collectFirst {
-        case binding: Bnd
-            if binding.meta
-              .exists(meta => meta.originalName == "+" && meta.arity == CallableArity.Binary) =>
-          binding.id
-      }
-      .flatten
-      .getOrElse(fail("Missing addition declaration"))
+    val signature = protocolSignature(module, "Num", "+", Some(CallableArity.Binary))
     value.terms match
       case (outer: App) :: Nil =>
         outer.fn match
           case inner: App =>
             inner.fn match
-              case ref: Ref => assertEquals(ref.resolvedId, Some(additionId))
-              case other => fail(s"Expected resolved operator, got $other")
+              case ref: Ref =>
+                assertEquals(ref.candidateIds, signature.id.toList)
+                assertEquals(ref.resolvedId, None)
+              case other => fail(s"Expected pending operator reference, got $other")
             assertEquals(
               inner.arg.terms.collect { case literal: LiteralInt => literal.value },
               List(left)

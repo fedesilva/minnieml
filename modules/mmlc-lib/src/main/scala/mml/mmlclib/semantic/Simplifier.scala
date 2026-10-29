@@ -5,20 +5,8 @@ import mml.mmlclib.ast.*
 import mml.mmlclib.compiler.CompilerState
 
 object Simplifier:
-  def rewriteModule(module: Module): Either[List[SemanticError], Module] =
-    val (updatedMembers, updatedResolvables) = module.members.foldLeft(
-      (List.empty[Member], module.resolvables)
-    ) { case ((accMembers, resolvables), member) =>
-      simplifyMember(member) match
-        case updatedBnd: Bnd =>
-          (accMembers :+ updatedBnd, resolvables.updated(updatedBnd))
-        case other =>
-          (accMembers :+ other, resolvables)
-    }
-    val rewritten = module.copy(members = updatedMembers, resolvables = updatedResolvables)
-    val errors    = integerRangeErrors(rewritten)
-    if errors.isEmpty then rewritten.asRight else errors.asLeft
 
+  /** Simplify executable bindings and keep their indexed definitions current. */
   def rewriteModule(state: CompilerState): CompilerState =
     val (updatedMembers, updatedResolvables) = state.module.members.foldLeft(
       (List.empty[Member], state.module.resolvables)
@@ -29,43 +17,58 @@ object Simplifier:
         case other =>
           (accMembers :+ other, resolvables)
     }
-    val rewritten = state.module.copy(members = updatedMembers, resolvables = updatedResolvables)
-    state.withModule(rewritten).addErrors(integerRangeErrors(rewritten))
-
-  private def integerRangeErrors(module: Module): List[SemanticError] =
-    module.members.collect { case b: Bnd => b }.flatMap { b =>
-      TermTraversal.collect(b.value) {
-        case lit: LiteralInt if lit.value < Int.MinValue || lit.value > Int.MaxValue =>
-          SemanticError.InvalidExpression(
-            Expr(lit.source, List(lit)),
-            "Integer literal is outside the Int32 range",
-            "Simplifier"
-          )
-      }
-    }
+    state.withModule(state.module.copy(members = updatedMembers, resolvables = updatedResolvables))
 
   def simplifyMember(member: Member): Member =
     member match
       case b: Bnd => b.copy(value = simplifyExpr(b.value))
       case other => other
 
-  // Helper to ensure a Term is an Expr, wrapping if necessary
-  private def ensureExpr(term: Term): Expr = term match {
-    case e: Expr => e // Already an Expr
-    case other => Expr(other.source, List(other)) // Wrap non-Expr in Expr
-  }
-
   /** Simplifies an expression that must remain an Expr (e.g., member body, cond branch). */
-  def simplifyTopLevelExpr(expr: Expr): Expr = {
+  def simplifyTopLevelExpr(expr: Expr): Expr =
     val simplifiedTerm = simplifyTerm(expr)
     ensureExpr(simplifiedTerm)
-  }
 
   /** Simplify the terms within an expression. Does not unwrap the expression itself. */
   def simplifyExpr(expr: Expr): Expr =
-    // Simplify all subterms recursively using simplifyTerm
     val simplifiedTerms = expr.terms.map(simplifyTerm)
     expr.copy(terms = simplifiedTerms)
+
+  /** Remove grouping and unannotated singleton wrappers while preserving value annotations. */
+  def simplifyTerm(term: Term): Term =
+
+    term match
+
+      case expr: Expr =>
+        val simplifiedExpr = simplifyExpr(expr)
+        simplifiedExpr.terms match
+          case single :: Nil if simplifiedExpr.typeAsc.isEmpty => single
+          case _ => simplifiedExpr
+
+      case group: TermGroup =>
+        val finalTerm = simplifyTerm(group.inner)
+        // A group annotation constrains the whole value. Keeping it on an Expr also preserves
+        // a nested lambda's own return annotation and any annotation already on the inner term.
+        group.typeAsc.fold(finalTerm) { annotation =>
+          Expr(group.source, List(finalTerm), typeAsc = annotation.some)
+        }
+
+      case callee: Callee => simplifyCallee(callee)
+
+      case c: Cond =>
+        c.copy(
+          cond    = simplifyTopLevelExpr(c.cond),
+          ifTrue  = simplifyTopLevelExpr(c.ifTrue),
+          ifFalse = simplifyTopLevelExpr(c.ifFalse)
+        )
+      case t: Tuple =>
+        t.copy(elements = t.elements.map(simplifyTopLevelExpr))
+
+      case other => other
+
+  private def ensureExpr(term: Term): Expr = term match
+    case expr: Expr => expr
+    case other => Expr(other.source, List(other))
 
   private def simplifyCallee(callee: Callee): Callee =
 
@@ -80,60 +83,3 @@ object Simplifier:
         ref.copy(qualifier = ref.qualifier.map(simplifyTerm))
 
       case lambda: Lambda => lambda
-
-  /** Recursively simplify a term.
-    *   - For an Expr: simplify its contents, then unwrap if only one term remains.
-    *   - For a GroupTerm: simplify its inner expression and remove the group wrapper.
-    *   - For App: simplify its callee and argument, preserving lambda heads.
-    *   - For Cond: simplify branches using simplifyTopLevelExpr.
-    *   - Other terms are returned unchanged.
-    */
-  def simplifyTerm(term: Term): Term = {
-    val result = term match {
-      case e: Expr =>
-        // Simplify the inside first using simplifyExpr (which calls simplifyTerm)
-        val simplifiedExpr = simplifyExpr(e)
-        // Check if the simplified expression should be unwrapped
-        simplifiedExpr.terms match {
-          // If only a single term remains, return it directly.
-          case single :: Nil => single // Return the single term
-          case _ => simplifiedExpr // Keep Expr with multiple terms
-        }
-
-      case group: TermGroup =>
-        // Simplify the inner expression using simplifyExpr
-        val simplifiedInnerExpr = simplifyExpr(group.inner)
-        // Recursively simplify the result (which must be an Expr) using simplifyTerm
-        val finalTerm = simplifyTerm(simplifiedInnerExpr) // Simplify the Expr result
-        // Discard the group wrapper, transferring type ascription if present
-        if group.typeAsc.isDefined then
-          // Attempt to apply typeAsc; might need refinement depending on Term types
-          finalTerm match {
-            case ex: Expr => ex.copy(typeAsc = group.typeAsc.orElse(ex.typeAsc))
-            // TODO: How to apply typeAsc to non-Expr terms? For now, ignore if not Expr.
-            case other => other
-          }
-        else finalTerm
-
-      case callee: Callee => simplifyCallee(callee)
-
-      // --- Modify Cond Case ---
-      case c: Cond =>
-        // Use simplifyTopLevelExpr for branches as they must remain Expr
-        c.copy(
-          cond    = simplifyTopLevelExpr(c.cond),
-          ifTrue  = simplifyTopLevelExpr(c.ifTrue),
-          ifFalse = simplifyTopLevelExpr(c.ifFalse)
-        )
-      // -------------------------
-
-      // --- Add Case for Tuple ---
-      case t: Tuple =>
-        // Simplify each element, ensuring they remain Expr
-        t.copy(elements = t.elements.map(simplifyTopLevelExpr))
-      // --------------------------
-
-      case other => other // Keep other terms as is
-    } // End of term match
-    result // Return the result of the match
-  } // End of simplifyTerm function

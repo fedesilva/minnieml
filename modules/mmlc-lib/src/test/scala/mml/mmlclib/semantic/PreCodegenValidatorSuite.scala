@@ -1,12 +1,61 @@
 package mml.mmlclib.semantic
 
 import mml.mmlclib.api.FrontEndApi
-import mml.mmlclib.codegen.CompilationMode
+import mml.mmlclib.ast.{Bnd, Visibility}
+import mml.mmlclib.codegen.{CompilationMode, EntryPoint}
 import mml.mmlclib.compiler.{CompilerConfig, PreCodegenValidator}
 import mml.mmlclib.semantic.SemanticError.InvalidEntryPoint
 import mml.mmlclib.test.BaseEffFunSuite
 
 class PreCodegenValidatorSuite extends BaseEffFunSuite:
+
+  test("a protocol member named main does not supply the program entry point") {
+    val source = """
+      protocol Run 'T = fn main(): 'T; ;
+      instance Run Unit = fn main() = ();; ;
+    """
+
+    semStateNotFailed(source).map { state =>
+      val validated = PreCodegenValidator.validate(CompilationMode.Exe)(state)
+      assertEquals(
+        validated.errors.map(_.message),
+        Vector("No entry point 'main' found for binary compilation")
+      )
+      assertEquals(validated.entryPoint, None)
+      assertEquals(EntryPoint.find(state.module), None)
+    }
+  }
+
+  test("the source main remains the entry point when instance functions occur first") {
+    val source = """
+      protocol Run 'T = fn main(): 'T; ;
+      instance Run Unit = fn main() = ();; ;
+      pub fn main(): Int = 37;;
+    """
+
+    semStateNotFailed(source).map { state =>
+      val memberIds = ProtocolRegistry.loweredMemberIds(state.module)
+      val sourceMain = state.module.members
+        .collectFirst {
+          case binding: Bnd if binding.name == "main" && binding.visibility == Visibility.Public =>
+            binding
+        }
+        .getOrElse(fail("Expected source main"))
+      val (implementations, otherMembers) = state.module.members.partition {
+        case binding: Bnd => binding.id.exists(memberIds.contains)
+        case _ => false
+      }
+      assert(implementations.nonEmpty)
+      val reordered = state.copy(
+        module = state.module.copy(members = implementations ++ otherMembers)
+      )
+      val validated = PreCodegenValidator.validate(CompilationMode.Exe)(reordered)
+
+      assertEquals(validated.errors, Vector.empty)
+      assertEquals(validated.entryPoint, Some("test_main"))
+      assertEquals(EntryPoint.find(reordered.module).map(_._1.id), Some(sourceMain.id))
+    }
+  }
 
   test("binary mode requires a main function") {
     val source          = """

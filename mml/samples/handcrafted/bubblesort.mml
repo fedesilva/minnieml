@@ -34,7 +34,7 @@ pub fn main() =
 
   fn loop(i: Int): Unit =
     if i < ar_int_len arr then
-      println (int_to_str (ar_int_get arr i));
+      println (to_str (ar_int_get arr i));
       loop(i+1);
     ;
   ;

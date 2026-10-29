@@ -74,21 +74,6 @@ object TypeUtils:
 
       case ref: TypeRef => reference(ref)
 
-      case function: TypeFn =>
-        function.paramTypes.exists(check) || check(function.returnType)
-
-      case application: TypeApplication =>
-        check(application.base) || application.args.exists(check)
-
-      case tuple:        TypeTuple => tuple.elements.exists(check)
-      case group:        TypeGroup => group.types.exists(check)
-      case union:        Union => union.types.exists(check)
-      case intersection: Intersection => intersection.types.exists(check)
-      case scheme:       TypeScheme => check(scheme.bodyType)
-      case record:       TypeOpenRecord => record.fields.exists(field => check(field._2))
-      case native:       NativeStruct => native.fields.exists(field => check(field._2))
-      case struct:       TypeStruct => struct.fields.exists(field => check(field.typeSpec))
-
       case refinement: TypeRefinement =>
         TermTraversal
           .collect(refinement.expr) {
@@ -100,7 +85,7 @@ object TypeUtils:
           }
           .exists(identity)
 
-      case _: NativePrimitive | _: NativePointer | _: TypeUnit | _: TypeVariable => false
+      case other => TypeTraversal.children(other).exists(check)
 
     check(tpe)
 

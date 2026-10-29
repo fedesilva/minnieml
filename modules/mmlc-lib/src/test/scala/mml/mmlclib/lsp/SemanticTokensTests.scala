@@ -7,6 +7,68 @@ import scala.collection.mutable.ListBuffer
 
 class SemanticTokensTests extends BaseEffFunSuite:
 
+  test("grouped callee annotation tokens retain their source positions") {
+    val code = """type Number = Int;
+fn identity(value: Int): Int = value;;
+let result = ((identity): Number -> Number) 1;"""
+    semNotFailed(code).map { module =>
+      val tokens = decodeTokens(SemanticTokens.compute(module))
+      assertEquals(
+        tokens.filter(token => token.line == 3 && token.tokenType == TokenType.Type),
+        List(
+          DecodedToken(3, 27, 6, TokenType.Type),
+          DecodedToken(3, 37, 6, TokenType.Type)
+        )
+      )
+    }
+  }
+
+  test("protocol keyword and nested signature types retain their source positions") {
+    val source = "/* documentation */ pub protocol Apply 'T =\n" +
+      "  fn apply(f: ('T -> Int)): Int;\n;"
+    parseNotFailed(source).map { module =>
+      val tokens = decodeTokens(SemanticTokens.compute(module))
+      assertEquals(
+        tokens.filter(t => t.line == 1 && t.tokenType == TokenType.Keyword),
+        List(DecodedToken(1, 25, 8, TokenType.Keyword))
+      )
+      assertEquals(
+        tokens.filter(t => t.line == 2 && t.tokenType == TokenType.Type),
+        List(
+          DecodedToken(2, 16, 2, TokenType.Type),
+          DecodedToken(2, 22, 3, TokenType.Type),
+          DecodedToken(2, 29, 3, TokenType.Type)
+        )
+      )
+    }
+  }
+
+  test("instance member keywords and names retain their source kinds before signature checking") {
+    val source = """instance Num Int =
+  op +(left, right) = left;;
+  fn identity(value) = value;;
+;"""
+    parseNotFailed(source).map { module =>
+      val tokens = decodeTokens(SemanticTokens.compute(module))
+      assertEquals(
+        tokens.filter(t => t.line == 2 && t.tokenType == TokenType.Keyword),
+        List(DecodedToken(2, 3, 2, TokenType.Keyword))
+      )
+      assertEquals(
+        tokens.filter(t => t.line == 2 && t.tokenType == TokenType.Operator),
+        List(DecodedToken(2, 6, 1, TokenType.Operator))
+      )
+      assertEquals(
+        tokens.filter(t => t.line == 3 && t.tokenType == TokenType.Keyword),
+        List(DecodedToken(3, 3, 2, TokenType.Keyword))
+      )
+      assertEquals(
+        tokens.filter(t => t.line == 3 && t.tokenType == TokenType.Function),
+        List(DecodedToken(3, 6, 8, TokenType.Function))
+      )
+    }
+  }
+
   test("tokens and editor lookup exclude trailing comments and reference annotations") {
     val code = List(
       "fn echo(value: Int): Int =",

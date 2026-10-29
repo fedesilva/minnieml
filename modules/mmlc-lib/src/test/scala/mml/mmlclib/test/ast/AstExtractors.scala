@@ -111,9 +111,11 @@ object TXScopedBinding:
     */
   def unapply(term: Term): Option[(Lambda, Term)] =
     term match
-      case App(source, bindingLambda: Lambda, TXExpr1(boundValue), _, _)
-          if source == bindingLambda.source =>
-        Some((bindingLambda, boundValue))
+      case app: App =>
+        (app.fn, app.arg) match
+          case (bindingLambda: Lambda, TXExpr1(boundValue)) if app.source == bindingLambda.source =>
+            Some((bindingLambda, boundValue))
+          case _ => None
       case _ =>
         None
 
@@ -149,7 +151,7 @@ object TXCall1:
     */
   def unapply(term: Term): Option[(Term, Term)] =
     term match
-      case TXUnwrapped(App(_, fn, TXExpr1(arg), _, _)) => Some((fn, arg))
+      case TXUnwrapped(app: App) => TXExpr1.unapply(app.arg).map(arg => (app.fn, arg))
       case _ => None
 
 object TXRefNamed:
@@ -182,9 +184,9 @@ object TXApp:
     @tailrec
     def collect(currentTerm: Term, accumulatedArgs: List[Expr]): Option[(Term, List[Expr])] =
       currentTerm match
-        case App(_, fn, arg, _, _) =>
+        case app: App =>
           // Walk outward through nested App nodes so tests can assert one function plus all args.
-          collect(fn, arg :: accumulatedArgs)
+          collect(app.fn, app.arg :: accumulatedArgs)
         case baseTerm =>
           Some((baseTerm, accumulatedArgs))
 

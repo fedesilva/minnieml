@@ -5,6 +5,6 @@ let c = ;
 let d = "ok";
 
 pub fn main() =
-  println (int_to_str b);
+  println (to_str b);
   println d;
 ;

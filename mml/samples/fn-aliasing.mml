@@ -4,5 +4,5 @@ fn add(a: Int, b: Int): Int =
 let f = add;
 
 pub fn main() = 
-  println (int_to_str (f 1 2));
+  println (to_str (f 1 2));
 ;

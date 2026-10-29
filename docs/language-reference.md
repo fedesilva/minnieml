@@ -106,7 +106,7 @@ same name, parameters, and return type:
 pub fn countdown(from: Int): Unit =
   fn loop(i: Int): Unit =
     if i > 0 then
-      println (int_to_str i);
+      println (to_str i);
       loop (i - 1);
     ;
   ;
@@ -125,7 +125,7 @@ optimizer may still choose not to inline if the cost model disagrees.
 
 ```mml
 inline fn dot(u: Vec3, v: Vec3): Float =
-  (u.x *. v.x) +. (u.y *. v.y) +. (u.z *. v.z);
+  (u.x * v.x) + (u.y * v.y) + (u.z * v.z);
 ;
 ```
 
@@ -156,6 +156,9 @@ Type inference draws on two sources:
 
 When both are available, the surrounding expected type wins. If the available
 evidence does not point to one type, the compiler reports an inference error.
+For example, `{ x -> x + 1.0; }` infers `x: Float` from the other operand.
+`{ x, y -> x + y; }` needs annotations or an expected function type: `+` alone
+does not choose between Int and Float.
 
 **Multiple parameters** are separated by commas:
 
@@ -264,9 +267,10 @@ or alphanumeric (same rules as binding names, e.g. `and`, `or`, `mod`).
 op name(params): ReturnType precedence associativity = body;
 ```
 
-Operators can specify a precedence (integer, higher binds tighter) and associativity
-(`left` or `right`). Both are optional: precedence defaults to 50, and associativity
-defaults to `right` for unary operators and `left` for binary operators.
+Every operator has a precedence (integer, higher binds tighter) and associativity
+(`left` or `right`). A free declaration may omit either: precedence defaults to 50, and
+associativity defaults to `right` for unary operators and `left` for binary operators.
+An instance operator inherits omitted attributes from its protocol signature.
 Operators can be unary (one parameter) or binary (two parameters).
 
 ```mml
@@ -276,6 +280,96 @@ op -(a: Int): Int 95 right = ???;;
 
 See [Operator system](#5-operator-system) for details on precedence, fixity,
 overloading, and desugaring.
+
+### Protocols and instances
+
+A protocol declares the signatures required for one type parameter. An instance supplies
+their implementations for a concrete type:
+
+```mml
+protocol Show 'T =
+  fn show(value: 'T): String;
+;
+
+instance Show Int =
+  fn show(value) = to_str value;;
+;
+
+instance Show Bool =
+  fn show(value) =
+    if value then "true";
+    else "false";
+    ;
+  ;
+;
+
+let number_text = show 42;
+let flag_text = show true;
+let show_int: Int -> String = show;
+```
+
+The argument or expected type selects the instance at compile time. A protocol describes a
+constraint on its type parameter; it is not a value type that can annotate a variable.
+
+Required signatures declare every parameter and result type and have no body. Instance members
+may omit those types or repeat them exactly. Consuming parameter markers must match the signature.
+There is one instance per protocol and concrete type; an alias of a type denotes the same instance.
+
+Operators follow the same rules:
+
+```mml
+protocol Combine 'T =
+  op <+>(left: 'T, right: 'T): 'T 60 left;
+;
+
+instance Combine Int =
+  op <+>(left, right) = left + right;;
+;
+
+let total = 20 <+> 22;
+let add_ten: Int -> Int = (<+>) 10;
+```
+
+The signature supplies omitted instance precedence and associativity. An explicit restatement
+must match it, even if the written value is the usual free-operator default.
+
+Function values and partial calls must select a concrete instance where they are bound.
+Their expected function type can supply missing information, as in `show_int` and `add_ten`.
+For a local binding initialized with a protocol reference, later uses in the same function
+body can also supply that information:
+
+```mml
+fn describe(): String =
+  let show_number = show;
+  show_number 42;
+;
+```
+
+This selects `Show Int` and gives `show_number` the single type `Int -> String`.
+All uses must agree on that choice; the binding cannot select a different instance per call.
+Inference follows simple local aliases and examines both conditional branches. It uses
+independently known argument types, written annotations, and the parameter types of known
+functions receiving the binding. Parentheses around the reference preserve this behavior.
+
+The inference boundary is local: stored or separately evaluated function and lambda bodies,
+global uses, and callers do not supply evidence. An immediately applied unary lambda extends
+its local scope and can supply evidence from its body. Partial-call and conditional initializers
+do not gather evidence from later uses. Inference makes one pass through local uses and does not repeatedly solve dependencies
+between unresolved bindings; add a type annotation when that boundary leaves too little evidence.
+Explicit annotations remain constraints on every use.
+
+An unconstrained reference is an error even if only one instance happens to be declared.
+Missing instances, incompatible operands, and multiple applicable signatures also produce errors.
+Insufficient-information and ambiguity errors list every remaining concrete callable alternative,
+regardless of how many are available. Each listed alternative shows its callable type and protocol
+name where applicable.
+Ordinary lexical bindings and parameters shadow protocol member names.
+
+See the runnable [named-function sample](../mml/samples/protocol-functions.mml) and
+[operator sample](../mml/samples/protocol-operators.mml). Default implementations, multiple type
+parameters, protocol prerequisites, parameterized instances, and `where` clauses are not supported.
+`where` is recognized in a signature header to report the unsupported constraint syntax;
+it remains available as an ordinary binding name.
 
 ### Struct declarations
 
@@ -336,7 +430,7 @@ building an executable:
 fn zlibCompileFlags(): Int64 = @metal:ffi;;
 
 pub fn main(): Unit =
-  println (int64_to_str (zlibCompileFlags ()));
+  println (to_str (zlibCompileFlags ()));
 ;
 ```
 
@@ -523,7 +617,7 @@ fn fizzbuzz(n: Int): Unit =
   elif n % 5 == 0 then
     println "Buzz";
   else
-    println (int_to_str n);
+    println (to_str n);
   ;
 ;
 ```
@@ -541,7 +635,7 @@ returns:
 ```mml
 fn count_down(n: Int): Unit =
   if n > 0 then
-    println (int_to_str n);
+    println (to_str n);
     count_down (n - 1);
   ;
 ;
@@ -740,7 +834,7 @@ insufficient or ambiguous.
 
 Two types are compatible if:
 
-1. They are the same type (same name)
+1. They denote the same type declaration
 2. One is a type alias that resolves to the other
 
 Each `@metal:repr` declaration creates a distinct type. The type checker does not consider
@@ -795,13 +889,12 @@ conflict — the compiler rejects the duplicate.
 
 ### Operator overloading
 
-Currently, the only form of overloading in MML is by arity: a unary and a binary operator
-can share the same name (e.g., unary `-` for negation and binary `-` for
-subtraction). The compiler distinguishes them during expression rewriting based
-on position and argument count.
+Unary and binary operators can share a name. The compiler distinguishes their syntax by position
+and argument count. Protocol signatures additionally support type-based selection: operand types
+and the expected result or remaining function type identify a concrete instance.
 
-See [Current limitations](#10-current-limitations) for the current scope of
-overloading.
+Ordinary free declarations cannot overload the same name and arity by parameter type. Use a
+protocol with concrete instances for that purpose.
 
 ```text
 // Valid: unary and binary - coexist
@@ -831,6 +924,11 @@ Every operator has a precedence (integer, higher binds tighter) and associativit
 
 These are conventional values, not language-enforced. User-defined operators can use
 any precedence value.
+
+All visible declarations of the same operator symbol and arity must agree on precedence and
+associativity, including signatures from different protocols. The compiler checks this before
+grouping expressions. Operand types and instance availability cannot resolve conflicting grouping
+rules. Unary and binary forms are checked separately.
 
 ### Fixity
 
@@ -1204,6 +1302,10 @@ the compiler design document.
 
 ### Operators
 
+The provisional `Num` protocol supplies arithmetic, comparison, and unary negation for
+`Int` and `Float`. Each operator has one precedence and associativity shared by both
+instances. Integer remainder, shifts, and unary plus remain separate Int-only operators.
+
 #### Integer arithmetic
 
 | Operator | Type                | Prec | Assoc | Description            |
@@ -1239,26 +1341,35 @@ the compiler design document.
 
 #### Float arithmetic
 
-Float operators use a `.` suffix to distinguish them from integer operators.
+Float and Int use the same operator spellings, supplied by their `Num` instances.
+The argument types select the instance. Operands must have the same type; use
+`int_to_float` explicitly when mixing integer and floating values.
+
+For example, `2 + 3` has type `Int`, and `2.0 + 3.0` has type `Float`.
+An operator value needs enough type information: `let add: Float -> Float -> Float = (+);`.
+The dotted spellings are not built in; programs may declare their own operators with those names.
 
 | Operator | Type                      | Prec | Assoc |
 | -------- | ------------------------- | ---- | ----- |
-| `a +. b` | `Float -> Float -> Float` | 60   | left  |
-| `a -. b` | `Float -> Float -> Float` | 60   | left  |
-| `a *. b` | `Float -> Float -> Float` | 80   | left  |
-| `a /. b` | `Float -> Float -> Float` | 80   | left  |
-| `-.a`    | `Float -> Float`          | 95   | right |
+| `a + b` | `Float -> Float -> Float` | 60   | left  |
+| `a - b` | `Float -> Float -> Float` | 60   | left  |
+| `a * b` | `Float -> Float -> Float` | 80   | left  |
+| `a / b` | `Float -> Float -> Float` | 80   | left  |
+| `-a`    | `Float -> Float`          | 95   | right |
 
 #### Float comparison
 
 | Operator  | Type                     | Prec | Assoc |
 | --------- | ------------------------ | ---- | ----- |
-| `a <. b`  | `Float -> Float -> Bool` | 50   | left  |
-| `a >. b`  | `Float -> Float -> Bool` | 50   | left  |
-| `a <=. b` | `Float -> Float -> Bool` | 50   | left  |
-| `a >=. b` | `Float -> Float -> Bool` | 50   | left  |
-| `a ==. b` | `Float -> Float -> Bool` | 50   | left  |
-| `a !=. b` | `Float -> Float -> Bool` | 50   | left  |
+| `a < b`  | `Float -> Float -> Bool` | 50   | left  |
+| `a > b`  | `Float -> Float -> Bool` | 50   | left  |
+| `a <= b` | `Float -> Float -> Bool` | 50   | left  |
+| `a >= b` | `Float -> Float -> Bool` | 50   | left  |
+| `a == b` | `Float -> Float -> Bool` | 50   | left  |
+| `a != b` | `Float -> Float -> Bool` | 50   | left  |
+
+Float `!=` is true when either operand is NaN; the other comparisons are false for NaN.
+Unary Float negation computes `0.0 - value`, including its signed-zero behavior.
 
 #### String
 
@@ -1276,6 +1387,37 @@ Float operators use a `.` suffix to distinguish them from integer operators.
 | `println(s)`      | `String -> Unit` | Print string with newline        |
 | `readline()`      | `Unit -> String` | Read line from stdin. Allocates. |
 | `mml_sys_flush()` | `Unit -> Unit`   | Flush stdout                     |
+
+#### String conversion protocol
+
+The injected `ToString` protocol provides `to_str` for scalar values, strings, and Unit:
+
+```mml
+protocol ToString 'T =
+  fn to_str(value: 'T): String;
+;
+```
+
+The argument type selects the instance. Each conversion borrows its argument and returns an
+owned `String`. Aliases use the underlying type's instance: `Int` and `Int32` share one;
+`Byte`, `Word`, and `Int8` share another.
+
+| Types | Text |
+| ----- | ---- |
+| `Int8`, `Int16`, `Int32` / `Int`, `Int64` | Signed decimal |
+| `SizeT` | Unsigned decimal |
+| `Float` | Existing native `%g` formatting |
+| `Double` | 17 significant digits (`%.17g`) |
+| `Bool` | `true` or `false` |
+| `Char` | One raw byte, including a zero byte |
+| `Unit` | `()` |
+| `String` | Owned copy preserving its length and embedded zero bytes |
+| `CString` | Owned copy up to its terminating zero byte; null input panics |
+
+For example, `to_str 42`, `to_str true`, and `to_str (int_to_int64 42)` select their respective
+instances. The three named numeric conversion functions remain available as explicit operations.
+There is no implicit conversion when calling `print` or `println`; pass `to_str value` explicitly.
+Arrays, raw pointers, and opaque `Buffer` / `Rng` handles have no `ToString` instance.
 
 #### String operations
 
@@ -1387,10 +1529,12 @@ in the meantime.
 
 **Overloading**: Operators can be overloaded by arity — a unary and a binary
 operator can share a name — but two binary operators with the same name are
-rejected even if their parameter types differ. Functions cannot be overloaded.
-Type-based dispatch requires protocols (ad-hoc polymorphism) which are not yet
-implemented. These restrictions follow from the current state of the type system
-rather than from a language design decision.
+rejected as free declarations even if their parameter types differ. Ordinary functions cannot
+be overloaded by repeated declarations. Protocol signatures support type-based selection for
+both functions and operators, with concrete instances selected before execution.
+
+**Protocols**: One type parameter and required signatures are supported. Defaults, prerequisites,
+member-local polymorphism, parameterized instances, and `where` clauses are deferred.
 
 ---
 
@@ -1401,6 +1545,8 @@ rather than from a language design decision.
 - `op`
 - `type`
 - `struct`
+- `protocol`
+- `instance`
 - `module`
 - `if`
 - `then`

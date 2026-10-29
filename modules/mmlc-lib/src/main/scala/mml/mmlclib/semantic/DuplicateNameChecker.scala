@@ -21,7 +21,7 @@ object DuplicateNameChecker:
     val errors = scala.collection.mutable.ListBuffer[SemanticError]()
 
     // Partition members into declarations and other nodes (like MemberError)
-    val (decls, otherMembers) = members.partition(_.isInstanceOf[Decl])
+    val (decls, otherMembers) = members.partition(_.isInstanceOf[Decl & Resolvable])
 
     // First, handle duplicate member names on declarations only
     val membersByKey = groupMembersByKey(decls)
@@ -29,7 +29,7 @@ object DuplicateNameChecker:
     // Process declarations in original order to preserve member ordering
     val membersAfterDuplicates = decls.map { member =>
       member match
-        case d: Decl =>
+        case d: (Decl & Resolvable) =>
           val key              = resolvableKey(d)
           val itemsWithSameKey = membersByKey(key)
           if itemsWithSameKey.size > 1 then
@@ -37,7 +37,7 @@ object DuplicateNameChecker:
             if itemsWithSameKey.head == member then
               errors += SemanticError.DuplicateName(
                 key._1,
-                itemsWithSameKey.collect { case d: Decl => d },
+                itemsWithSameKey.collect { case d: (Decl & Resolvable) => d },
                 phaseName
               )
             // Keep first valid, convert rest to DuplicateMember
@@ -93,7 +93,7 @@ object DuplicateNameChecker:
             operatorOriginalNames.contains(bnd.name) =>
         val allWithSameName = decls
           .filter {
-            case d: Decl =>
+            case d: (Decl & Resolvable) =>
               d.name == bnd.name ||
               (d match {
                 case b: Bnd => b.meta.exists(_.originalName == bnd.name)
@@ -101,12 +101,14 @@ object DuplicateNameChecker:
               })
             case _ => false
           }
-          .collect { case d: Decl => d }
+          .collect { case d: (Decl & Resolvable) => d }
         errors += SemanticError.DuplicateName(bnd.name, allWithSameName, phaseName)
     }
 
-    val localDuplicateErrors = finalDecls.flatMap {
-      case bnd: Bnd => localDuplicateErrorsInExpr(bnd.value)
+    val localDuplicateErrors = (finalDecls ++ otherMembers).flatMap {
+      case bnd:      Bnd => localDuplicateErrorsInExpr(bnd.value)
+      case instance: ProtocolInstance =>
+        instance.members.flatMap(member => localDuplicateErrorsInExpr(member.binding.value))
       case _ => Nil
     }
 
@@ -116,7 +118,7 @@ object DuplicateNameChecker:
     members
       .foldLeft(Map.empty[(String, String), List[Member]]) { (acc, member) =>
         member match
-          case d: Decl =>
+          case d: (Decl & Resolvable) =>
             val key = resolvableKey(d)
             acc.updatedWith(key) {
               case Some(existing) => Some(member :: existing)

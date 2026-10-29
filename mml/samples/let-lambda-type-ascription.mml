@@ -5,7 +5,7 @@ type ForeverFn = Unit -> Unit;
 let loop: ForeverFn = {
   println "Type a number:";
   let n = str_to_int (readline());
-  println ("Number is: " ++ (int_to_str n))
+  println ("Number is: " ++ (to_str n))
 }: Unit;
 
 pub fn main() =

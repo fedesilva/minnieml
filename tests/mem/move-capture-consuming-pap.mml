@@ -10,7 +10,7 @@ fn make_pap_local(~text: String): Counter =
 ;
 
 fn make_pap_allocated(): Counter =
-  let text = int_to_str 123;
+  let text = to_str 123;
   let p = take text;
   p;
 ;
@@ -43,7 +43,7 @@ fn make_nested(~text: String): Int -> Int =
 ;
 
 fn make_return(): Unit -> String =
-  let text = int_to_str 123;
+  let text = to_str 123;
   ~{ text; };
 ;
 
@@ -83,32 +83,32 @@ fn make_static(): Counter =
 ;
 
 fn check_return_paths(): Bool =
-  let plain = make_pap_local (int_to_str 123);
+  let plain = make_pap_local (to_str 123);
   let plain_alias = plain;
   let plain_result = invoke plain_alias;
-  let unused_plain = make_pap_local (int_to_str 123);
+  let unused_plain = make_pap_local (to_str 123);
 
   let allocated = make_pap_allocated ();
   let allocated_result = invoke allocated;
   let unused_allocated = make_pap_allocated ();
 
-  let returner = make_returner_local (int_to_str 123);
+  let returner = make_returner_local (to_str 123);
   let returned = returner ();
   let returned_alias = returned;
   let returned_result = invoke returned_alias;
-  let unused_returner = make_returner_local (int_to_str 123);
-  let drop_factory = make_returner_local (int_to_str 123);
+  let unused_returner = make_returner_local (to_str 123);
+  let drop_factory = make_returner_local (to_str 123);
   let unused_returned = drop_factory ();
 
-  let builder = make_builder (int_to_str 123);
+  let builder = make_builder (to_str 123);
   let built = builder ();
   let built_result = invoke built;
-  let unused_builder = make_builder (int_to_str 123);
-  let drop_builder = make_builder (int_to_str 123);
+  let unused_builder = make_builder (to_str 123);
+  let drop_builder = make_builder (to_str 123);
   let unused_built = drop_builder ();
 
   // Owning a capture alone permits reuse; moving a scalar PAP consumes its outer closure.
-  let reusable = make_readonly (int_to_str 123);
+  let reusable = make_readonly (to_str 123);
   let first = reusable 1;
   let second = reusable 2;
   let scalar = make_scalar ();
@@ -121,13 +121,13 @@ fn check_return_paths(): Bool =
 
 fn drop_uncalled(): Unit =
   // Each outer environment still owns every captured value when invocation never occurs.
-  let local = make_local (int_to_str 123);
-  let conditional = make_conditional (int_to_str 123) (int_to_str 45);
-  let nested = make_nested (int_to_str 123);
-  let returner = make_returner (int_to_str 123);
+  let local = make_local (to_str 123);
+  let conditional = make_conditional (to_str 123) (to_str 45);
+  let nested = make_nested (to_str 123);
+  let returner = make_returner (to_str 123);
   let returning = make_return ();
   let literal = make_literal ();
-  let reusable = make_readonly (int_to_str 123);
+  let reusable = make_readonly (to_str 123);
   ();
 ;
 
@@ -135,31 +135,31 @@ fn loop(n: Int, total: Int): Int =
   if n == 0 then total;
   else
     drop_uncalled ();
-    let dropped = make (int_to_str 123);
-    let direct = make (int_to_str 123);
+    let dropped = make (to_str 123);
+    let direct = make (to_str 123);
     let a = direct 1;
-    let local = make_local (int_to_str 123);
+    let local = make_local (to_str 123);
     let b = local 1;
-    let yes = make_conditional (int_to_str 123) (int_to_str 45);
+    let yes = make_conditional (to_str 123) (to_str 45);
     let c = yes 1;
-    let no = make_conditional (int_to_str 123) (int_to_str 45);
+    let no = make_conditional (to_str 123) (to_str 45);
     let d = no 0;
-    let e = invoke (make (int_to_str 123));
-    let nested = make_nested (int_to_str 123);
+    let e = invoke (make (to_str 123));
+    let nested = make_nested (to_str 123);
     let f = nested 1;
     let returning = make_return ();
     let result = returning ();
     let literal = make_literal ();
     let g = literal ();
-    let returner = make_returner (int_to_str 123);
+    let returner = make_returner (to_str 123);
     let returned = returner ();
     let h = returned 1;
-    let dropped_returner = make_returner (int_to_str 123);
+    let dropped_returner = make_returner (to_str 123);
     let unused_pap = dropped_returner ();
-    let plain_pap = make_pap (int_to_str 123);
+    let plain_pap = make_pap (to_str 123);
     let i = plain_pap 1;
-    let unused_plain_pap = make_pap (int_to_str 123);
-    let scoped_pap = (let factory = make_returner (int_to_str 123); factory ());
+    let unused_plain_pap = make_pap (to_str 123);
+    let scoped_pap = (let factory = make_returner (to_str 123); factory ());
     let j = scoped_pap 1;
     let reusable = make_static ();
     let first = reusable 1;

@@ -3,8 +3,8 @@ struct Inner { name: String };
 struct Outer { inner: Inner, tag: String };
 
 fn make_outer(n: Int): Outer =
-  let i = Inner ("name" ++ (int_to_str n));
-  Outer i ("tag" ++ (int_to_str n));
+  let i = Inner ("name" ++ (to_str n));
+  Outer i ("tag" ++ (to_str n));
 ;
 
 fn stress(n: Int): Unit =

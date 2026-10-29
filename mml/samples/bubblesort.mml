@@ -51,12 +51,12 @@ pub fn main(): Unit =
 
   println (
     "Bubble sort checksum: "
-      ++ (int_to_str first)
+      ++ (to_str first)
       ++ ", "
-      ++ (int_to_str middle)
+      ++ (to_str middle)
       ++ ", "
-      ++ (int_to_str last)
+      ++ (to_str last)
       ++ ", "
-      ++ (int_to_str total)
+      ++ (to_str total)
   );
 ;

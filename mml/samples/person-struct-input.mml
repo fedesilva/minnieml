@@ -15,5 +15,5 @@ pub fn main() =
   let age = str_to_int (readline());
   let p = Person name age;
   println ("Name: " ++ p.name);
-  println ("Age: " ++ (int_to_str p.age));
+  println ("Age: " ++ (to_str p.age));
 ;

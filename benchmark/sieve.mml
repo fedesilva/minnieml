@@ -81,7 +81,7 @@ pub fn main(args: StringArray): Int =
     1;
   else
     let count = run_sieve limit;
-    println ("Primes found: " ++ (int_to_str count));
+    println ("Primes found: " ++ (to_str count));
     0;
   ;
 ;

@@ -13,7 +13,8 @@ module.exports = grammar({
 
     _declaration: $ => choice(
       $.let_declaration, $.function_declaration, $.operator_declaration,
-      $.struct_declaration, $.type_declaration,
+      $.struct_declaration, $.type_declaration, $.protocol_declaration,
+      $.instance_declaration,
     ),
 
     visibility: _ => choice('pub', 'prot', 'priv'),
@@ -39,6 +40,23 @@ module.exports = grammar({
     parameters: $ => seq('(', optional(commaSep1($.parameter)), ')'),
     parameter: $ => seq(optional('~'), field('name', $.identifier), optional($.type_ascription)),
 
+    protocol_declaration: $ => seq(
+      optional($.visibility), 'protocol', field('name', $.type_identifier),
+      field('parameter', $.type_variable), '=',
+      repeat(choice($.function_signature, $.operator_signature)), ';',
+    ),
+    function_signature: $ => seq(
+      'fn', field('name', $.identifier), $.parameters, $.type_ascription, ';',
+    ),
+    operator_signature: $ => seq(
+      'op', field('name', choice($.operator, $.identifier)), $.parameters,
+      $.type_ascription, optional($.integer), optional($.associativity), ';',
+    ),
+    instance_declaration: $ => seq(
+      'instance', field('protocol', $.type_identifier), field('type', $._type), '=',
+      repeat(choice($.function_declaration, $.operator_declaration)), ';',
+    ),
+
     struct_declaration: $ => seq(
       optional($.visibility), 'struct', field('name', $.type_identifier), $.fields, ';',
     ),
@@ -49,10 +67,10 @@ module.exports = grammar({
       choice($._type, $.native_type), ';',
     ),
     type_ascription: $ => seq(':', $._type),
-    _type: $ => choice($.type_identifier, $.grouped_type, $.function_type),
+    _type: $ => choice($.type_identifier, $.type_variable, $.grouped_type, $.function_type),
     grouped_type: $ => seq('(', $._type, ')'),
     function_type: $ => prec.right(seq(
-      choice($.type_identifier, $.grouped_type), '->', $._type,
+      choice($.type_identifier, $.type_variable, $.grouped_type), '->', $._type,
     )),
 
     link_directive: $ => seq('@link', '[', commaSep1($.string), ']', ';'),
@@ -102,6 +120,7 @@ module.exports = grammar({
 
     identifier: _ => /[a-z][a-zA-Z0-9_]*/,
     type_identifier: _ => /[A-Z][a-zA-Z0-9]*/,
+    type_variable: _ => /'[A-Z][a-zA-Z0-9]*/,
     operator: _ => token(prec(-1, /[=!#$%^&*+<>?\/\\|.\-]+/)),
     integer: _ => /[0-9]+/,
     float: _ => /([0-9]+)?\.[0-9]+/,

@@ -3,5 +3,5 @@ fn top_inc(x: Int): Int =
 ;
 
 pub fn main(): Unit =
-  println (int_to_str (top_inc 10));
+  println (to_str (top_inc 10));
 ;

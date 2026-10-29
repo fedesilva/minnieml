@@ -10,5 +10,5 @@ pub fn main() =
   };
   let r1 = apply outer 3;
   // x=3, y=4, z=100 => 3 + 4 + 100 = 107
-  println (int_to_str r1);
+  println (to_str r1);
 ;

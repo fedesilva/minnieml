@@ -10,7 +10,7 @@ fn call(n: Int, ~f: Int -> Int): Int = f n;;
 
 fn use(f: Int -> String -> Int, n: Int): Int =
   let p = f n;
-  p (int_to_str 123);
+  p (to_str 123);
 ;
 
 fn loop(n: Int, total: Int): Int =
@@ -18,31 +18,31 @@ fn loop(n: Int, total: Int): Int =
     total;
   else
     let dropped = measure 10;
-    let mixed_dropped = both (int_to_str 123);
+    let mixed_dropped = both (to_str 123);
     let p = measure 10;
-    let text = int_to_str 123;
+    let text = to_str 123;
     let a = p text;
-    let b = p (int_to_str 456);
+    let b = p (to_str 456);
     let returned = make 10;
     let alias = returned;
-    let c = invoke alias (int_to_str 789);
-    let d = invoke alias (int_to_str 123);
+    let c = invoke alias (to_str 789);
+    let d = invoke alias (to_str 123);
     let first = staged 4;
     let second = first 6;
-    let e = second (int_to_str 456);
+    let e = second (to_str 456);
     let inline_pap = { extra: Int, ~s: String -> extra + s.length; } 10;
-    let f = inline_pap (int_to_str 789);
-    let mixed = both (int_to_str 123);
-    let g = mixed (int_to_str 456);
+    let f = inline_pap (to_str 789);
+    let mixed = both (to_str 123);
+    let g = mixed (to_str 456);
     let retain = keep 0;
-    let result = retain (int_to_str 123);
+    let result = retain (to_str 123);
     let builder = use measure;
     let h = builder 10;
     let sum_first = sum 1;
-    let sum_second = sum_first (int_to_str 123);
-    let i = sum_second (int_to_str 456);
+    let sum_second = sum_first (to_str 123);
+    let i = sum_second (to_str 456);
     let apply10 = call 10;
-    let seed = int_to_str 123;
+    let seed = to_str 123;
     let closure = ~{ x: Int -> x + seed.length; };
     let j = apply10 closure;
     loop (n - 1) (total + a + b + c + d + e + f + g + result.length + h + i + j);

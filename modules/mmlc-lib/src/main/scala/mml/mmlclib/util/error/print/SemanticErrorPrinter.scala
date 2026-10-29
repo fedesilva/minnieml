@@ -1,6 +1,6 @@
 package mml.mmlclib.util.error.print
 
-import mml.mmlclib.ast.{Decl, FromSource}
+import mml.mmlclib.ast.{FromSource, Resolvable}
 import mml.mmlclib.parser.SourceInfo
 import mml.mmlclib.semantic.{SemanticError, TypeError, UnresolvableTypeContext}
 // Removed Ordering import
@@ -72,14 +72,14 @@ object SemanticErrorPrinter:
       case SemanticError.UndefinedRef(ref, member, phase) =>
         val location = locationOf(ref)
         val memberName = member match
-          case d: Decl => d.name
+          case d: Resolvable => d.name
           case _ => "unknown"
         s"${Console.RED}Undefined reference '${ref.name}' at $location in $memberName [phase: $phase]${Console.RESET}"
 
       case SemanticError.UndefinedTypeRef(typeRef, member, phase) =>
         val location = locationOf(typeRef)
         val memberName = member match
-          case d: Decl => d.name
+          case d: Resolvable => d.name
           case _ => "unknown"
         s"${Console.RED}Undefined type reference '${typeRef.name}' at $location in $memberName [phase: $phase]${Console.RESET}"
 
@@ -183,6 +183,11 @@ object SemanticErrorPrinter:
 
       case SemanticError.TypeCheckingError(error) =>
         prettyPrintTypeError(error)
+
+      case SemanticError.ProtocolErrorFound(error, phase) =>
+        val location = error.source.spanOpt.map(LocationPrinter.printSpan).getOrElse("[synthetic]")
+        val (headline, details) = error.message.span(_ != '\n')
+        s"${Console.RED}$headline at $location [phase: $phase]${Console.RESET}$details"
 
     // Add AST info and source code snippets if source code is available
     sourceInfo match

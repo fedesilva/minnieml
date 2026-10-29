@@ -10,7 +10,7 @@ pub fn main() =
   fn loop(): Unit =
     println "Type a number:";
     let n = str_to_int (readline());
-    println ("Number is: " ++ (int_to_str n));
+    println ("Number is: " ++ (to_str n));
     loop();
   ;
 

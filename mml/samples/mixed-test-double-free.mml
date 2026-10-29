@@ -4,7 +4,7 @@ fn take(~text: String): Int = text.length;;
 fn check(flag: Bool): Int =
   let value = 
     if flag then 
-      int_to_str 123; 
+      to_str 123;
     else 
       "abc"; 
     ;

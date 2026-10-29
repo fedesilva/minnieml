@@ -1,0 +1,404 @@
+==================
+Protocol functions and concrete instances
+==================
+protocol Render 'T =
+  fn render(label: String, value: 'T): Unit;
+;
+
+instance Render Int =
+  fn render(label, value) =
+    print label;
+    println (int_to_str value);
+  ;
+;
+
+instance Render Bool =
+  fn render(label, value) =
+    print label;
+    if value then println "true";
+    else println "false";
+    ;
+  ;
+;
+
+pub fn main(): Int = render "answer: " 42; 0;;
+
+---
+
+(source_file
+  (protocol_declaration
+    (type_identifier)
+    (type_variable)
+    (function_signature
+      (identifier)
+      (parameters
+        (parameter
+          (identifier)
+          (type_ascription
+            (type_identifier)))
+        (parameter
+          (identifier)
+          (type_ascription
+            (type_variable))))
+      (type_ascription
+        (type_identifier))))
+  (instance_declaration
+    (type_identifier)
+    (type_identifier)
+    (function_declaration
+      (identifier)
+      (parameters
+        (parameter
+          (identifier))
+        (parameter
+          (identifier)))
+      (body
+        (expression_statement
+          (expression
+            (identifier)
+            (identifier)))
+        (expression_statement
+          (expression
+            (identifier)
+            (group
+              (expression
+                (identifier)
+                (identifier))))))))
+  (instance_declaration
+    (type_identifier)
+    (type_identifier)
+    (function_declaration
+      (identifier)
+      (parameters
+        (parameter
+          (identifier))
+        (parameter
+          (identifier)))
+      (body
+        (expression_statement
+          (expression
+            (identifier)
+            (identifier)))
+        (expression_statement
+          (expression
+            (conditional
+              (expression
+                (identifier))
+              (body
+                (expression_statement
+                  (expression
+                    (identifier)
+                    (string))))
+              (else_clause
+                (body
+                  (expression_statement
+                    (expression
+                      (identifier)
+                      (string)))))))))))
+  (function_declaration
+    (visibility)
+    (identifier)
+    (parameters)
+    (type_ascription
+      (type_identifier))
+    (body
+      (expression_statement
+        (expression
+          (identifier)
+          (string)
+          (integer)))
+      (expression_statement
+        (expression
+          (integer))))))
+
+==================
+Protocol binary operators and inherited instance attributes
+==================
+protocol Combine 'T =
+  op <+>(left: 'T, right: 'T): 'T 60 left;
+;
+
+instance Combine Int =
+  op <+>(left, right) = left + right;;
+;
+
+instance Combine Float =
+  op <+>(left: Float, right: Float): Float 60 left = left + right;;
+;
+
+let add_ten: Int -> Int = (<+>) 10;
+
+---
+
+(source_file
+  (protocol_declaration
+    (type_identifier)
+    (type_variable)
+    (operator_signature
+      (operator)
+      (parameters
+        (parameter
+          (identifier)
+          (type_ascription
+            (type_variable)))
+        (parameter
+          (identifier)
+          (type_ascription
+            (type_variable))))
+      (type_ascription
+        (type_variable))
+      (integer)
+      (associativity)))
+  (instance_declaration
+    (type_identifier)
+    (type_identifier)
+    (operator_declaration
+      (operator)
+      (parameters
+        (parameter
+          (identifier))
+        (parameter
+          (identifier)))
+      (body
+        (expression_statement
+          (expression
+            (identifier)
+            (operator)
+            (identifier))))))
+  (instance_declaration
+    (type_identifier)
+    (type_identifier)
+    (operator_declaration
+      (operator)
+      (parameters
+        (parameter
+          (identifier)
+          (type_ascription
+            (type_identifier)))
+        (parameter
+          (identifier)
+          (type_ascription
+            (type_identifier))))
+      (type_ascription
+        (type_identifier))
+      (integer)
+      (associativity)
+      (body
+        (expression_statement
+          (expression
+            (identifier)
+            (operator)
+            (identifier))))))
+  (let_declaration
+    (identifier)
+    (type_ascription
+      (function_type
+        (type_identifier)
+        (type_identifier)))
+    (expression
+      (group
+        (expression
+          (operator)))
+      (integer))))
+
+==================
+Protocol function types and consuming members
+==================
+pub protocol Transform 'Item =
+  fn transform(step: ('Item -> 'Item), ~value: 'Item): 'Item;
+  fn factory(): 'Item -> 'Item;
+;
+
+instance Transform Int =
+  fn transform(step: (Int -> Int), ~value: Int): Int = step value;;
+  fn factory() = { value -> value };;
+;
+
+---
+
+(source_file
+  (protocol_declaration
+    (visibility)
+    (type_identifier)
+    (type_variable)
+    (function_signature
+      (identifier)
+      (parameters
+        (parameter
+          (identifier)
+          (type_ascription
+            (grouped_type
+              (function_type
+                (type_variable)
+                (type_variable)))))
+        (parameter
+          (identifier)
+          (type_ascription
+            (type_variable))))
+      (type_ascription
+        (type_variable)))
+    (function_signature
+      (identifier)
+      (parameters)
+      (type_ascription
+        (function_type
+          (type_variable)
+          (type_variable)))))
+  (instance_declaration
+    (type_identifier)
+    (type_identifier)
+    (function_declaration
+      (identifier)
+      (parameters
+        (parameter
+          (identifier)
+          (type_ascription
+            (grouped_type
+              (function_type
+                (type_identifier)
+                (type_identifier)))))
+        (parameter
+          (identifier)
+          (type_ascription
+            (type_identifier))))
+      (type_ascription
+        (type_identifier))
+      (body
+        (expression_statement
+          (expression
+            (identifier)
+            (identifier)))))
+    (function_declaration
+      (identifier)
+      (parameters)
+      (body
+        (expression_statement
+          (expression
+            (lambda
+              (parameter
+                (identifier))
+              (expression
+                (identifier)))))))))
+
+==================
+Protocol unary and named binary operators
+==================
+protocol Arithmetic 'T =
+  op -(value: 'T): 'T 90 right;
+  op plus(left: 'T, right: 'T): 'T;
+;
+
+instance Arithmetic Int =
+  op -(value) = -value;;
+  op plus(left: Int, right: Int): Int = left + right;;
+;
+
+---
+
+(source_file
+  (protocol_declaration
+    (type_identifier)
+    (type_variable)
+    (operator_signature
+      (operator)
+      (parameters
+        (parameter
+          (identifier)
+          (type_ascription
+            (type_variable))))
+      (type_ascription
+        (type_variable))
+      (integer)
+      (associativity))
+    (operator_signature
+      (identifier)
+      (parameters
+        (parameter
+          (identifier)
+          (type_ascription
+            (type_variable)))
+        (parameter
+          (identifier)
+          (type_ascription
+            (type_variable))))
+      (type_ascription
+        (type_variable))))
+  (instance_declaration
+    (type_identifier)
+    (type_identifier)
+    (operator_declaration
+      (operator)
+      (parameters
+        (parameter
+          (identifier)))
+      (body
+        (expression_statement
+          (expression
+            (operator)
+            (identifier)))))
+    (operator_declaration
+      (identifier)
+      (parameters
+        (parameter
+          (identifier)
+          (type_ascription
+            (type_identifier)))
+        (parameter
+          (identifier)
+          (type_ascription
+            (type_identifier))))
+      (type_ascription
+        (type_identifier))
+      (body
+        (expression_statement
+          (expression
+            (identifier)
+            (operator)
+            (identifier)))))))
+
+==================
+Recover a missing signature type before the next instance
+==================
+protocol Render 'T =
+  fn render(value: 'T): ;
+;
+
+instance Render Int =
+  fn render(value) = int_to_str value;;
+;
+
+let intact = render 42;
+
+---
+
+(source_file
+  (protocol_declaration
+    (type_identifier)
+    (type_variable)
+    (function_signature
+      (identifier)
+      (parameters
+        (parameter
+          (identifier)
+          (type_ascription
+            (type_variable))))
+      (type_ascription
+        (MISSING type_identifier))))
+  (instance_declaration
+    (type_identifier)
+    (type_identifier)
+    (function_declaration
+      (identifier)
+      (parameters
+        (parameter
+          (identifier)))
+      (body
+        (expression_statement
+          (expression
+            (identifier)
+            (identifier))))))
+  (let_declaration
+    (identifier)
+    (expression
+      (identifier)
+      (integer))))

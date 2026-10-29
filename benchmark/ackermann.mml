@@ -11,5 +11,5 @@ fn ackermann(m: Int, n: Int): Int =
 
 pub fn main() =
   let result = ackermann 3 10;
-  println ("ackermann(3, 10) = " ++ (int_to_str result));
+  println ("ackermann(3, 10) = " ++ (to_str result));
 ;

@@ -10,5 +10,5 @@ let c = a + b;
 pub fn main() =
 // This use of c carries the same failure without another visible diagnostic.
 
-  println (int_to_str c);
+  println (to_str c);
 ;

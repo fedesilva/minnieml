@@ -8,21 +8,21 @@ fn take_pair(~left: String, ~right: String): Int = left.length + right.length;;
 fn check(ok: Bool): Int = if ok then 0; else 1; ;;
 
 fn named(flag: Bool): Int =
-  let text = if flag then int_to_str 123; else "abc";;
+  let text = if flag then to_str 123; else "abc";;
   let first = text;
   let second = first;
   check (take second == 3);
 ;
 
 fn inline_consumer(flag: Bool): Int =
-  let text = if flag then int_to_str 123; else "abc";;
+  let text = if flag then to_str 123; else "abc";;
   let result = { ~value: String -> value.length; } text;
   check (result == 3);
 ;
 
 fn scoped_consumer(flag: Bool): Int =
   let result = take (
-    let text = if flag then int_to_str 123; else "abc";;
+    let text = if flag then to_str 123; else "abc";;
     let alias = text;
     alias
   );
@@ -31,7 +31,7 @@ fn scoped_consumer(flag: Bool): Int =
 
 fn scoped_borrow(flag: Bool): Int =
   let value = (
-    let text = if flag then int_to_str 123; else "abc";;
+    let text = if flag then to_str 123; else "abc";;
     let alias = text;
     alias
   );
@@ -40,45 +40,45 @@ fn scoped_borrow(flag: Bool): Int =
 
 fn scoped_borrowing_argument(flag: Bool): Int =
   let result = borrow (
-    let unrelated = int_to_str 456;
+    let unrelated = to_str 456;
     let ignored = unrelated.length;
-    let value = if flag then int_to_str 123; else "abc";;
+    let value = if flag then to_str 123; else "abc";;
     value
   );
   check (result == 3);
 ;
 
 fn conditional_borrowing_argument(flag: Bool): Int =
-  let text = int_to_str 123;
-  let result = borrow (if flag then int_to_str 4567; else text;);
+  let text = to_str 123;
+  let result = borrow (if flag then to_str 4567; else text;);
   let expected = if flag then 4; else 3;;
   check (result == expected and str_eq text "123");
 ;
 
 fn conditional_borrowing_local(flag: Bool): Int =
-  let text = int_to_str 123;
-  let selected = if flag then int_to_str 4567; else text;;
+  let text = to_str 123;
+  let selected = if flag then to_str 4567; else text;;
   let expected = if flag then "4567"; else "123";;
   check (str_eq selected expected and str_eq text "123");
 ;
 
 fn conditional_transfer(allocated: Bool, transferred: Bool): Int =
-  let value = if allocated then int_to_str 123; else "abc";;
+  let value = if allocated then to_str 123; else "abc";;
   let result = if transferred then take value; else value.length;;
   check (result == 3);
 ;
 
 fn owning_field(flag: Bool): Int =
-  let value = if flag then int_to_str 123; else "abc";;
+  let value = if flag then to_str 123; else "abc";;
   let alias = value;
   let box = Box alias;
   check (box.text.length == 3);
 ;
 
 fn shadowed(flag: Bool): Int =
-  let text = int_to_str 4567;
+  let text = to_str 4567;
   let value = (
-    let text = if flag then int_to_str 123; else "abc";;
+    let text = if flag then to_str 123; else "abc";;
     let alias = text;
     alias
   );
@@ -86,7 +86,7 @@ fn shadowed(flag: Bool): Int =
 ;
 
 fn named_return(flag: Bool): String =
-  let value = if flag then int_to_str 123; else "abc";;
+  let value = if flag then to_str 123; else "abc";;
   let first = value;
   let second = first;
   second;
@@ -94,7 +94,7 @@ fn named_return(flag: Bool): String =
 
 fn scoped_return(flag: Bool): String =
   let value = (
-    let inner = if flag then int_to_str 123; else "abc";;
+    let inner = if flag then to_str 123; else "abc";;
     let alias = inner;
     alias
   );
@@ -102,24 +102,24 @@ fn scoped_return(flag: Bool): String =
 ;
 
 fn conditional_return(flag: Bool): String =
-  let allocated = int_to_str 123;
+  let allocated = to_str 123;
   let alias = allocated;
   if flag then alias; else "abc";;
 ;
 
 fn mixed_conditional_return(allocated: Bool, returned: Bool): String =
-  let value = if allocated then int_to_str 123; else "abc";;
+  let value = if allocated then to_str 123; else "abc";;
   if returned then value; else "xyz";;
 ;
 
 fn entirely_static(flag: Bool): String =
-  let temporary = int_to_str 123;
+  let temporary = to_str 123;
   let ignored = temporary.length;
   if flag then "abc"; else "def";;
 ;
 
 fn static_helper(): String =
-  let temporary = int_to_str 456;
+  let temporary = to_str 456;
   let ignored = temporary.length;
   let value = "abc";
   value;
@@ -130,7 +130,7 @@ fn recursive_static_helper(n: Int): String =
 ;
 
 fn static_helper_return(flag: Bool): String =
-  let value = if flag then int_to_str 123; else recursive_static_helper 3;;
+  let value = if flag then to_str 123; else recursive_static_helper 3;;
   let alias = value;
   alias;
 ;
@@ -140,7 +140,7 @@ fn relay_reader(~reader: Reader): Reader = reader;;
 
 fn static_field_return(flag: Bool): String =
   let reader = relay_reader (relay_reader (wrap_reader static_helper));
-  if flag then int_to_str 123; else reader.read ();;
+  if flag then to_str 123; else reader.read ();;
 ;
 
 fn returns(allocated: Bool, returned: Bool): Int =
@@ -172,7 +172,7 @@ fn decide(trace: IntArray, digit: Int, result: Bool): Bool =
 
 fn allocate(trace: IntArray, digit: Int): String =
   mark trace digit;
-  int_to_str 123;
+  to_str 123;
 ;
 
 fn effects(outer: Bool, inner: Bool): Int =

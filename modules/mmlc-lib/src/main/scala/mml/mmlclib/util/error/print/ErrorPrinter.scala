@@ -67,6 +67,7 @@ object ErrorPrinter:
         .getOrElse((Int.MaxValue, Int.MaxValue))
     case SemanticError.InvalidExpressionFound(invalidExpr, _) => startPosOf(invalidExpr)
     case SemanticError.InvalidEntryPoint(_, source) => startPosOf(source)
+    case SemanticError.ProtocolErrorFound(error, _) => startPosOf(error.source)
     case error: SemanticError.UseAfterMove => startPosOf(error.source)
     case SemanticError.ConsumingParamNotLastUse(_, ref, _) => startPosOf(ref)
     case SemanticError.BorrowedValuePassedToConsumingParam(_, ref, _) => startPosOf(ref)
@@ -219,6 +220,11 @@ object ErrorPrinter:
       case SemanticError.InvalidEntryPoint(message, source) =>
         val location = locationOf(source)
         s"${Console.RED}$message at $location${Console.RESET}"
+
+      case SemanticError.ProtocolErrorFound(error, phase) =>
+        val location = locationOf(error.source)
+        s"${Console.RED}${error.message} at $location${Console.RESET}\n" +
+          s"${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case SemanticError.VisibilityViolation(ref, decl, phase) =>
         s"${Console.RED}'${ref.name}' is not visible (declared in '${decl.name}')${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"

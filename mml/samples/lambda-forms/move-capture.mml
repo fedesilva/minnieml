@@ -8,5 +8,5 @@ fn make_move_adder(seed: Int): Int -> Int =
 
 pub fn main(): Unit =
   let add_seed = make_move_adder 10;
-  println (int_to_str (apply add_seed 10));
+  println (to_str (apply add_seed 10));
 ;

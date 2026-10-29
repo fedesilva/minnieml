@@ -7,8 +7,8 @@ fn print_user(~u: User): Unit =
   println ( u.name ++ " is a " ++ u.role);
 ;
 fn test_move(n: Int): Unit =
-  let name_str = "User" ++ int_to_str n;
-  let role_str = "Admin" ++ int_to_str n;
+  let name_str = "User" ++ to_str n;
+  let role_str = "Admin" ++ to_str n;
   let a = User name_str role_str;
   let b = a;
   // this does not compile:

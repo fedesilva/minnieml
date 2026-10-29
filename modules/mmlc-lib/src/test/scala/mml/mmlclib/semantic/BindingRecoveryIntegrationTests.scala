@@ -90,13 +90,9 @@ class BindingRecoveryIntegrationTests extends BaseEffFunSuite:
     functions.head
 
   private def resolved(ingested: CompilerState): CompilerState =
-    val module = injectCommonFunctions(injectStandardOperators(injectBasicTypes(ingested.module)))
-    List(
-      DuplicateNameChecker.rewriteModule,
-      IdAssigner.rewriteModule,
-      TypeResolver.rewriteModule,
-      RefResolver.rewriteModule
-    ).foldLeft(ingested.withModule(module)) { (state, phase) =>
+    val module  = injectCommonFunctions(injectStandardOperators(injectBasicTypes(ingested.module)))
+    val checked = DuplicateNameChecker.rewriteModule(ingested.withModule(module))
+    phasesBeforeExpressionRewriting.foldLeft(checked) { (state, phase) =>
       ResolvablesIndexer.rewriteModule(phase(state))
     }
 
@@ -109,15 +105,8 @@ class BindingRecoveryIntegrationTests extends BaseEffFunSuite:
       case Left(error) => fail(s"Expected retained compiler state, got $error")
     }
 
-  private def assertAddition(value: Expr, module: Module): Unit =
-    val operator = module.members
-      .collectFirst {
-        case value: Bnd
-            if value.meta
-              .exists(meta => meta.originalName == "+" && meta.arity == CallableArity.Binary) =>
-          value
-      }
-      .getOrElse(fail("Expected addition declaration"))
+  private def assertAddition(value: Expr, state: CompilerState): Unit =
+    val operator = protocolImplementation(state, "Num", "Int", "+", Some(CallableArity.Binary))
     assert(operator.id.nonEmpty)
     value match
       case TXExprApp(reference, _, List(TXExprInt(3), TXExprInt(4))) =>
@@ -286,7 +275,12 @@ class BindingRecoveryIntegrationTests extends BaseEffFunSuite:
     val normalized = ExpressionRewriter.rewriteModule(beforeNormalization)
     val rewritten  = localBinding(binding(normalized.module, "example").value, source, "let broken")
     assertEquals(rewritten.parameter.id, original.parameter.id)
-    assertAddition(rewritten.scope.body, normalized.module)
+    val signature = protocolSignature(normalized.module, "Num", "+", Some(CallableArity.Binary))
+    rewritten.scope.body match
+      case TXExprApp(reference, _, List(TXExprInt(3), TXExprInt(4))) =>
+        assertEquals(reference.candidateIds, signature.id.toList)
+        assertEquals(reference.resolvedId, None)
+      case other => fail(s"Expected normalized pending addition, got $other")
     compile().map { state =>
       val retained = localBinding(binding(state.module, "example").value, source, "let broken")
       val roots    = state.diagnostics.visibleRecords.map(_.id)
@@ -298,7 +292,7 @@ class BindingRecoveryIntegrationTests extends BaseEffFunSuite:
         DiagnosticCauses.fromModule(state.module).knownRootsOf(retained.initializer),
         roots
       )
-      assertAddition(retained.scope.body, state.module)
+      assertAddition(retained.scope.body, state)
       val availability = ValueAvailability.fromModule(state.module)
       assert(!availability.isAvailable(retained.initializer))
       assert(availability.isAvailable(binding(state.module, "example").value))
@@ -333,7 +327,7 @@ class BindingRecoveryIntegrationTests extends BaseEffFunSuite:
           val inner = sourceFunction(retained.initializer, code, "(x: Int)")
           assert(inner.params.head.id.nonEmpty)
           assert(references(inner.body).exists(_.resolvedId == inner.params.head.id))
-        assertAddition(retained.scope.body, state.module)
+        assertAddition(retained.scope.body, state)
         assert(
           ValueAvailability
             .fromModule(state.module)
@@ -459,7 +453,7 @@ class BindingRecoveryIntegrationTests extends BaseEffFunSuite:
           state.module.resolvables.lookup(retained.parameter.id.get),
           retained.parameter.some
         )
-        assertAddition(retained.scope.body, state.module)
+        assertAddition(retained.scope.body, state)
         val availability = ValueAvailability.fromModule(state.module)
         assert(!availability.isAvailable(retained.initializer))
         assert(availability.isAvailable(binding(state.module, "example").value))
@@ -553,7 +547,7 @@ class BindingRecoveryIntegrationTests extends BaseEffFunSuite:
           lambda.body
       }
       assertEquals(continuations.size, 1)
-      assertAddition(continuations.head, state.module)
+      assertAddition(continuations.head, state)
       val availability = ValueAvailability.fromModule(state.module)
       assert(availability.isAvailable(binding(state.module, "example").value))
       assert(availability.isAvailable(binding(state.module, "after").value))

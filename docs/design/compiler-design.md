@@ -38,8 +38,8 @@ Nodes that can have types, containing:
 - `typeAsc: Option[TypeSpec]` - **User-declared type** from source
 
 #### `Resolvable`
-Nodes that can be referenced by name (all `Decl` types, `FnParam`). Each `Resolvable` (and
-`ResolvableType`) carries a stable `id: Option[String]` used for soft references.
+Nodes that can be referenced by name (named declarations, `FnParam`, and `Field`).
+Each `Resolvable` (and `ResolvableType`) carries a stable `id: Option[String]` used for soft references.
 
 ### Module structure
 
@@ -69,10 +69,56 @@ Module(
 Top-level declarations in a module:
 
 #### Declarations (`Decl`)
-All declarations extend `Decl` trait and include:
+All declarations extend `Decl`, which provides source information, documentation, and a
+stable ID. Named declarations also extend `Resolvable`. `Typeable` is independent and is
+mixed into `Bnd`, `TypeDef`, and `TypeAlias`; `TypeStruct` is itself a type and does not
+carry computed or ascribed type fields.
+
+Declarations include:
+
 - `Bnd` - All value bindings, functions, and operators (with `Lambda` body and optional `BindingMeta`)
 - `TypeDef` - New type definitions
 - `TypeAlias` - Type aliases
+- `TypeStruct` - Nominal record types
+- `Protocol` - A protocol with one type parameter and signatures
+- `ProtocolSignature` - A function or operator signature with an optional default Lambda body
+- `ProtocolInstance` - An unnamed declaration supplying a protocol reference, concrete type,
+  and ordinary member bindings
+
+The parser accepts one-parameter protocol declarations with required signatures and concrete
+instances with ordinary Lambda bodies. Default bodies, prerequisites, member-local polymorphism,
+and parameterized instances receive unsupported-feature diagnostics. `ProtocolRef` retains its
+source name and an optional resolved protocol ID. Instances carry their own stable IDs without
+inventing source names. Visibility remains on the concrete declarations that expose it.
+
+Instance member types and operator attributes may be omitted in source. `ProtocolInstanceMember`
+retains the written operator attributes beside its binding; the parsed binding has no callable
+metadata yet. `BindingMeta.precedence` is always an integer. Free operators receive their ordinary
+defaults during parsing; instance operators inherit the signature's precedence. `ProtocolChecker`
+verifies each instance
+against its protocol, supplies omitted types and attributes, and moves each body into the module's
+ordinary bindings. The instance retains the binding IDs in `memberIds`, with no second body copy.
+Written type annotations retain their source nodes; inherited annotations have derived origins.
+Type checking selects concrete members from argument types and expected result types.
+
+`ProtocolRegistry` records protocol and signature IDs, unique concrete instances, and the binding
+ID implementing each instance signature. Lookups read current nodes from `ResolvablesIndex`.
+Instance identity follows aliases: if `Count` aliases `Int`, `Num Count` and `Num Int` identify
+the same instance. Distinct nominal types remain distinct even with the same native layout.
+Lexical candidate lookup preserves visible signatures until later phases select an instance.
+`CompilerState.protocols` carries the registry between phases. Signature checking and instance
+lowering populate it. Name resolution uses its lexical candidate lookup; type checking retrieves
+the current concrete member bindings through the same registry.
+
+Rejected instances retain their uniqueness keys and diagnostic causes, but offer no candidates.
+For example, an incomplete `Num Bool` instance must neither admit a second `Num Bool` nor break
+valid Int arithmetic. Rejected signatures retain their declaration-error causes for reference
+recovery. An unmarked missing association remains an internal registry error.
+
+Entry-point validation and emission share a lookup that excludes lowered instance member IDs:
+a protocol member named `main` does not supply the executable's entry point. Editor reference
+search uses registry associations to find selected calls across all implementations of a signature;
+searching a concrete member retains that implementation's scope.
 
 **Bnd with BindingMeta**: Functions and operators are represented as `Bnd` nodes containing a `Lambda` body and `BindingMeta`:
 ```scala
@@ -563,7 +609,8 @@ case class CompilerState(
   resolvedTriple: Option[String] = None,
   clangTarget:    Option[ClangTarget] = None,
   bindingIds:     BindingIdSupply = BindingIdSupply(),
-  linkEntries:    List[LinkEntry] = Nil
+  linkEntries:    List[LinkEntry] = Nil,
+  protocols:      ProtocolRegistry = ProtocolRegistry.empty
 )
 ```
 
@@ -580,12 +627,14 @@ Each phase takes a `CompilerState`, returns an updated `CompilerState`, and reco
 3. **TypeResolver**
 4. **ConstructorGenerator**
 5. **MemoryFunctionGenerator**
-6. **RefResolver**
-7. **ExpressionRewriter**
-8. **Simplifier**
-9. **CaptureAnalyzer**
-10. **TypeChecker**
-11. **PartialApplicationElaborator**: binds supplied expressions in source order and constructs
+6. **ProtocolChecker**
+7. **RefResolver**
+8. **OperatorGrouping**
+9. **ExpressionRewriter**
+10. **Simplifier**
+11. **CaptureAnalyzer**
+12. **TypeChecker**
+13. **PartialApplicationElaborator**: binds supplied expressions in source order and constructs
     a typed residual lambda with explicit borrowed and transferred capture identities. Refreshes
     captures and callable flow until ownership also agrees for chained PAPs. Remaining parameters
     preserve their consuming flags. Callable origins retain the applied argument count before
@@ -609,12 +658,16 @@ Each phase takes a `CompilerState`, returns an updated `CompilerState`, and reco
     Invocation transfers an owned callee only when it is call-once. Supplied operands run once
     in source order before completed callee stages, preserving the same effect order as fully
     applied chains.
-12. **ClosureMemoryFnGenerator**
-13. **StructDestructorBodyGenerator**
-14. **OwnershipAnalyzer**
-15. **ClosureDestructorBodyGenerator**
-16. **TailRecursionDetector**
-17. **DestructionValidator**
+    Bare references to parameterized functions use this same construction with no supplied
+    arguments. Protocol selection has already identified an ordinary concrete binding, so named
+    functions and selected protocol members share their forwarding lambdas and ownership rules.
+    Nullary references and references in callee position remain direct references.
+14. **ClosureMemoryFnGenerator**
+15. **StructDestructorBodyGenerator**
+16. **OwnershipAnalyzer**
+17. **ClosureDestructorBodyGenerator**
+18. **TailRecursionDetector**
+19. **DestructionValidator**
 
 ---
 
@@ -693,6 +746,9 @@ parameterless lambdas each introduce an ordinal scope path for nested allocation
 - Reuses the resolved result when parser annotation caches share the exact original reference
   instance. Separate reference occurrences remain separate even when structurally equal.
 - Resolves compound types, type aliases, ascriptions, parameters, returns, and struct fields.
+- Resolves concrete references in protocol signatures and instance headers/bodies while retaining
+  the protocol's type-variable nodes. `TypeTraversal` supplies shared structural walking for
+  resolution, protocol substitution, parser queries, and invalid-type detection.
 - Resolves cached conditional result types, including the synthetic `Unit` in no-`else` clauses,
   so cause analysis can distinguish resolved types from incomplete evidence before type checking.
 - Completes alias metadata by following resolved declaration IDs with cycle detection, then
@@ -762,16 +818,42 @@ field destructors accumulate diagnostics during generation.
 
 ---
 
-### Semantic Phase 6: RefResolver
+### Semantic Phase 6: ProtocolChecker
+
+**Purpose**: Check instance members against protocol signatures and register their concrete bindings.
+
+**Behavior**:
+- Registers protocols before instances, independent of source declaration order.
+- Resolves the instance's protocol name and checks uniqueness through `ProtocolRegistry`;
+  aliases share an instance identity, while nominal declarations remain distinct.
+- Rejects duplicate signatures, missing/extra/duplicate members, mismatched callable shapes,
+  incompatible written types, changed consuming markers, and conflicting operator attributes.
+- Records rejected declarations and their diagnostic roots separately from usable implementations,
+  preserving duplicate detection without exposing incomplete instance bindings to candidate lookup.
+- Substitutes the concrete instance type throughout each signature, including nested function types.
+  Omitted annotations and attributes inherit the signature; written annotations remain source nodes.
+- Moves each implementation Lambda into one ordinary module binding, preserving binding and
+  parameter IDs and source origins. The instance retains `memberIds` for registry associations.
+- Refreshes the index and stores the registry on `CompilerState`. Later phases check and execute
+  the ordinary bindings; protocols themselves are not executable functions or value types.
+
+**Errors reported**: `SemanticError.ProtocolErrorFound` carries a typed `ProtocolError` with
+its source origin for both CLI and editor diagnostics.
+
+---
+
+### Semantic Phase 7: RefResolver
 
 **Purpose**: Resolve `Ref` nodes to declarations or parameters using stable IDs.
 
 **Behavior**:
-- For each `Ref` in expressions, searches for matching declarations in this order:
+- Uses `ProtocolRegistry.visibleCandidates` with lexical scopes, searching in this order:
   1. parameters currently in scope, including parser-lowered local scoped bindings
-  2. module-level members
+  2. ordinary module bindings and protocol signatures, excluding lowered instance bindings
 - Populates `Ref.candidateIds` with all matching stable IDs.
-- If exactly one match is found, writes that ID to `Ref.resolvedId`.
+- Sets `Ref.resolvedId` only for one ordinary declaration or parameter. Protocol signatures
+  remain candidates even when only one matches; operand types select their concrete instance.
+- Repeated resolution replaces both candidate IDs and the selected ID, clearing stale selections.
 - Accumulates all failed references alongside their rewritten nodes in one traversal.
 - If no matches are found, preserves the reference in an `InvalidExpression` with the
   primary diagnostic ID. A failed callee stays inside the smallest enclosing application
@@ -786,7 +868,25 @@ field destructors accumulate diagnostics during generation.
 
 ---
 
-### Semantic Phase 7: ExpressionRewriter
+### Semantic Phase 8: OperatorGrouping
+
+**Purpose**: Check that operator syntax is unambiguous before operand types are known.
+
+Visible operators with the same source name and arity must agree on precedence and associativity.
+The check includes free operators and protocol signatures, including unused signatures and those
+without instances. Conflicts produce `ProtocolError.OperatorGroupingConflict` at the declaration.
+
+The expression rewriter uses the same grouping API for prefix, postfix, and binary syntax.
+It narrows candidates by arity while retaining all matching signatures. For example, unary and
+binary `-` group differently, but two protocols' binary `+` signatures must describe the same tree.
+A single ordinary binding can be selected immediately; signatures await type checking.
+When grouping is refused, the rewriter retains the conflict's declaration identities and diagnostic
+causes. A binary conflict does not invalidate a coherent unary use of the same symbol, and unrelated
+malformed terms retain their own errors.
+
+---
+
+### Semantic Phase 9: ExpressionRewriter
 
 **Purpose**: Restructure expressions using precedence climbing to build proper AST structure for
 operators and function application.
@@ -803,11 +903,22 @@ Function application is treated as a high-precedence operation through juxtaposi
 **Example**: `f x y` is parsed as terms `[Ref("f"), Ref("x"), Ref("y")]` and rewritten to
 `App(App(Ref("f"), x), y)`.
 
-After group unwrapping, bare and parenthesized `Lambda` heads share direct-call lowering.
+After group unwrapping, unannotated bare and parenthesized `Lambda` heads share direct-call lowering.
 Supplied arguments bind left-to-right through unary immediate-lambda applications; missing
 arguments leave a residual lambda. Remaining arguments continue through ordinary application
 construction without lowering the head again. A zero-parameter lambda therefore reaches its
 explicit `()` application without re-entering direct-call lowering.
+
+Written annotations stay on the terms they describe; expression wrappers do not copy them.
+A grouped value keeps its annotation on an expression around that value. When the value is
+called, `App.calleeAscriptions` retains the annotations on the function being called, separately
+from the application's result annotation. In `((make x): (Int -> Int)) y`, the constraint applies
+to the result of `make x` before applying `y`. This preserves the application chain and argument
+evaluation order. A lambda's own annotation still describes its return type.
+
+An annotated direct lambda keeps its complete parameter list until type checking validates
+the callable annotations. `DirectLambdaApplication` supplies the same scope lowering there,
+preserving the checked types, parameter identities, and consuming flags.
 
 **Nullary function handling**:
 Nullary functions are called explicitly with `()`; value position keeps a reference:
@@ -829,7 +940,9 @@ let f = get_value;
 
 **AST rewrites**:
 - Transforms flat `Expr(terms)` into nested `App` structures
-- Resolves operator references to their definitions
+- Narrows operator candidates by syntax through `OperatorGrouping`, preserving overloads
+- Preserves references and complete application chains for type-directed selection;
+  function-value forwarding lambdas are constructed by `PartialApplicationElaborator`
 - Leaves nullary references untouched; explicit `()` remains an application
 - Normalizes nested operands before local precedence rewriting. A failure retains those
   completed rewrites and valid siblings/continuations inside the preserved payload.
@@ -838,12 +951,12 @@ let f = get_value;
 
 ---
 
-### Semantic Phase 8: Simplifier
+### Semantic Phase 10: Simplifier
 
 **Purpose**: Simplify AST structure by removing unnecessary nesting.
 
 **Transformations**:
-- **Unwrap single-term expressions**: `Expr([term])` -> `term`
+- **Unwrap unannotated single-term expressions**: `Expr([term])` -> `term`
 - **Remove group wrappers**: `TermGroup(inner)` -> inner term
 - **Flatten nested expressions**: Recursively simplify all subexpressions
 
@@ -861,6 +974,9 @@ let f = get_value;
   and tuples; lambda bodies pass through this phase unchanged
 - Preserves `Expr` wrapper for member bodies and conditional branches
 - Preserves computed types and declared ascriptions when rebuilding expressions
+- Keeps a grouped result annotation on an expression around the simplified value. For example,
+  `(empty ()): Bool` supplies `Bool` to type checking; a grouped lambda's callable annotation
+  stays separate from the lambda's own return annotation.
 - Simplifies application callees through the exhaustive `Callee` type, preserving lambda heads
   and recursively simplifying application arguments and reference qualifiers
 - Transfers a group's type ascription when its simplified contents remain an `Expr`
@@ -871,7 +987,7 @@ let f = get_value;
 
 ---
 
-### Semantic Phase 9: CaptureAnalyzer
+### Semantic Phase 11: CaptureAnalyzer
 
 **Purpose**: Compute free variables for every lambda scope and populate `Lambda.captures` for
 value-position lambdas whose value may need to be materialized as a closure.
@@ -902,7 +1018,7 @@ value-position lambdas whose value may need to be materialized as a closure.
 
 ---
 
-### Semantic Phase 10: TypeChecker
+### Semantic Phase 12: TypeChecker
 
 **Purpose**: Validate member bodies, require parameter annotations where needed, and infer return
 types when possible.
@@ -926,19 +1042,57 @@ types when possible.
      result.
 
 **Application checking**:
-- Works over nested `App` chains produced by the rewriter, validating one argument at a time.
+- Uses the complete enclosing `App` chain to select overloaded references. Later arguments and
+  the expected result or remaining function type can determine the instance before an inner
+  partial application is considered ambiguous.
+- Probes independent argument types, then checks each candidate from the same input tree and
+  diagnostic state. Rejected candidates cannot leave inferred lambda types or diagnostics in
+  the selected result. Arguments, lambda results, local continuations, tuple elements, and
+  ascribed expressions receive their available expected types.
+- Retains independent operand failures and skips candidate trials that cannot repair them.
+  A mixed pair such as `1.0 + 2` is not rechecked for every enclosing addition. Errors that an
+  expected type can resolve, such as missing lambda-parameter evidence, remain provisional.
+- Commits exactly one applicable concrete binding ID and callable type. Function values use
+  the same selection with no supplied arguments; partial calls use the expected remaining type.
+  Returning a callable preserves the boundary between the first invocation and the returned one.
 - Callee checking preserves the `Callee` type. Inference and validation share callable lookup;
   references retain their resolved-declaration fallback and diagnostic names.
 - Callable lookup, compatibility, and struct selection use `TypeUtils.canonical` to follow
   aliases, single-type groups, and schemes while preserving nominal types and detecting alias
-  cycles. Source type grouping remains in the AST.
+  cycles. `TypeCompatibility` compares the same resolved identities used by protocol instance
+  lookup; equal source names alone do not make two nominal declarations equal. Source type
+  grouping remains in the AST.
 - Immediately applied lambdas check arguments first so local bindings can infer their types.
+  A local binding initialized with a bare protocol reference first gathers type evidence from
+  its continuation. One structural pass follows resolved binding IDs through simple aliases,
+  sequences, and conditional branches. Independently known call arguments, annotations, and
+  known consumer parameter types constrain the same concrete member across all supported uses.
+  Parentheses preserve the reference; shadowed and separately bound names retain distinct IDs.
+  Shared protocol selection combines this evidence while checking the initializer and gives
+  the binding a concrete function type. Ordinary continuation checking validates every use.
+  Candidate probes retain isolated diagnostics; no instance is chosen by registration count or order.
+  This collection enters immediately applied unary lambda bodies, which extend the local scope.
+  It does not enter stored or separately evaluated function bodies, cross module boundaries,
+  or iterate unresolved binding dependencies. Partial-call and conditional initializers do not
+  collect continuation evidence. Insufficient, incompatible, missing-instance, and ambiguous selections
+  remain distinct diagnostics. The selected binding stays monomorphic and resolves before
+  callable lowering and ownership analysis.
 - Ensures zero-argument functions in call position accept `Unit`.
 - Nullary literal applications use the same function-type argument validation. Their emission
   evaluates the Unit argument before the body in the enclosing lexical scope, preserving
   conditional exit blocks without constructing a closure.
 - Emits `TypeError.TypeMismatch`, `InvalidApplication`, `UndersaturatedApplication`, or
   `OversaturatedApplication` depending on the shape of the call.
+- Protocol selection distinguishes missing instances, incompatible arguments, insufficient
+  information, and multiple applicable members. Insufficient-information and ambiguity errors
+  retain typed display alternatives, filtered by known constraints and applicable binding IDs.
+  Their shared CLI/LSP message displays every remaining alternative;
+  diagnostics do not perform another round of candidate checking or change selection.
+  A successful module contains no executable reference to an unselected protocol signature.
+- The parser retains the magnitude `2147483648` so `-2147483648` can be represented. Type checking
+  folds that call only after selecting the built-in Int negation by binding identity. Other
+  remaining out-of-range integer literals receive diagnostics at the literal's source span;
+  a custom operator with the same name or type cannot trigger the fold.
 
 **Additional rules**:
 - A function or operator publishes its callable signature on both the declaration and
@@ -952,12 +1106,16 @@ types when possible.
 - Lambda literals participate in both top-down and bottom-up inference:
   - expected callable types seed missing parameter types
   - unresolved lambda params are inferred from body usage when possible
+  - protocol calls share signature-evidence matching with ordinary member selection; in
+    `{ x -> x + 1.0; }`, the Float operand supplies the type for `x`, including through a
+    local alias or typed capture. Missing type evidence cannot be replaced by instance count,
+    and an unresolved alternative prevents a premature parameter constraint
   - typed capture refs are written back into `Lambda.captures`
 - Conditional guards must be `Bool`; both branches must agree on type or trigger
   `ConditionalBranchTypeMismatch`.
 - Holes (`???`) require an expected type; otherwise `UntypedHoleInBinding` is reported.
-- All detected issues are wrapped as `SemanticError.TypeCheckingError` and accumulated in the
-  phase state.
+- Type errors use `SemanticError.TypeCheckingError`; protocol-selection errors use
+  `SemanticError.ProtocolErrorFound`. Both accumulate in the phase state with source causes.
 
 **Note on native implementations**:
 
@@ -977,7 +1135,7 @@ section below.
 
 ---
 
-### Semantic Phase 12: ClosureMemoryFnGenerator
+### Semantic Phase 14: ClosureMemoryFnGenerator
 
 **Purpose**: Synthesize closure-environment layouts and free helpers for capturing lambdas.
 
@@ -1013,7 +1171,7 @@ section below.
 
 ---
 
-### Semantic Phase 13: StructDestructorBodyGenerator
+### Semantic Phase 15: StructDestructorBodyGenerator
 
 Function-bearing structs require destruction and consuming constructor parameters. They do not
 receive clone helpers, including through nested fields. After closure helper registration and
@@ -1021,7 +1179,7 @@ indexing, this phase builds typed field cleanup in declaration order, using univ
 dispatch for function fields and registered native or struct destructors for other owned fields.
 Missing destruction targets accumulate compiler errors.
 
-### Semantic Phase 14: OwnershipAnalyzer
+### Semantic Phase 16: OwnershipAnalyzer
 
 **Purpose**: Track ownership and insert native/struct free calls or `DestroyClosure` operations.
 
@@ -1280,7 +1438,7 @@ use-after-move checks without exporting the branches' local ownership bindings.
 
 ---
 
-### Semantic Phase 15: ClosureDestructorBodyGenerator
+### Semantic Phase 17: ClosureDestructorBodyGenerator
 
 `ClosureDestructorBodyGenerator` fills environment field cleanup entries using the
 ownership-analyzed captures. `Capture.OwnedClosure` records a transferred function capture and
@@ -1304,7 +1462,7 @@ of typed destructor bodies lives in `ClosureDestructorAst`; neither phase calls 
 
 ---
 
-### Semantic Phase 16: TailRecursionDetector
+### Semantic Phase 18: TailRecursionDetector
 
 **Purpose**: Mark top-level and let-bound lambdas that can use the loopified tail-recursive codegen
 path.
@@ -1339,7 +1497,7 @@ emitter does not relocate destruction and `--no-tco` disables loopification.
 
 ---
 
-### Semantic Phase 17: DestructionValidator
+### Semantic Phase 19: DestructionValidator
 
 The pass accumulates compiler errors for malformed destruction operations after the final index
 rebuild. It checks result and operand types, operand references, target signatures, layout and
@@ -1359,7 +1517,10 @@ Expression codegen lowers the validated operations with the normal target ABI.
 
 Library loading is not implemented yet.
 
-The compiler automatically injects predefined types, operators, and functions into every module before semantic analysis. This injection is implemented in `semantic/package.scala`.
+The compiler injects predefined types, operators, and functions before semantic analysis.
+Types and common functions are injected in `semantic/package.scala`; numeric and Boolean
+operators are injected in `semantic/StandardOperators.scala`. The common-function injection
+also adds `ToString` through `semantic/StandardConversions.scala`.
 
 ### Injected types
 
@@ -1388,52 +1549,54 @@ Word  -> Int8
 
 ### Injected operators
 
-All standard operators are injected as `@metal:tpl` declarations with LLVM IR templates:
+`injectStandardOperators` injects one provisional `Num` protocol with eleven required
+signatures: four binary arithmetic operations, six comparisons, and unary negation. Its
+concrete `Int` and `Float` instances follow the same registration, signature checking,
+selection, and lowering as source-declared instances.
 
-```scala
-// Arithmetic (Int -> Int -> Int)
-op *(a: Int, b: Int): Int 80 left = @metal:tpl["mul %type %operand1, %operand2"];
-op /(a: Int, b: Int): Int 80 left = @metal:tpl["sdiv %type %operand1, %operand2"];
-op %(a: Int, b: Int): Int 80 left = @metal:tpl["srem %type %operand1, %operand2"];
-op +(a: Int, b: Int): Int 60 left = @metal:tpl["add %type %operand1, %operand2"];
-op -(a: Int, b: Int): Int 60 left = @metal:tpl["sub %type %operand1, %operand2"];
-
-// Unary arithmetic (Int -> Int)
-op +(a: Int): Int 95 right = @metal:tpl["add %type 0, %operand"];
-op -(a: Int): Int 95 right = @metal:tpl["sub %type 0, %operand"];
-
-// Comparison (Int -> Int -> Bool)
-op ==(a: Int, b: Int): Bool 50 left = @metal:tpl["icmp eq %type %operand1, %operand2"];
-op !=(a: Int, b: Int): Bool 50 left = @metal:tpl["icmp ne %type %operand1, %operand2"];
-op <(a: Int, b: Int): Bool 50 left = @metal:tpl["icmp slt %type %operand1, %operand2"];
-op >(a: Int, b: Int): Bool 50 left = @metal:tpl["icmp sgt %type %operand1, %operand2"];
-op <=(a: Int, b: Int): Bool 50 left = @metal:tpl["icmp sle %type %operand1, %operand2"];
-op >=(a: Int, b: Int): Bool 50 left = @metal:tpl["icmp sge %type %operand1, %operand2"];
-
-// Logical (Bool -> Bool -> Bool)
-op and(a: Bool, b: Bool): Bool 40 left = @metal:tpl["and %type %operand1, %operand2"];
-op or(a: Bool, b: Bool): Bool 30 left = @metal:tpl["or %type %operand1, %operand2"];
-
-// Unary logical (Bool -> Bool)
-op not(a: Bool): Bool 95 right = @metal:tpl["xor %type 1, %operand"];
-
-// String concatenation (String -> String -> String)
-op ++(a: String, b: String): String 61 right = concat a b;
-
-// Float arithmetic (Float -> Float -> Float)
-op +.(a: Float, b: Float): Float 60 left = @metal:tpl["fadd %type %operand1, %operand2"];
-op -.(a: Float, b: Float): Float 60 left = @metal:tpl["fsub %type %operand1, %operand2"];
-op *.(a: Float, b: Float): Float 80 left = @metal:tpl["fmul %type %operand1, %operand2"];
-op /.(a: Float, b: Float): Float 80 left = @metal:tpl["fdiv %type %operand1, %operand2"];
-
-// Float comparison (Float -> Float -> Bool)
-op <.(a: Float, b: Float): Bool 50 left = @metal:tpl["fcmp olt %type %operand1, %operand2"];
-op >.(a: Float, b: Float): Bool 50 left = @metal:tpl["fcmp ogt %type %operand1, %operand2"];
-
-// Unary float (Float -> Float)
-op +.(a: Float): Float 95 right = @metal:tpl["fadd %type 0.0, %operand"];
-op -.(a: Float): Float 95 right = @metal:tpl["fneg %type %operand"];
+```mml
+protocol Num 'T =
+  op +(a: 'T, b: 'T): 'T 60 left;
+  op -(a: 'T, b: 'T): 'T 60 left;
+  op *(a: 'T, b: 'T): 'T 80 left;
+  op /(a: 'T, b: 'T): 'T 80 left;
+  op ==(a: 'T, b: 'T): Bool 50 left;
+  op !=(a: 'T, b: 'T): Bool 50 left;
+  op <(a: 'T, b: 'T): Bool 50 left;
+  op >(a: 'T, b: 'T): Bool 50 left;
+  op <=(a: 'T, b: 'T): Bool 50 left;
+  op >=(a: 'T, b: 'T): Bool 50 left;
+  op -(a: 'T): 'T 95 right;
+;
 ```
+
+Instance bodies are native LLVM templates. No runtime protocol dictionary is emitted.
+The selected member ID determines an ordinary concrete callable.
+
+| Operation | Int template instruction | Float template instruction |
+|---|---|---|
+| Binary `+`, `-`, `*`, `/` | `add`, `sub`, `mul`, `sdiv` | `fadd`, `fsub`, `fmul`, `fdiv` |
+| `==`, `!=` | `icmp eq`, `icmp ne` | `fcmp oeq`, `fcmp une` |
+| `<`, `>`, `<=`, `>=` | `icmp slt`, `icmp sgt`, `icmp sle`, `icmp sge` | `fcmp olt`, `fcmp ogt`, `fcmp ole`, `fcmp oge` |
+| Unary `-` | `sub %type 0, %operand` | `fsub %type 0.0, %operand` |
+
+Integer division is signed and truncates toward zero. Float inequality is unordered,
+so NaN compares unequal; the other Float comparisons are ordered. Unary Float negation
+uses subtraction from positive zero, including the resulting signed-zero behavior.
+There are no implicit Int/Float conversions and no injected dotted aliases.
+
+The protocol ID is `stdlib::protocol::Num`. Each signature has a separate ID under that
+protocol. Int implementations retain their stable `stdlib::bnd::<mangled operator>` IDs;
+Float implementations have distinct IDs under `stdlib::instance::Num::Float`. The checker
+uses the shared Int-negation identity when validating the minimum Int literal. Source
+lookup sees protocol signatures; lowered instance implementation names stay private.
+
+The following remain ordinary operators:
+
+- Int `%` at precedence 80, `<<` and `>>` at 55, all left-associative.
+- Int unary `+` at 95, right-associative.
+- Bool `and` at 40 and `or` at 30, left-associative; `not` at 95, right-associative.
+- String `++` at 61, right-associative, calling `concat` through common-function injection.
 
 ### Injected functions
 
@@ -1446,7 +1609,7 @@ fn readline(): String = @metal:ffi;
 
 // String operations
 fn concat(a: String, b: String): String = @metal:ffi[mem=alloc];
-fn to_string(n: Int): String = @metal:ffi[mem=alloc];
+fn int_to_str(n: Int): String = @metal:ffi[mem=alloc];
 fn float_to_str(a: Float): String = @metal:ffi[mem=alloc];
 fn str_to_int(s: String): Int = @metal:ffi;
 
@@ -1483,7 +1646,18 @@ fn ar_int_get(arr: IntArray, i: Int): Int = @metal:ffi;
 // ... unsafe variants, ar_int_len, plus analogous ar_str_* and ar_float_* families
 ```
 
-**Implementation**: See `injectBasicTypes`, `injectStandardOperators`, and `injectCommonFunctions` in `semantic/package.scala`.
+`injectStandardConversions` supplies `ToString` with `to_str(value: 'T): String` and
+twelve concrete instances: Int, Int8, Int16, Int64, Float, Double, Bool, Char, SizeT, Unit,
+String, and CString. Aliases reuse canonical instances. Each instance member names its native
+conversion symbol explicitly and carries `MemEffect.Alloc`; the original three numeric
+conversions retain their formatting. String uses its existing clone helper, and the remaining
+scalar conversions allocate checked copies in the runtime. Unit's source argument is evaluated
+but omitted from the native call. Ordinary protocol checking supplies each concrete signature.
+The reference prelude mirrors these declarations; the three named numeric conversion functions
+remain available as direct operations. Arrays, raw pointers, and opaque handles are excluded.
+
+**Implementation**: `injectBasicTypes` and `injectCommonFunctions` live in
+`semantic/package.scala`; `injectStandardOperators` lives in `semantic/StandardOperators.scala`.
 
 ---
 
@@ -1842,8 +2016,10 @@ flowchart TD
     IDA --> TR[TypeResolver]
     TR --> CG[ConstructorGenerator]
     CG --> MFG[MemoryFunctionGenerator]
-    MFG --> RR[RefResolver]
-    RR --> ER[ExpressionRewriter]
+    MFG --> PC[ProtocolChecker]
+    PC --> RR[RefResolver]
+    RR --> OG[OperatorGrouping]
+    OG --> ER[ExpressionRewriter]
     ER --> S[Simplifier]
     S --> CA[CaptureAnalyzer]
     CA --> TC[TypeChecker]
@@ -1875,7 +2051,7 @@ flowchart TD
 - **ast/**: `AstNode.scala` (AST definitions)
 - **parser/**: `Parser.scala`, `MmlWhitespace.scala`
 - **compiler/**: `IngestStage.scala`, `SemanticStage.scala`, `CodegenStage.scala`, `Compilation.scala`, `FileOperations.scala`
-- **semantic/**: Phase implementations (`ParsingErrorChecker`, `DuplicateNameChecker`, `IdAssigner`, `TypeResolver`, `ConstructorGenerator`, `RefResolver`, `ExpressionRewriter`, `Simplifier`, `TypeChecker`, `MemoryFunctionGenerator`, `ResolvablesIndexer`, `TailRecursionDetector`, `OwnershipAnalyzer`) plus stdlib injection in `package.scala`
+- **semantic/**: Phase implementations (`ParsingErrorChecker`, `DuplicateNameChecker`, `IdAssigner`, `TypeResolver`, `ConstructorGenerator`, `ProtocolChecker`, `RefResolver`, `OperatorGrouping`, `ExpressionRewriter`, `Simplifier`, `TypeChecker`, `MemoryFunctionGenerator`, `ResolvablesIndexer`, `TailRecursionDetector`, `OwnershipAnalyzer`) plus stdlib injection in `package.scala`
 - **codegen/**: `LlvmIrEmitter.scala`, `LlvmToolchain.scala`, `emitter/*`
 - **api/**: `ParserApi.scala`, `SemanticApi.scala`, `FrontEndApi.scala`, `CompilerApi.scala`, `CodeGenApi.scala`, `NativeEmitterApi.scala`
 - **lsp/**: LSP server, diagnostics, document manager
@@ -1888,7 +2064,7 @@ flowchart TD
 The MML compiler flows through staged pipelines:
 
 1. **IngestStage**: Parse source, collect parser counters, lift parse errors.
-2. **SemanticStage**: Stdlib injection -> DuplicateNameChecker -> IdAssigner -> TypeResolver -> ConstructorGenerator -> MemoryFunctionGenerator -> RefResolver -> ExpressionRewriter -> Simplifier -> CaptureAnalyzer -> TypeChecker -> PartialApplicationElaborator -> ClosureMemoryFnGenerator -> StructDestructorBodyGenerator -> OwnershipAnalyzer -> ClosureDestructorBodyGenerator -> TailRecursionDetector -> DestructionValidator.
+2. **SemanticStage**: Stdlib injection -> DuplicateNameChecker -> IdAssigner -> TypeResolver -> ConstructorGenerator -> MemoryFunctionGenerator -> ProtocolChecker -> RefResolver -> OperatorGrouping -> ExpressionRewriter -> Simplifier -> CaptureAnalyzer -> TypeChecker -> PartialApplicationElaborator -> ClosureMemoryFnGenerator -> StructDestructorBodyGenerator -> OwnershipAnalyzer -> ClosureDestructorBodyGenerator -> TailRecursionDetector -> DestructionValidator.
 3. **CodegenStage**: Pre-codegen validation -> resolve target triple -> gather LLVM tool info -> resolve cached Clang CPU/features -> emit LLVM IR -> write IR -> native compilation.
 
 Each phase takes a `CompilerState` and returns an updated one. Timings are recorded via `CompilerState.timePhase`/`timePhaseIO`. Errors accumulate without halting compilation, so partial results remain available for the LSP.
@@ -1901,7 +2077,7 @@ Each phase takes a `CompilerState` and returns an updated one. Timings are recor
   for the problem, implementation strategy, detailed mechanisms, and performance evidence.
 - **Codebase structure**: See [Source tree overview](#appendix-a-source-tree-overview).
 - **Operator handling**: See [DuplicateNameChecker](#semantic-phase-1-duplicatenamechecker)
-  for arity-based name checks and [ExpressionRewriter](#semantic-phase-7-expressionrewriter)
+  for arity-based name checks and [ExpressionRewriter](#semantic-phase-9-expressionrewriter)
   for precedence and application rewriting.
 - **Code generation**: See [Native templates](#11-code-generation-native-templates) and
   [Struct constructors](#12-code-generation-struct-constructors).

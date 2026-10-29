@@ -115,6 +115,68 @@ sees on the page.
   - The rule against *backward*-looking hedging still stands: "no longer", "was",
     "previously" still rot fast and add no value.
 
+### Positive example: explaining a helper type
+
+This comment explains what the type represents and makes the distinction between the source
+signature and its concrete types visible through a complete example.
+Copied from [ProtocolChecker.scala](../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/ProtocolChecker.scala):
+
+```scala
+  /** The source protocol signature paired with its parameter and return types after substituting
+    * the instance's concrete type for the protocol's type parameter.
+    *
+    * In this example, `render` has parameter types `String` and `Int`, and return type `Unit`:
+    *
+    * {{{
+    * protocol Render 'T =
+    *   fn render(label: String, value: 'T): Unit;
+    * ;
+    *
+    * instance Render Int =
+    *   fn render(label, value) =
+    *     print label;
+    *     println (int_to_str value);
+    *   ;
+    * ;
+    * }}}
+    */
+  private case class ConcreteSignature(
+    signature:  ProtocolSignature,
+    paramTypes: List[Type],
+    returnType: Type
+  )
+```
+
+### Positive example: a concise helper-type comment
+
+A short comment is sufficient when it makes the type's role clear. The comment on
+`ProtocolCheckState` names its owner, purpose, and immutability in one sentence:
+
+```scala
+  /** Immutable working state of ProtocolChecker */
+```
+
+### Positive example: explaining an operation in context
+
+This comment explains what lowering means in this phase, how it specializes member types,
+and what happens to invalid declarations. The doc comment and signature are copied from
+[ProtocolChecker.scala](../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/ProtocolChecker.scala);
+the function body is omitted.
+
+```scala
+  /** Resolves an instance's protocol and reserves its concrete type before checking its members.
+    * Lowering turns those members into ordinary functions: for Render Int, a member using 'T
+    * receives Int parameter and return types wherever 'T occurs. The instance retains references to
+    * its implementations. Invalid declarations remain in the module with their diagnostics.
+    */
+  private def lowerInstance(
+    instance:  ProtocolInstance,
+    ordinal:   Int,
+    protocols: List[Protocol],
+    current:   ProtocolCheckState
+  ): ProtocolCheckState =
+```
+
 ## 10) Vertical Spacing
 
 Use paragraphs, as when writing prose: keep one coherent thought together and separate it

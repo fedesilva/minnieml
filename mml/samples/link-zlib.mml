@@ -6,5 +6,5 @@
 fn zlibCompileFlags(): Int64 = @metal:ffi;;
 
 pub fn main(): Unit =
-  println ("zlib compile flags: " ++ int64_to_str (zlibCompileFlags ()));
+  println ("zlib compile flags: " ++ to_str (zlibCompileFlags ()));
 ;

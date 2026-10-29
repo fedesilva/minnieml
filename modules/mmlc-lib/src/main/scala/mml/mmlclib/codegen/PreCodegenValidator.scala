@@ -1,7 +1,7 @@
 package mml.mmlclib.compiler
 
 import mml.mmlclib.ast.*
-import mml.mmlclib.codegen.CompilationMode
+import mml.mmlclib.codegen.{CompilationMode, EntryPoint}
 import mml.mmlclib.errors.CompilerWarning
 import mml.mmlclib.semantic.SemanticError
 
@@ -31,7 +31,10 @@ object PreCodegenValidator:
   ): CompilerState =
     mode match
       case CompilationMode.Exe =>
-        findMainFn(state.module) match
+        val entryPoint = EntryPoint
+          .find(state.module)
+          .filter((_, lambda) => isValidMainParams(lambda, state.module))
+        entryPoint match
           case None =>
             state.addError(
               SemanticError.InvalidEntryPoint(
@@ -69,15 +72,6 @@ object PreCodegenValidator:
                     )
                   )
       case _ => state
-
-  private def findMainFn(module: Module): Option[(Bnd, Lambda)] =
-    module.members.collectFirst {
-      case bnd: Bnd
-          if bnd.meta.exists(m => m.origin == BindingOrigin.Function && m.originalName == "main") =>
-        bnd.value.terms.headOption.collect {
-          case lambda: Lambda if isValidMainParams(lambda, module) => (bnd, lambda)
-        }
-    }.flatten
 
   private def isValidMainParams(lambda: Lambda, module: Module): Boolean =
     lambda.params match

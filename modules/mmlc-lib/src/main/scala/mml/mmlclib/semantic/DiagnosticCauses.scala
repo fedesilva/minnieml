@@ -63,7 +63,12 @@ final case class DiagnosticCauses private (
   def evidenceOfType(tpe: Type): CauseEvidence = typeEvidence(tpe, Set.empty)
 
   private def annotations(value: Typeable): CauseEvidence =
-    combine((value.typeSpec.toList ++ value.typeAsc.toList).map(evidenceOfType))
+    val calleeAscriptions = value match
+      case app: App => app.calleeAscriptions
+      case _ => Nil
+    combine(
+      (value.typeSpec.toList ++ value.typeAsc.toList ++ calleeAscriptions).map(evidenceOfType)
+    )
 
   /** A generated local inherits its initializer's evidence without depending on its name. */
   def withBinding(parameter: FnParam, value: Expr): DiagnosticCauses =

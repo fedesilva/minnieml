@@ -14,7 +14,7 @@ fn capture_borrowed(borrowed: Int -> Int -> Int): Int =
 ;
 
 pub fn main(): Int =
-  let seed = int_to_str 12345;
+  let seed = to_str 12345;
   let c = ~{ a: Int, b: Int -> a + b + seed.length; };
 
   // Both forms depend on the invalid return in pick_borrowed.

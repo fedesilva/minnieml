@@ -16,6 +16,9 @@ object ResolvablesIndexer:
   /** Definition occurrences are collected independently of the map, including duplicate IDs. */
   def definitions(module: Module): List[Resolvable] =
     def memberDefinitions(member: Member): List[Resolvable] = member match
+      case protocol: Protocol => protocol :: protocol.signatures.flatMap(s => s :: s.params)
+      case instance: ProtocolInstance =>
+        instance.members.flatMap(member => memberDefinitions(member.binding))
       case binding:    Bnd => binding :: collectParamsFromExpr(binding.value)
       case struct:     TypeStruct => struct :: struct.fields.toList
       case definition: TypeDef => List(definition)
@@ -33,6 +36,12 @@ object ResolvablesIndexer:
 
   private def updateIndexForMember(idx: ResolvablesIndex, member: Member): ResolvablesIndex =
     member match
+      case protocol: Protocol =>
+        idx.updated(protocol).updatedAll(protocol.signatures.flatMap(s => s :: s.params))
+      case instance: ProtocolInstance =>
+        instance.members.foldLeft(idx) { (index, member) =>
+          updateIndexForMember(index, member.binding)
+        }
       case bnd: Bnd =>
         val params = collectParamsFromExpr(bnd.value)
         idx.updated(bnd).updatedAll(params)

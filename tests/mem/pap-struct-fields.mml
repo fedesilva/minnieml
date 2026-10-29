@@ -24,15 +24,15 @@ fn make_once(~text: String): Holder =
 
 fn make_outer(~text: String): Outer =
   let inner = make_once text;
-  Outer inner (int_to_str 456);
+  Outer inner (to_str 456);
 ;
 
 fn use(h: Holder, x: Int): Int = h.f x;;
 fn consume(~h: Holder, x: Int): Int = h.f x;;
 
 fn conditional(flag: Bool): Int =
-  let first = take (int_to_str 123);
-  let second = take (int_to_str 4567);
+  let first = take (to_str 123);
+  let second = take (to_str 4567);
   let pair = Pair first second;
   let a = if flag then pair.first 1; else 0;;
   let b = pair.second 2;
@@ -40,7 +40,7 @@ fn conditional(flag: Bool): Int =
 ;
 
 fn conditional_nested(flag: Bool): Int =
-  let outer = Outer (if flag then make 1; else make 2;) (int_to_str 0);
+  let outer = Outer (if flag then make 1; else make 2;) (to_str 0);
   outer.inner.f 2;
 ;
 
@@ -52,22 +52,22 @@ fn iteration(): Int =
   let moved = h;
   let c = moved.f 4;
 
-  let once = make_once (int_to_str 123);
+  let once = make_once (to_str 123);
   let invoke_once = once.f;
   let d = invoke_once 2;
-  let dropped = make_once (int_to_str 123);
-  let outer = make_outer (int_to_str 123);
+  let dropped = make_once (to_str 123);
+  let outer = make_outer (to_str 123);
   let e = outer.inner.f 2;
-  let nested_dropped = make_outer (int_to_str 123);
-  let f = consume (make_once (int_to_str 123)) 2;
+  let nested_dropped = make_outer (to_str 123);
+  let f = consume (make_once (to_str 123)) 2;
 
-  let left = take (int_to_str 123);
-  let right = take (int_to_str 4567);
+  let left = take (to_str 123);
+  let right = take (to_str 4567);
   let pair = Pair left right;
   let g = pair.first 2;
   let k = pair.second 2;
 
-  let seed = int_to_str 123;
+  let seed = to_str 123;
   let closure = ~{ n: Int -> seed.length + n; };
   let retained = Holder closure;
   let i = retained.f 2;
@@ -76,9 +76,9 @@ fn iteration(): Int =
   let l = static_holder.f 2;
 
   let deferred = Measure (measure 10);
-  let m = deferred.f (int_to_str 123);
-  let n = deferred.f (int_to_str 456);
-  let text_holder = TextHolder (keep (int_to_str 123));
+  let m = deferred.f (to_str 123);
+  let n = deferred.f (to_str 456);
+  let text_holder = TextHolder (keep (to_str 123));
   let owned_result = text_holder.f 0;
   let literal_holder = TextHolder constant;
   let literal_result = literal_holder.f 0;

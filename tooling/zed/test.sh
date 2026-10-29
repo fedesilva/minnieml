@@ -15,6 +15,8 @@ samples=(
   "$repo_root/mml/samples/raytracer.mml"
   "$repo_root/mml/samples/lambda-factorial.mml"
   "$repo_root/mml/samples/link-zlib.mml"
+  "$repo_root/mml/samples/protocol-functions.mml"
+  "$repo_root/mml/samples/protocol-operators.mml"
 )
 tree-sitter parse --quiet "${samples[@]}"
 

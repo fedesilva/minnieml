@@ -14,18 +14,20 @@ union Maybe 'T =
 // (One instead of Maybe.One)
 use Maybe.*;
 
-fn empty 'T(x: Maybe 'T): Bool =
+// Function type variables are introduced by their signatures.
+fn empty(x: Maybe 'T): Bool =
   match x with
     | None -> true;
     | _    -> false;
   ;
 ;
 
-fn nonEmpty 'T(maybe: Maybe 'T): Bool =
+fn non_empty(maybe: Maybe 'T): Bool =
   not (empty maybe);
 ;
 
-union Result 'T 'E =
+// Fixing the error type leaves Result 'E with one parameter for a future Functor instance.
+union Result 'E 'T =
   | Ok 'T
   | Err 'E
 ;
@@ -37,7 +39,7 @@ enum Ordering =
   | Greater
 ;
 
-let equalOrdering = Ordering.Equal;
+let equal_ordering = Ordering.Equal;
 
 // Semigroup represents an associative binary operation.
 protocol Semigroup 'T =
@@ -45,51 +47,58 @@ protocol Semigroup 'T =
 ;
 
 // Monoid requires 'T to also satisfy Semigroup.
-protocol Monoid 'T: Semigroup =
+protocol Monoid 'T
+  where 'T: Semigroup =
   fn empty(): 'T;
 ;
 
 // Functor represents a structure that can be mapped over.
 protocol Functor 'F =
-  fn map 'A 'B(f: 'A -> 'B, values: 'F 'A): 'F 'B;
+  fn map(f: 'A -> 'B, values: 'F 'A): 'F 'B;
 ;
 
 // Apply requires 'F to also satisfy Functor.
-protocol Apply 'F: Functor =
-  fn ap 'A 'B(functions: 'F ('A -> 'B), values: 'F 'A): 'F 'B;
+protocol Apply 'F
+  where 'F: Functor =
+  fn ap(functions: 'F ('A -> 'B), values: 'F 'A): 'F 'B;
 ;
 
 // Applicative requires 'F to also satisfy Apply.
-protocol Applicative 'F: Apply =
-  fn pure 'A(value: 'A): 'F 'A;
+protocol Applicative 'F
+  where 'F: Apply =
+  fn pure(value: 'A): 'F 'A;
 ;
 
 // FlatMap requires 'F to also satisfy Functor.
-protocol FlatMap 'F: Functor =
-  fn flatMap 'A 'B(f: 'A -> 'F 'B, values: 'F 'A): 'F 'B;
+protocol FlatMap 'F
+  where 'F: Functor =
+  fn flat_map(f: 'A -> 'F 'B, values: 'F 'A): 'F 'B;
 ;
 
 // Monad requires 'M to also satisfy Functor, FlatMap, and Applicative.
-protocol Monad 'M: Functor & FlatMap & Applicative;
+protocol Monad 'M
+  where 'M: Functor & FlatMap & Applicative;
 
 protocol Foldable 'F =
-  fn foldLeft 'A 'B(f: 'B -> 'A -> 'B, initial: 'B, values: 'F 'A): 'B;
-  fn foldRight 'A 'B(f: 'A -> 'B -> 'B, initial: 'B, values: 'F 'A): 'B;
+  fn fold_left(f: 'B -> 'A -> 'B, initial: 'B, values: 'F 'A): 'B;
+  fn fold_right(f: 'A -> 'B -> 'B, initial: 'B, values: 'F 'A): 'B;
 ;
 
-// Int forms a semigroup under addition
+// Illustrative additive instance, not a settled standard-library choice for bare Int.
+// Canonical instances allow one Semigroup Int; supporting both addition and multiplication
+// requires distinct nominal types, such as Sum and Product, with their own instances.
 instance Semigroup Int =
   fn combine(left: Int, right: Int): Int = left + right;;
 ;
 
-// Int forms a monoid under addition with 0 as identity
+// The matching illustrative Monoid uses 0 as the additive identity.
 instance Monoid Int =
   fn empty(): Int = 0;;
 ;
 
 // Maybe implements the Functor protocol
 instance Functor Maybe =
-  fn map 'A 'B(f: 'A -> 'B, maybe: Maybe 'A): Maybe 'B =
+  fn map(f: 'A -> 'B, maybe: Maybe 'A): Maybe 'B =
     match maybe with
       | One x -> One (f x);
       | None  -> None;
@@ -99,7 +108,7 @@ instance Functor Maybe =
 
 // Maybe implements the Apply protocol
 instance Apply Maybe =
-  fn ap 'A 'B(f: Maybe ('A -> 'B), maybe: Maybe 'A): Maybe 'B =
+  fn ap(f: Maybe ('A -> 'B), maybe: Maybe 'A): Maybe 'B =
     match f with
       | One g -> map g maybe;
       | None  -> None;
@@ -109,7 +118,7 @@ instance Apply Maybe =
 
 // Maybe implements the FlatMap protocol
 instance FlatMap Maybe =
-  fn flatMap 'A 'B(f: 'A -> Maybe 'B, maybe: Maybe 'A): Maybe 'B =
+  fn flat_map(f: 'A -> Maybe 'B, maybe: Maybe 'A): Maybe 'B =
     match maybe with
       | One x -> f x;
       | None  -> None;
@@ -119,28 +128,19 @@ instance FlatMap Maybe =
 
 // Maybe implements the Applicative protocol
 instance Applicative Maybe =
-  fn pure 'A(x: 'A): Maybe 'A = One x;;
+  fn pure(x: 'A): Maybe 'A = One x;;
 ;
 
-// Maybe implements the Monad protocol
-instance Monad Maybe =
-  fn flatMap 'A 'B(f: 'A -> Maybe 'B, maybe: Maybe 'A): Maybe 'B =
-    match maybe with
-      | One x -> f x;
-      | None  -> None;
-    ;
-  ;
+// Monad's requirements are supplied by the separate instances above.
+instance Monad Maybe;
 
-  fn pure 'A(x: 'A): Maybe 'A = One x;;
-;
-
-protocol Something 'T: Semigroup =
-  fn combine(left: 'T, right: 'T): 'T = left + right;;
-  // Example of operator definitions using protocols
-  // Here the precedence and associativity are randomly
-  // selected for demonstration only.
-  op +(left: 'T, right: 'T): 'T 20 right;
-  op >>(left: 'T, right: 'T): 'T 25 left;
+protocol Something 'T
+  where 'T: Semigroup =
+  fn combine_with_plus(left: 'T, right: 'T): 'T = left + right;;
+  // Every visible declaration of a symbol and arity must agree on grouping.
+  // These match Num's binary + and the standard integer >> operator.
+  op +(left: 'T, right: 'T): 'T 60 left;
+  op >>(left: 'T, right: 'T): 'T 55 left;
 ;
 
 // Future parameterized instance using the proposed union syntax.
@@ -149,7 +149,8 @@ union Option 'T =
   | None
 ;
 
-instance Semigroup (Option 'T: Semigroup) =
+instance Semigroup (Option 'T)
+  where 'T: Semigroup =
   fn combine(left: Option 'T, right: Option 'T): Option 'T =
     match left with
       | Option.None -> right;
@@ -162,5 +163,10 @@ instance Semigroup (Option 'T: Semigroup) =
   ;
 ;
 
-// Multiple constraints apply to the element type, for example:
-// instance Semigroup (Option 'T: Semigroup & Clone) = ...
+// Type parameters can be constrained using the `where` clause.
+// protocol Combine 'T
+//   where 'T: Semigroup = ...
+
+// fn empty(x: Maybe 'T): Bool
+//   where 'T: Clone = ...
+// Multiple requirements use the intersection sigil: where 'T: Semigroup & Clone.

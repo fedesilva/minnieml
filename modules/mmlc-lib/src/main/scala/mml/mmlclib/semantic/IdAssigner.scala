@@ -1,5 +1,6 @@
 package mml.mmlclib.semantic
 
+import cats.data.State
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.compiler.CompilerState
@@ -18,9 +19,10 @@ object IdAssigner:
       case _: TypeDef => Some("typedef")
       case _: TypeStruct => Some("typestruct")
       case _: TypeAlias => Some("typealias")
+      case _: Protocol => Some("protocol")
       case _ => None
 
-  private def topLevelId(moduleName: String, member: Decl): Option[String] =
+  private def topLevelId(moduleName: String, member: Decl & Resolvable): Option[String] =
     declSegment(member).map(segment => BindingIds.declaration(moduleName, member.name, segment))
 
   private def fieldId(moduleName: String, structName: String, fieldName: String): Option[String] =
@@ -46,6 +48,39 @@ object IdAssigner:
   /** Assign ID to a member if it doesn't have one */
   private def assignIdToMember(moduleName: String)(member: Member): Allocation[Member] =
     member match
+      case protocol: Protocol =>
+        val id =
+          protocol.id.getOrElse(BindingIds.declaration(moduleName, protocol.name, "protocol"))
+        protocol.signatures
+          .traverse { signature =>
+            val signatureId =
+              signature.id.getOrElse(BindingIds.protocolSignature(id, signature.meta.mangledName))
+            val owner = BindingOwner(signatureId)
+            signature.params.traverse(BindingIds.assign(_, owner)).map { params =>
+              signature.copy(id = signatureId.some, params = params)
+            }
+          }
+          .map(signatures => protocol.copy(id = id.some, signatures = signatures))
+      case instance: ProtocolInstance =>
+        val identity: Allocation[String] = instance.id match
+          case Some(id) => id.pure[Allocation]
+          case None =>
+            State(_.fresh(BindingOwner(moduleName), "instance", instance.protocol.nameNode.value))
+        for
+          id <- identity
+          members <- instance.members.traverse { member =>
+            val binding    = member.binding
+            val sourceName = ProtocolRegistry.sourceName(binding)
+            val name = member.operatorParameterCount
+              .fold(sourceName)(OpMangling.mangleOp(sourceName, _))
+            val owner = BindingOwner(s"$id::$name")
+            assignIdsToExpr(binding.value, owner).map { value =>
+              member.copy(binding =
+                binding.copy(id = binding.id.orElse(owner.path.some), value = value)
+              )
+            }
+          }
+        yield instance.copy(id = id.some, members = members)
       case bnd: Bnd =>
         val owner = BindingOwner.binding(moduleName, bnd.name)
         assignIdsToExpr(bnd.value, owner).map { updatedValue =>

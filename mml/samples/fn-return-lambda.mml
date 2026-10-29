@@ -1,4 +1,4 @@
 pub fn main() =  
   let mk = { a -> a * 3 };
-  println (int_to_str (mk 14));
+  println (to_str (mk 14));
 ;

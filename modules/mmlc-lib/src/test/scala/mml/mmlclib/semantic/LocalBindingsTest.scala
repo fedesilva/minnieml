@@ -443,15 +443,7 @@ class LocalBindingsTest extends BaseEffFunSuite:
     """).map { parsed =>
       val module  = injectCommonFunctions(injectStandardOperators(injectBasicTypes(parsed)))
       val initial = CompilerState.empty(module, SourceInfo(""), CompilerConfig.default)
-      val phases: List[CompilerState => CompilerState] = List(
-        IdAssigner.rewriteModule,
-        TypeResolver.rewriteModule,
-        ConstructorGenerator.rewriteModule,
-        MemoryFunctionGenerator.rewriteModule,
-        RefResolver.rewriteModule,
-        ExpressionRewriter.rewriteModule,
-        Simplifier.rewriteModule,
-        CaptureAnalyzer.rewriteModule,
+      val phases = phasesBeforeTypeChecking ++ List(
         TypeChecker.rewriteModule
       )
       val typed = phases.foldLeft(initial) { (state, phase) =>

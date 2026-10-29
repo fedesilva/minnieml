@@ -7,10 +7,10 @@
 // must check __cap before freeing to avoid crashing on static strings.
 // (__cap describes a retired design; current codegen uses clone/shadow-flag witnesses instead.)
 
-// Returns either a heap string (int_to_str) or static literal
+// Returns either a heap string (to_str) or static literal
 fn get_string(use_heap: Bool, n: Int): String =
   if use_heap then
-    int_to_str n;
+    to_str n;
   else
     "static string";
   ;
@@ -29,7 +29,7 @@ fn test_heap(n: Int): Unit =
 fn test_inline_conditional(use_heap: Bool, n: Int): Unit =
   let s =
     if use_heap then
-      int_to_str n;
+      to_str n;
     else
       "inline static";
     ;

@@ -51,6 +51,7 @@ object Diagnostics:
       case SemanticError.ParseTypeErrorFound(err, _) => err.spanOpt.toList
       case SemanticError.InvalidExpressionFound(inv, _) => inv.spanOpt.toList
       case SemanticError.TypeCheckingError(typeErr) => extractTypeErrorSpans(typeErr)
+      case SemanticError.ProtocolErrorFound(error, _) => error.source.spanOpt.toList
       case SemanticError.InvalidEntryPoint(_, source) => source.spanOpt.toList
       case error: SemanticError.UseAfterMove => error.source.spanOpt.toList
       case SemanticError.ConsumingParamNotLastUse(_, ref, _) => ref.spanOpt.toList
@@ -88,11 +89,7 @@ object Diagnostics:
       case TypeError.UntypedHoleInBinding(_, source, _) => source.spanOpt.toList
 
   private def declSpan(decl: Decl): Option[SrcSpan] =
-    decl match
-      case bnd: Bnd => bnd.spanOpt
-      case td:  TypeDef => td.spanOpt
-      case ta:  TypeAlias => ta.spanOpt
-      case ts:  TypeStruct => ts.spanOpt
+    decl.spanOpt
 
   private def nodeSpan(node: Typeable): Option[SrcSpan] =
     node match
@@ -133,6 +130,8 @@ object Diagnostics:
         "Invalid expression"
       case SemanticError.TypeCheckingError(typeErr) =>
         formatTypeError(typeErr)
+      case SemanticError.ProtocolErrorFound(error, _) =>
+        error.message
       case SemanticError.InvalidEntryPoint(msg, _) =>
         s"Invalid entry point: $msg"
       case e: SemanticError.UseAfterMove => e.message

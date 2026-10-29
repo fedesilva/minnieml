@@ -71,12 +71,18 @@ case class Cond(
 /** Terms permitted in an application's callee position. */
 type Callee = Ref | App | Lambda
 
+/** An application retains source annotations on its callee separately from its result. In
+  * `((make x): (Int -> Int)) y`, the outer application stores `Int -> Int` in calleeAscriptions.
+  * Nested annotations remain in source order, from innermost to outermost. They constrain the
+  * existing application spine without introducing evaluation steps or inferred type state.
+  */
 case class App(
-  source:   SourceOrigin,
-  fn:       Callee,
-  arg:      Expr,
-  typeAsc:  Option[Type] = None,
-  typeSpec: Option[Type] = None
+  source:            SourceOrigin,
+  fn:                Callee,
+  arg:               Expr,
+  typeAsc:           Option[Type] = None,
+  typeSpec:          Option[Type] = None,
+  calleeAscriptions: List[Type]   = Nil
 ) extends Term
 
 object App:
@@ -236,7 +242,7 @@ case class Hole(
 
 sealed trait LiteralValue extends Term, FromSource
 
-/** Retains the magnitude of Int32.MinValue until prefix-operator rewriting applies its sign. */
+/** Retains the magnitude of Int32.MinValue until type checking selects concrete Int negation. */
 case class LiteralInt(
   source:   SourceOrigin,
   value:    Long,

@@ -12,10 +12,17 @@ import MmlWhitespace.*
 private[parser] enum TypeContext:
   case Expression, Declaration, BindingHeader, Parameter, LambdaParameter, Field, Alias, Operator
   case Group(outer: TypeContext)
+  case Protocol(outer: TypeContext)
+
+  def allowsTypeVariables: Boolean = this match
+    case Protocol(_) => true
+    case Group(outer) => outer.allowsTypeVariables
+    case _ => false
 
   def recovery: Recovery.Context =
     this match
       case Group(outer) => outer.recovery
+      case Protocol(outer) => outer.recovery
       case Expression => TypeContext.expressionRecovery
       case Declaration | BindingHeader | LambdaParameter | Alias => TypeContext.commonRecovery
       case Parameter => TypeContext.parameterRecovery
@@ -32,7 +39,19 @@ private[parser] object TypeContext:
   import Recovery.Anchor.*
 
   private val declarations =
-    List("let", "fn", "op", "type", "struct", "pub", "prot", "priv", "inline").map(Keyword(_))
+    List(
+      "let",
+      "fn",
+      "op",
+      "type",
+      "struct",
+      "protocol",
+      "instance",
+      "pub",
+      "prot",
+      "priv",
+      "inline"
+    ).map(Keyword(_))
   val expressionGroupRecovery: Context = Recovery.Context(Nil, declarations)
   private val hardStops      = List(Token("="), Token(","), Token(";")) ++ declarations
   private val anchors        = List(Token("->"), Token("/*"))
@@ -42,7 +61,10 @@ private[parser] object TypeContext:
   private val parameterRecovery = Recovery.Context(Token(")") :: anchors, hardStops)
   private val fieldRecovery     = Recovery.Context(Token("}") :: anchors, hardStops)
   private val operatorRecovery =
-    Recovery.Context(anchors, hardStops ++ List(NumberStart, Keyword("left"), Keyword("right")))
+    Recovery.Context(
+      anchors,
+      hardStops ++ List(NumberStart, Keyword("left"), Keyword("right"), Keyword("where"))
+    )
 
 /** Parses an optional type ascription that follows `:`.
   *
@@ -67,13 +89,25 @@ private[parser] def typeAscP(info: SourceInfo, context: TypeContext = TypeContex
   */
 private[parser] def typeSpecP(info: SourceInfo, context: TypeContext)(using P[Any]): P[Type] =
 
+  // Protocol headers retain applications so unsupported parameterization has a focused diagnostic.
+  def appliedTypeP: P[Type] =
+    if !context.allowsTypeVariables then typeAtomP(info, context)
+    else
+      P(
+        pointP(info) ~ typeAtomP(info, context) ~
+          (&(protocolTypeStartP) ~ typeAtomP(info, context)).rep
+      ).map { case (start, base, args) =>
+        if args.isEmpty then base
+        else TypeApplication(span(start, sourceEnd(args.last, start)), base, args.toList)
+      }
+
   def nextTypeP: P[Type] =
     context match
       case TypeContext.LambdaParameter =>
         P(arrowKw ~ &(validTypeAtomP) ~ typeAtomP(info, context))
-      case _ => P(arrowKw ~ typeAtomP(info, context))
+      case _ => P(arrowKw ~ appliedTypeP)
 
-  P(pointP(info) ~ typeAtomP(info, context) ~ nextTypeP.rep ~ pointP(info))
+  P(pointP(info) ~ appliedTypeP ~ nextTypeP.rep ~ pointP(info))
     .map { case (start, head, tail, _) =>
       val types = head :: tail.toList
       if types.size == 1 then head
@@ -91,18 +125,35 @@ private[parser] def typeSpecP(info: SourceInfo, context: TypeContext)(using P[An
 private def validTypeAtomP(using P[Any]): P[Unit] =
   P(("(" ~ validTypeAtomP ~ (arrowKw ~ validTypeAtomP).rep ~ ")") | typeIdP.map(_ => ()))
 
+private def protocolTypeStartP(using P[Any]): P[Unit] = P("(" | "'" | typeIdP.map(_ => ()))
+
 /** Parses a type atom, preserving a failed fragment up to the next type or caller boundary. */
 private[parser] def typeAtomP(info: SourceInfo, context: TypeContext)(using P[Any]): P[Type] =
 
   def boundaryP: P[Unit] =
     context match
-      case TypeContext.Expression | TypeContext.BindingHeader => Pass
+      case TypeContext.Expression | TypeContext.BindingHeader |
+          TypeContext.Protocol(TypeContext.BindingHeader) =>
+        Pass
       case _ =>
         P(Index)
           .filter(index => Recovery.scan(info.text, index, context.recovery).end == index)
           .map(_ => ())
 
-  P(NoCut((typeGroupP(info, context) | typeRefP(info)) ~ boundaryP) | failedTypeP(info, context))
+  def variableP: P[Type] =
+    if context.allowsTypeVariables then typeVariableP(info) else Fail
+
+  def applicationBoundaryP: P[Unit] =
+    if context.allowsTypeVariables then P(&(protocolTypeStartP) | boundaryP) else boundaryP
+
+  P(
+    NoCut(
+      (typeGroupP(info, context) | variableP | typeRefP(info)) ~ applicationBoundaryP
+    ) | failedTypeP(
+      info,
+      context
+    )
+  )
 
 /** Prefers a balanced failed fragment ending at its caller, then recovers past unmatched openers.
   */
@@ -143,8 +194,9 @@ private def typeRecoveryEndP(context: TypeContext)(using P[Any]): P[Unit] =
       case TypeContext.LambdaParameter => P(",")
       case TypeContext.Field => P("," | "}")
       case TypeContext.Alias => P(";")
-      case TypeContext.Operator => P("=" | CharIn("0-9") | "left" | "right")
+      case TypeContext.Operator => P("=" | CharIn("0-9") | "left" | "right" | whereKw)
       case TypeContext.Group(_) => P(")")
+      case TypeContext.Protocol(outer) => typeRecoveryEndP(outer)
 
   P(arrowKw | callerEndP)
 
@@ -449,6 +501,12 @@ private[parser] def llvmPointeeTypeP(info: SourceInfo)(using P[Any]): P[ParsedTo
   * }}}
   */
 private[parser] def visibilityP[$: P]: P[Visibility] =
-  P("pub").map(_ => Visibility.Public) |
-    P("prot").map(_ => Visibility.Protected) |
-    P("priv").map(_ => Visibility.Private)
+  P(pubKw).map(_ => Visibility.Public) |
+    P(protKw).map(_ => Visibility.Protected) |
+    P(privKw).map(_ => Visibility.Private)
+
+/** Parses a written protocol type parameter, retaining the apostrophe in its name. */
+private[parser] def typeVariableP(info: SourceInfo)(using P[Any]): P[TypeVariable] =
+  P(tokenP(info)(P("'" ~~ typeIdP).!)).map { token =>
+    TypeVariable(token.location, token.value)
+  }

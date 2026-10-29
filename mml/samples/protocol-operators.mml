@@ -1,0 +1,53 @@
+// Protocol operators use the same selection rules as named protocol functions.
+// Run with: mmlc run mml/samples/protocol-operators.mml
+
+protocol Combine 'T =
+  // All implementations share this precedence and associativity.
+  op <+>(left: 'T, right: 'T): 'T 60 left;
+;
+
+instance Combine Int =
+  // The signature supplies the types, precedence, and associativity.
+  op <+>(left, right) = left + right;;
+;
+
+instance Combine Float =
+  op <+>(left, right) = left + right;;
+;
+
+instance Combine Bool =
+  op <+>(left, right) = left or right;;
+;
+
+pub fn main(): Int =
+  println (to_str (20 <+> 22));
+  println (to_str (1.5 <+> 2.5));
+  if false <+> true then println "true";
+  else println "false";
+  ;
+
+  // A selected operator is an ordinary function value.
+  // Local use drives inference: otherwise you would need to
+  // help the typer with annotations.
+  // let combine_int: Int -> Int -> Int = (<+>);
+  let combine_int  = (<+>);
+  println (to_str (combine_int 2 3));
+
+  // Applying one argument creates an ordinary partial application.
+  let add_ten: Int -> Int = (<+>) 10;
+  println (to_str (add_ten 5));
+
+  // Num supplies the same + and * spellings for Int and Float.
+  println (to_str (2 + 3 * 4));
+  println (to_str (2.0 + 3.0 * 4.0));
+  0;
+;
+
+// Expected output:
+// 42
+// 4
+// true
+// 5
+// 15
+// 14
+// 14

@@ -1,21 +1,26 @@
 package mml.mmlclib.test
 
 import cats.effect.IO
-import mml.mmlclib.api.{FrontEndApi, ParserApi}
+import cats.syntax.all.*
+import mml.mmlclib.api.{CompilerApi, FrontEndApi, ParserApi}
 import mml.mmlclib.ast.{
   BindOwnership,
   Bnd,
+  CallableArity,
   Error,
   Lambda,
   Member,
   Module,
+  Protocol,
+  ProtocolSignature,
   ResolvablesIndex,
   SourceOrigin,
   TermTraversal,
   TypeRef
 }
-import mml.mmlclib.codegen.LlvmToolchain
-import mml.mmlclib.compiler.{CodegenStage, CompilerConfig}
+import mml.mmlclib.codegen.{CompilationMode, LlvmToolchain}
+import mml.mmlclib.compiler.{CodegenStage, CompilerConfig, CompilerState}
+import mml.mmlclib.parser.SourceInfo
 import mml.mmlclib.semantic.*
 import mml.mmlclib.test.llvm.LlvmAssertions
 import mml.mmlclib.util.prettyprint.ast.prettyPrintAst
@@ -27,6 +32,80 @@ import scala.sys.process.{Process, ProcessLogger}
 
 /** Base trait for effectful tests; adds common MML specific assertions. */
 trait BaseEffFunSuite extends CatsEffectSuite with LlvmAssertions:
+
+  /** Assign identities and prepare references for grouping; duplicate checks precede this list. */
+  protected val phasesBeforeExpressionRewriting: List[CompilerState => CompilerState] = List(
+    IdAssigner.rewriteModule,
+    TypeResolver.rewriteModule,
+    ConstructorGenerator.rewriteModule,
+    MemoryFunctionGenerator.rewriteModule,
+    ProtocolChecker.rewriteModule,
+    RefResolver.rewriteModule,
+    OperatorGrouping.checkModule
+  )
+
+  /** Retain each phase boundary through grouping, expression rewriting, and capture analysis. */
+  protected val phasesBeforeTypeChecking: List[CompilerState => CompilerState] =
+    phasesBeforeExpressionRewriting ++ List(
+      ExpressionRewriter.rewriteModule,
+      Simplifier.rewriteModule,
+      CaptureAnalyzer.rewriteModule
+    )
+
+  /** Prepare source fixtures at the type-checker boundary while retaining unresolved candidates. */
+  protected def prepareForTypeChecking(
+    source:                String,
+    parsed:                Module,
+    withStandardOperators: Boolean = true
+  ): CompilerState =
+    val withTypes = injectBasicTypes(parsed)
+    val withOperators =
+      if withStandardOperators then injectStandardOperators(withTypes) else withTypes
+    val module  = injectCommonFunctions(withOperators)
+    val initial = CompilerState.empty(module, SourceInfo(source), CompilerConfig.default)
+    val checked = DuplicateNameChecker.rewriteModule(initial)
+    phasesBeforeTypeChecking.foldLeft(checked) { (state, phase) =>
+      ResolvablesIndexer.rewriteModule(phase(state))
+    }
+
+  /** Select a fixture signature without depending on module declaration order. */
+  protected def protocolSignature(
+    module:       Module,
+    protocolName: String,
+    memberName:   String,
+    arity:        Option[CallableArity] = None
+  ): ProtocolSignature =
+    val protocols = module.members.collect {
+      case protocol: Protocol if protocol.name == protocolName => protocol
+    }
+    assertEquals(protocols.size, 1, s"Expected one fixture protocol named $protocolName")
+    val signatures = protocols.head.signatures.filter { signature =>
+      signature.meta.originalName == memberName && arity.forall(_ == signature.meta.arity)
+    }
+    assertEquals(signatures.size, 1, s"Expected one fixture signature named $memberName")
+    signatures.head
+
+  /** Follow the registry from a source signature to its concrete executable binding. */
+  protected def protocolImplementation(
+    state:        CompilerState,
+    protocolName: String,
+    typeName:     String,
+    memberName:   String,
+    arity:        Option[CallableArity] = None
+  ): Bnd =
+    val signature = protocolSignature(state.module, protocolName, memberName, arity)
+    val index     = state.module.resolvables
+    val protocol = state.module.members
+      .collectFirst {
+        case protocol: Protocol if protocol.signatures.exists(_.id == signature.id) => protocol
+      }
+      .getOrElse(fail(s"Expected owner of fixture signature $memberName"))
+    val instance = state.protocols
+      .instance(protocol.id.get, typeReference(typeName, index), index)
+      .fold(error => fail(s"Expected registered fixture instance: $error"), identity)
+    state.protocols
+      .memberBinding(instance, signature.id.get, index)
+      .fold(error => fail(s"Expected registered fixture member: $error"), identity)
 
   /** Select a uniquely named fixture declaration and preserve its resolved identity. */
   protected def typeReference(name: String, index: ResolvablesIndex): TypeRef =
@@ -57,6 +136,36 @@ trait BaseEffFunSuite extends CatsEffectSuite with LlvmAssertions:
           finally paths.close()
         }
       }
+
+  /** Compile a fixture with ASan and assert a successful leak-checked run with exact stdout. */
+  protected def runSanitizedProgram(
+    source:         String,
+    name:           String,
+    optLevel:       Int,
+    expectedOutput: List[String]
+  ): IO[Unit] =
+
+    withSourceFixture(source, s"$name.mml") { (path, initialConfig) =>
+      val directory = path.getParent
+      val binary    = directory.resolve("program")
+      val config = initialConfig.copy(
+        mode       = CompilationMode.Exe,
+        outputName = binary.toString.some,
+        optLevel   = optLevel,
+        asan       = true
+      )
+
+      for
+        compiled <- CompilerApi.compileNativeQuiet(path, config)
+        _ = compiled.fold(error => fail(error), state => assertEquals(state.errors, Vector.empty))
+        _ <- programExits(
+          List("env", "ASAN_OPTIONS=detect_leaks=1:halt_on_error=1", binary.toString),
+          directory,
+          expectedCode   = 0,
+          expectedOutput = expectedOutput.some
+        )
+      yield ()
+    }
 
   /** Assert success through the compiler's shared toolchain command execution. */
   protected def commandNotFailed(command: List[String], workingDir: Path): IO[Unit] =
@@ -196,6 +305,13 @@ trait BaseEffFunSuite extends CatsEffectSuite with LlvmAssertions:
     name:   String         = "Test",
     msg:    Option[String] = None
   ): IO[Module] =
+    semStateNotFailed(source, name, msg).map(_.module)
+
+  def semStateNotFailed(
+    source: String,
+    name:   String         = "Test",
+    msg:    Option[String] = None
+  ): IO[CompilerState] =
     FrontEndApi.compile(source, name).value.map {
       case Right(state) =>
         if state.errors.nonEmpty then
@@ -208,7 +324,7 @@ trait BaseEffFunSuite extends CatsEffectSuite with LlvmAssertions:
               s"Failed: found Error nodes:\n ${prettyPrintAst(module)}"
             )
           )
-          module
+          state
       case Left(error) =>
         fail(msg.getOrElse("Semantic Failed: .") + s"\n${error}")
     }

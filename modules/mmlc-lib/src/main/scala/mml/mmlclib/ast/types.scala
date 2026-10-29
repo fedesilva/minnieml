@@ -72,7 +72,6 @@ case class TypeOpenRecord(
   fields: List[(String, Type)]
 ) extends Type
 
-// TODO: not all decls are typeable: a type is a type not a typeable
 /** Closed, nominal record */
 case class TypeStruct(
   source:     SourceOrigin,
@@ -83,9 +82,7 @@ case class TypeStruct(
   id:         Option[String] = None
 ) extends Type,
       ResolvableType,
-      Decl:
-  val typeSpec: Option[Type] = None
-  val typeAsc:  Option[Type] = None
+      Decl
 
 case class Field(
   source:   SourceOrigin,
@@ -157,7 +154,7 @@ case class TypeDef(
   id:         Option[String]     = None
 ) extends Decl,
       ResolvableType,
-      FromSource
+      Typeable
 
 /** A type alias, which is a new name for an existing type, NOT a new type */
 case class TypeAlias(
@@ -171,7 +168,7 @@ case class TypeAlias(
   id:         Option[String]     = None
 ) extends Decl,
       ResolvableType,
-      FromSource
+      Typeable
 
 /** Recovered malformed type syntax. Ingest attaches the primary diagnostic for this occurrence. */
 case class ParseTypeError(

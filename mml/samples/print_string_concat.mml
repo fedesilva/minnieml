@@ -5,5 +5,5 @@ let answer = a + b;
 
 pub fn main(): Unit =
   println ("Hello, " ++ "world!");
-  println ("the answer is: " ++ (int_to_str answer));
+  println ("the answer is: " ++ (to_str answer));
 ;

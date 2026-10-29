@@ -3,19 +3,19 @@
 
 pub fn main(): Unit =
 
-  let point = shift_point (Vec2 1.5 (0.0 -. 2.5));
-  println ("Vec2: " ++ (float_to_str point.x) ++ ", " ++ (float_to_str point.y));
+  let point = shift_point (Vec2 1.5 (0.0 - 2.5));
+  println ("Vec2: " ++ (to_str point.x) ++ ", " ++ (to_str point.y));
 
   let rect = grow_rect (Rect 3.0 4.0 5.0 6.0);
   println (
-    "Rect: " ++ (float_to_str rect.x) ++ ", " ++ (float_to_str rect.y)
-      ++ ", " ++ (float_to_str rect.width) ++ ", " ++ (float_to_str rect.height)
+    "Rect: " ++ (to_str rect.x) ++ ", " ++ (to_str rect.y)
+      ++ ", " ++ (to_str rect.width) ++ ", " ++ (to_str rect.height)
   );
 
   let wide = rotate_wide (Wide (int_to_int64 11) (int_to_int64 22) (int_to_int64 33));
   println (
-    "Wide: " ++ (int64_to_str wide.a) ++ ", " ++ (int64_to_str wide.b)
-      ++ ", " ++ (int64_to_str wide.c)
+    "Wide: " ++ (to_str wide.a) ++ ", " ++ (to_str wide.b)
+      ++ ", " ++ (to_str wide.c)
   );
 ;
 
