@@ -27,6 +27,9 @@ pub fn main(): Int =
   ;
 
   // A selected operator is an ordinary function value.
+  // Local use drives inference: otherwise you would need to
+  // help the typer with annotations.
+  // let combine_int: Int -> Int -> Int = (<+>);
   let combine_int  = (<+>);
   println (int_to_str (combine_int 2 3));
 

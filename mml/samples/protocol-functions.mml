@@ -27,6 +27,9 @@ pub fn main(): Int =
   render "answer: " 42;
   render "ready: " true;
 
+  // Local use drives inference: otherwise you would need to
+  // help the typer with annotations.
+  // let render_int: String -> Int -> Unit = render;
   let render_int = render;
   render_int "function value: " 5;
 

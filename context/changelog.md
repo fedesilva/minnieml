@@ -4,6 +4,9 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-10-28
 
+- Show the annotation fallback beside unannotated bindings in the named-function and operator
+  protocol samples.
+
 - Infer one concrete protocol function from later local uses, aliases, branches, and known
   consumer types. Preserve explicit constraints and diagnose unresolved or conflicting uses.
   Document the local inference boundary and ordinary ownership rules of selected members.
