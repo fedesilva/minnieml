@@ -3,7 +3,7 @@
 ## Metadata
 
 - **Owner:** The Author
-- **Status:** in_progress
+- **Status:** complete
 - **Kind:** feature
 - **Priority:** unassigned
 - **Created:** 2026-10-25
@@ -22,8 +22,8 @@
 8. [x] **complete** — [P4: Select concrete members using arguments and expected types](#p4-type-directed-selection-and-lowering).
 9. [x] **complete** — [P5: Deliver Num and migrate numeric operators](#p5-num-and-numeric-migration).
 10. [x] **complete** — [P6: Review the verified Num deliverable](#p6-num-review-checkpoint).
-11. [ ] **planned** — [P6a: Infer concrete protocol functions from local binding uses](#p6a-local-inference-through-bindings).
-12. [ ] **planned** — [P9: Complete documentation, verification, and final review](#p9-final-verification-and-documentation).
+11. [x] **complete** — [P6a: Infer concrete protocol functions from local binding uses](#p6a-local-inference-through-bindings).
+12. [x] **complete** — [P9: Complete documentation, verification, and final review](#p9-final-verification-and-documentation).
 
 ## Problem
 
@@ -142,7 +142,7 @@ and constraints remain outside this plan. Their broader semantics are described 
 ## Plan (Approval Gate)
 
 P0–P6 and P9 are approved, subject to their explicit review checkpoints. The added P6a scope is
-accepted; its bounded implementation design requires approval. P0 defines the AST
+accepted and its bounded implementation design is approved. P0 defines the AST
 and stops for Author review.
 P0b adds shared lookups and a second Author review checkpoint before compiler-phase integration.
 P1–P6 deliver the protocol mechanism through Num. Stop after P6 for review and signoff before
@@ -361,7 +361,14 @@ Exit: Num is verified and signed off; unresolved required checks or findings kee
 
 Exit: the unannotated local example compiles and executes using `Render Int`; unresolved or
 inconsistent local evidence produces a clear diagnostic. The binding remains monomorphic.
-Implementation plan approval and verification are pending.
+Approved boundary: one structural evidence pass for bare protocol-reference local initializers,
+including parentheses. Collect direct-call arguments, known consumer parameter types, written
+constraints, branches, and simple aliases by resolved binding identity. Combine all supported
+uses before choosing one concrete member. Check the initializer and continuation through the
+ordinary type checker after selection. Immediately applied unary lambdas extend the local scope.
+Stored or separately evaluated function bodies, global uses, partial or conditional initializers,
+and iterative inference between unresolved bindings supply no additional evidence.
+Implementation, verification, independent review, and stage signoff are complete.
 
 ### P9: Final verification and documentation
 
@@ -385,8 +392,8 @@ and final review is ready for signoff. No unverified stage is marked complete.
 Approval: protocol scope, delivery order, and P0–P6/P9 plan (including P0b) approved.
 The approved P7/P8 plan is in [Explicit Clone and global ownership transfers](explicit-clone.md).
 P0, P0b, and P6 retain their explicit review and signoff gates.
-P6a local binding inference is included in scope before Clone; implementation design approval
-is pending. Existing checkpoint verification does not cover P6a.
+P6a local binding inference and its bounded implementation design are approved before Clone.
+P6a has separate host verification and review evidence below.
 
 ## Implementation reference: candidate resolution
 
@@ -661,8 +668,95 @@ complete. P3 lookup and operator grouping are verified and complete. P4 type-dir
 is complete. P5 Num integration is complete. P6 error-recovery repairs and four additional standalone
 corrections pass compiler and Linux verification and independent review and are signed off.
 The broader Num checkpoint is signed off.
-P6a and P9 remain pending; P7/P8 are tracked in [explicit Clone](explicit-clone.md). The
-verification above does not cover local binding inference.
+P6a and P9 are complete and signed off. P7/P8 are tracked in
+[explicit Clone](explicit-clone.md). The checkpoints above cover P0–P6; local inference and
+final verification are recorded below.
+
+### P6a host verification (2026-10-28)
+
+- Host: macOS arm64; Homebrew Clang 23.1.1; GraalVM Community Java 25.0.4.1.
+- `sbtn scalafmtAll` and `sbtn scalafixAll`: passed. A final formatting pass after
+  comment/spacing review also passed; compiler behavior is unchanged by those final edits.
+- `sbtn testFull`: 2,320 library tests and 9 CLI tests passed; test reports contain no skips.
+  This includes all 28 `LocalProtocolInferenceTests`, checking resolved member identity and
+  callable type, aliases, shadowing, consistent/conflicting evidence, annotations, missing
+  instances, ambiguity, and the documented inference boundaries. Its O0/O3 execution cases
+  pass sanitizer checks and print `function value: 5` and `alias: 6`.
+- `sbtn 'run run mml/samples/protocol-functions.mml'`: passed with the unannotated binding;
+  output is `answer: 42`, `ready: true`, `function value: 5`, and `partial: 15`.
+- `./tests/smoke/run.sh all`: 8/8 passed, covering five executions and three compile-only fixtures.
+- `sbtn mmlcPublishLocal`: passed after sample execution and smoke verification.
+- `make -C benchmark clean` and `make -C benchmark mml`: passed. This is compilation evidence;
+  no benchmark execution timings were collected.
+- `./tests/mem/run.sh all`: ASan+LSan 52/52 passed on executed fixture paths.
+- No ABI layout or calling-convention changes; no Linux-container or cloud runs were performed.
+- Independent primary review and separate QA/style, test-quality, and readability checks
+  completed. Two independently verified findings concerned a local-argument test masked by an
+  enclosing return annotation and documentation that excluded immediately applied lambda bodies.
+  The test has no enclosing return annotation; the documentation distinguishes immediately applied
+  unary lambdas from stored or separately evaluated bodies. A new regression covers that boundary.
+- After those test/documentation corrections, `sbtn scalafmtAll`, `sbtn scalafixAll`, and
+  `sbtn 'testOnly *LocalProtocolInferenceTests'` pass: 29/29 tests, including O0/O3 sanitizer
+  executions. Production implementation is unchanged from the full verification above.
+- Fresh narrow independent review confirms both corrections. Its final line-length finding is
+  corrected and passes another fresh narrow review. Each review includes separate QA/style,
+  test-quality, and readability checks; no actionable findings remain. Final formatting passes.
+- Root QA, tracking consistency, local-link, and diff checks pass.
+
+### Review corrections before closure (2026-10-28)
+
+- Review covered 175 modified tracked files and four new Scala files, including local
+  protocol inference, conversion instances, diagnostic alternatives, and MML migrations.
+  Independent primary, QA/style, test-quality, and readability checks completed. Two P3
+  findings were independently confirmed; no compiler correctness defect was confirmed.
+- `remainingCallableType` in `semantic/package.scala` consolidates four residual callable-type
+  constructions in `TypeChecker` and `ProtocolSelection`. Fully applied calls retain the original
+  return type; partial calls retain the tail parameters and the caller-selected source location.
+  The redundant private type-construction helper is removed.
+- The historical sanitizer frame in `mml/samples/mixed-test-double-free.mml` names the native
+  `int_to_str` symbol. The MML expression uses `to_str`; `StandardConversions` maps its Int
+  instance to the existing C runtime function.
+- After both corrections, `sbtn 'scalafmtAll; scalafixAll; testFull'` passed: 2,353 library
+  tests and 9 CLI tests, zero failures/errors. `./tests/smoke/run.sh all` passed 8/8.
+  `sbtn mmlcPublishLocal`, `make -C benchmark clean`, and `make -C benchmark mml` passed.
+  Benchmark evidence establishes compilation only; no performance measurements were collected.
+- Fresh narrow independent primary, QA/style, test-quality, and readability reviews completed
+  with no actionable findings. Static comparison confirms type and source-location preservation;
+  existing tests do not directly assert helper source locations or return-object identity.
+  `git diff --check` passed.
+- No fresh Linux-container or full memory-harness run accompanies these two corrections.
+  The final memory-harness result is recorded below.
+
+### Final verification (2026-10-28)
+
+- Host: macOS arm64, Homebrew Clang 23.1.1, GraalVM Community Java 25.0.4.1.
+- The final integrated compiler, including the separately committed conversion and diagnostic
+  errands, passes `sbtn 'scalafmtAll; scalafixAll; testFull'`: 2,355 library and 9 CLI tests,
+  zero failures/errors. The 12 alternative-diagnostic tests include complete six- and
+  twelve-choice lists in insufficient-information and ambiguity errors and CLI/editor output.
+- `./tests/smoke/run.sh all`: 8/8 passed before local publishing. Five fixtures execute and
+  three compile only. `sbtn mmlcPublishLocal` passed.
+- `make -C benchmark clean` and `make -C benchmark mml` passed. This establishes compilation,
+  not benchmark execution performance.
+- `./tests/mem/run.sh all`: final ASan+LSan run passed 52/52 fixtures in 73 seconds.
+  Sanitizer evidence covers the executed paths.
+- The unchanged conversion runtime and native interface passed
+  `sbtn 'testOnly *StandardConversionTests *AggregateAbiTests'` inside both
+  `mml-linux-arm64` and `mml-linux-amd64`, 32/32 tests per container. Both use Ubuntu
+  Clang 20.1.8 and Oracle Java 25.0.4.1.1. ARM64 executes natively; AMD64 executes under
+  emulation on the arm64 host. Checks ran sequentially through `docker exec -w /workspace`;
+  these were target executions, not only cross-compilation. Cloud verification is deferred.
+- Before/after frontend checks of all 158 migrated MML files retain 154 passing sources and
+  the same four diagnostic sources: `member_error.mml`, `pap-borrowed-return-diagnostics.mml`,
+  `pap-ownership.mml`, and `test-poisoning.mml` under `mml/samples/`. No new failure appeared.
+- Language, compiler-design, and memory-model documentation cover protocol declarations,
+  selection, Num, local inference, and the ordinary ownership rules of selected members.
+- Independent primary review and separate fresh QA/style, test-quality, and readability checks
+  pass for local inference, conversions, alternative diagnostics, the shared type helper,
+  and the final ownership-documentation paragraph. Confirmed findings are corrected and their
+  narrow re-reviews pass. No actionable findings remain in these scopes.
+- Final QA, tracking consistency, local links, and `git diff --check` pass. P6a, P9, and the
+  Protocols task are signed off and complete. The independent errands are delivered separately.
 
 ## Risks / Notes
 
@@ -678,76 +772,28 @@ Incidental findings and their fix status are collected in [Bug notes](bug-notes.
 
 ## Signoff
 
-- Workstream signoff: Bounded plan, P0 AST shape, and P0b lookup API approved. P0 and P0b
-  verification and independent review are complete.
-- Num deliverable (P6): complete and signed off, including the repair child and its four
-  standalone corrections.
-- Tracked item completion: Pending.
-- Commit authorization: granted for all implemented corrections and related records.
-  Push is not authorized. Parent task completion remains pending.
+- P0–P6, including the Num review repairs: complete and signed off.
+- P6a local inference and P9 final verification: complete and signed off.
+- Tracked item completion: complete.
+- Delivery: local commit on `dev/protocols`; push is not authorized.
 
 ## Task Working Memory
 
-P0 and P0b are verified, signed off, and committed in `98e4c831` and `be195134`.
-The implemented P1–P6 review checkpoint is committed in `7ce9c5dd`. P1–P5 are complete.
-The [review repairs](protocols-review-repairs.md), including all four standalone corrections,
-are complete and signed off. P6 Num checkpoint is complete and signed off. The parent task
-remains open; P6a implementation requires approval of its bounded design.
+Protocols is complete. The implemented scope includes concrete protocol instances, shared
+operator grouping, type-directed member selection, Num, and bounded local binding inference.
+Local bindings select one concrete member consistently across supported uses; unresolved
+or conflicting evidence produces a diagnostic. Final evidence is recorded
+[above](#final-verification-2026-10-28).
 
-P6a extends the scope with best-effort local inference of one concrete protocol function from
-later binding uses, independent of full SimpSeq. Its implementation design and verification
-are pending. Next action for P6a: define the bounded local propagation strategy and stopping
-conditions for approval.
+The conversion, diagnostic, sample-comment, shared-type, workflow, and QA-recording errands
+are delivered as separate commits. The QA-002 string-builder repair remains deferred in
+[QA misses](qa-misses.md); recording it does not implement the repair.
 
-The separate factorial sample omits the `make_fac` annotation.
-`sbtn 'run run mml/samples/partial-fac2-escape.mml'` prints `120` and `6`.
-The uncommented `println consumed_text` in `mml/samples/pap-ownership.mml` is rejected as a
-use after move by `sbtn 'run mml/samples/pap-ownership.mml'`. These sample edits are preserved
-separately from the compiler repair scope; the PAP sample is not a passing runnable fixture.
+[Explicit Clone and global ownership transfers](explicit-clone.md) owns P7/P8. General
+[protocol derivation](protocol-derivation.md), broader
+[implicit-cloning policy](implicit-cloning.md), and
+[protocol navigation](lsp-protocol-navigation.md) remain separate tasks. Arrays have no
+ToString instance; their conversion policy is deferred.
 
-Protocols, signatures, and instances are declarations. Protocols constrain a single type
-parameter; they are not ordinary value types. Required signatures and concrete instances are
-supported; defaults, prerequisites, general generics, and derivation remain outside this slice.
-Instance syntax retains written attributes separately. Concrete callable precedence is always
-an Int; omitted instance precedence inherits the signature. Public registry APIs precede
-auxiliary types, with examples and explicit tests.
-
-The two added phases are ProtocolChecker before reference resolution and OperatorGrouping
-before expression rewriting. The first validates signatures and lowers instance bodies to
-ordinary functions; the second enforces consistent grouping while preserving candidates.
-TypeChecker selects concrete members using full application chains, known operands, and
-expected types. It preserves written annotations, isolates failed candidate trials, and shares
-signature evidence with lambda inference. Shared type identity follows aliases and declaration
-IDs. Function values and partial calls share late callable lowering and ordinary ownership rules.
-Application-node traversal is consolidated in CallableValues; original nodes retain annotations
-and invocation boundaries.
-
-Num supplies eleven arithmetic/comparison/negation signatures with Int and Float instances.
-LLVM behavior and Int implementation IDs are preserved. Integer-only operations, Boolean
-operators, and string concatenation remain free operators. Dotted Float built-ins are removed;
-current samples, smoke fixtures, tests, and documentation use unified symbols. Source-declared
-dotted operators remain valid. The named and operator examples in `mml/samples` run successfully
-with sanitizers; the latter includes Int, Float, and Bool instances, function values, partial
-calls, and ordinary Num expressions.
-
-P5 formatting, linting, and the full suite pass 2,227 library and 9 CLI tests. The 262-source
-frontend corpus retains all 224 clean sources and 38 diagnostic sources. It uses `-Xss16m`
-for the known 1,000-let stack limitation; complete comparison evidence is under Verification.
-B10–B13, B15, and B17 are corrected and verified. The B14 failed-operand repair passes focused
-and full tests and independent review. Findings and follow-up links are in [Bug notes](bug-notes.md).
-
-The four standalone P6 corrections cover inference shadowing, native instance symbols, editor
-protocol syntax, and the expected-result description. Verification passes 2,292 library/9 CLI tests,
-eight smoke fixtures, local publishing, benchmark compilation, 52 ASan/LSan memory fixtures,
-and all 27 affected execution tests in each Linux builder. Formatting, linting, and grammar checks
-pass. Fresh narrow primary review and separate QA/style, test-quality, and readability checks
-complete without actionable findings. The repair child and broader Num checkpoint are
-complete and signed off. Optional cloud verification is deferred.
-Detailed commands, toolchains, and limits are in the repair task.
-Broader design choices have separate discussion subtasks.
-No ABI layout or calling-convention changes are present.
-P6a adds local binding inference before final verification.
-[Explicit Clone and global ownership transfers](explicit-clone.md) owns P7 and P8. Literal promotion
-and mixed ownership witnesses remain supported.
-General derivation and broader
-implicit-cloning policy remain separate tasks.
+The factorial annotation experiment and intentional PAP use-after-move example are preserved
+in `e89efc51`. The latter remains a diagnostic source rather than a passing runnable fixture.

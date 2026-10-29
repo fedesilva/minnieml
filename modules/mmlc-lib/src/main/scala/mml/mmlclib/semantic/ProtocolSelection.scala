@@ -29,21 +29,33 @@ object ProtocolSelection:
     }
 
   /** Match registered signatures using source type evidence, without selecting by instance count.
+    * Local uses accumulate constraints on one protocol parameter before implementation lookup.
     */
   def matchSignatures(
     choices:      CandidateSet,
     applications: List[ApplicationEvidence],
     expectedType: Option[Type],
-    index:        ResolvablesIndex
+    index:        ResolvablesIndex,
+    uses:         List[UseEvidence] = Nil
   ): List[SignatureMatch] =
     choices.signatures.map { registered =>
-      val evidence = inferInstanceType(
+      val initial = inferInstanceType(
         registered.protocol,
         registered.signature,
         applications,
         expectedType,
         index
       )
+      val evidence = uses.foldLeft(initial) { (known, use) =>
+        inferInstanceType(
+          registered.protocol,
+          registered.signature,
+          use.applications,
+          use.expectedType,
+          index,
+          known
+        )
+      }
       val implementations = evidence match
         case SignatureEvidence.Concrete(tpe) =>
           val key = ProtocolRegistry.typeKey(tpe, index).toOption
@@ -57,14 +69,16 @@ object ProtocolSelection:
   /** Infer the protocol parameter from known arguments and the expected remaining signature. For
     * `choose(seed: Int, value: 'T): 'T`, the second argument can establish 'T even when the first
     * application is ambiguous. A nullary `make(): 'T` needs an expected result; the number of
-    * registered instances supplies no type evidence.
+    * registered instances supplies no type evidence. The initial evidence carries constraints from
+    * other uses of the same binding; incompatible evidence cannot become compatible again.
     */
   def inferInstanceType(
     protocol:     Protocol,
     signature:    ProtocolSignature,
     applications: List[ApplicationEvidence],
     expectedType: Option[Type],
-    index:        ResolvablesIndex
+    index:        ResolvablesIndex,
+    initial:      SignatureEvidence = SignatureEvidence.Unknown
   ): SignatureEvidence =
     val parameters = signature.params.traverse(_.typeAsc)
     parameters.fold[SignatureEvidence](SignatureEvidence.Incompatible) { types =>
@@ -149,7 +163,34 @@ object ProtocolSelection:
 
             case _ => SignatureEvidence.Incompatible
 
-      consume(callable, applications, SignatureEvidence.Unknown)
+      consume(callable, applications, initial)
+    }
+
+  /** One local use constrains the same callable as every other use of its binding. */
+  case class UseEvidence(applications: List[ApplicationEvidence], expectedType: Option[Type])
+
+  /** Check concrete callable alternatives against every independently known local constraint. */
+  def matchesUses(tpe: Type, uses: List[UseEvidence], index: ResolvablesIndex): Boolean =
+
+    def matches(actual: Type, expected: Type): Boolean =
+      TypeCompatibility.same(actual, expected, index)
+
+    def consume(remaining: Type, applications: List[ApplicationEvidence]): Option[Type] =
+      applications match
+        case Nil => remaining.some
+
+        case application :: rest =>
+          TypeUtils.canonical(remaining, index).collect { case fn: TypeFn => fn }.flatMap { fn =>
+            val compatible = application.calleeAscriptions.forall(matches(remaining, _)) &&
+              application.argumentType.forall(matches(fn.paramTypes.head, _))
+            val result = remainingCallableType(fn, fn.source)
+            Option.when(compatible)(result).flatMap(consume(_, rest))
+          }
+
+    uses.forall { use =>
+      consume(tpe, use.applications).exists { remaining =>
+        use.expectedType.forall(matches(remaining, _))
+      }
     }
 
   /** Source annotations constrain the current callee before this argument is consumed. */

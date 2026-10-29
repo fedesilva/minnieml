@@ -1063,6 +1063,20 @@ types when possible.
   lookup; equal source names alone do not make two nominal declarations equal. Source type
   grouping remains in the AST.
 - Immediately applied lambdas check arguments first so local bindings can infer their types.
+  A local binding initialized with a bare protocol reference first gathers type evidence from
+  its continuation. One structural pass follows resolved binding IDs through simple aliases,
+  sequences, and conditional branches. Independently known call arguments, annotations, and
+  known consumer parameter types constrain the same concrete member across all supported uses.
+  Parentheses preserve the reference; shadowed and separately bound names retain distinct IDs.
+  Shared protocol selection combines this evidence while checking the initializer and gives
+  the binding a concrete function type. Ordinary continuation checking validates every use.
+  Candidate probes retain isolated diagnostics; no instance is chosen by registration count or order.
+  This collection enters immediately applied unary lambda bodies, which extend the local scope.
+  It does not enter stored or separately evaluated function bodies, cross module boundaries,
+  or iterate unresolved binding dependencies. Partial-call and conditional initializers do not
+  collect continuation evidence. Insufficient, incompatible, missing-instance, and ambiguous selections
+  remain distinct diagnostics. The selected binding stays monomorphic and resolves before
+  callable lowering and ownership analysis.
 - Ensures zero-argument functions in call position accept `Unit`.
 - Nullary literal applications use the same function-type argument validation. Their emission
   evaluates the Unit argument before the body in the enclosing lexical scope, preserving

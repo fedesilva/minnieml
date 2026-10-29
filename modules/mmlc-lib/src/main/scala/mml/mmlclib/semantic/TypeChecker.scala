@@ -697,14 +697,15 @@ object TypeChecker:
   private def checkExpr(
     expr:         Expr,
     context:      CheckContext,
-    expectedType: Option[Type]
+    expectedType: Option[Type],
+    localUses:    List[ProtocolSelection.UseEvidence] = Nil
   ): Check[Expr] =
     expr.terms.zipWithIndex
       .traverse { (term, index) =>
         val expected =
           if index == expr.terms.size - 1 then expr.typeAsc.orElse(expectedType) else None
         for
-          checked <- checkTerm(term, context, expected)
+          checked <- checkTerm(term, context, expected, localUses)
           validated <- validateTermAscription(checked, context)
         yield validated
       }
@@ -727,22 +728,25 @@ object TypeChecker:
   private def checkTerm(
     term:         Term,
     context:      CheckContext,
-    expectedType: Option[Type]
+    expectedType: Option[Type],
+    localUses:    List[ProtocolSelection.UseEvidence] = Nil
   ): Check[Term] = term match
 
     case callee: Callee =>
       val expected = callee match
         case _: Lambda => expectedType
         case _ => callee.typeAsc.orElse(expectedType)
-      checkCallee(callee, context, expected)
+      checkCallee(callee, context, expected, localUses)
         .map(checked => invalidResult(finalizeIntegerLiteral(checked), checked.roots))
 
     case cond: Cond => checkConditional(cond, context, expectedType)
 
     case group: TermGroup =>
-      checkExpr(group.inner, context, expectedType).map(inner => group.copy(inner = inner))
+      checkExpr(group.inner, context, expectedType, localUses).map(inner =>
+        group.copy(inner = inner)
+      )
 
-    case nested: Expr => checkExpr(nested, context, expectedType).widen
+    case nested: Expr => checkExpr(nested, context, expectedType, localUses).widen
 
     case tuple: Tuple =>
       val expectedElements = expectedType
@@ -796,13 +800,14 @@ object TypeChecker:
   private def checkCallee(
     callee:       Callee,
     context:      CheckContext,
-    expectedType: Option[Type]
+    expectedType: Option[Type],
+    localUses:    List[ProtocolSelection.UseEvidence] = Nil
   ): Check[Checked[Callee]] = callee match
 
     case ref: Ref if ref.qualifier.isDefined => checkSelection(ref, context).widen
 
     case ref: Ref if needsProtocolSelection(ref, context.module.resolvables) =>
-      selectCallable(ref, Nil, context, expectedType)
+      selectCallable(ref, Nil, context, expectedType, localUses)
 
     case ref: Ref => checkRef(ref, context).widen
 
@@ -1002,7 +1007,8 @@ object TypeChecker:
     ref:          Ref,
     applications: List[App],
     context:      CheckContext,
-    expectedType: Option[Type]
+    expectedType: Option[Type],
+    localUses:    List[ProtocolSelection.UseEvidence] = Nil
   ): Check[Checked[Callee]] =
     import ProtocolSelection.SignatureEvidence
 
@@ -1036,7 +1042,8 @@ object TypeChecker:
               )
             },
             selectionExpected,
-            context.module.resolvables
+            context.module.resolvables,
+            localUses
           )
           val matching = evidence.flatMap(_.implementationIds)
           // An expected parameter type cannot repair an independent operand error. Trying each
@@ -1047,7 +1054,11 @@ object TypeChecker:
               (choices.declarationIds ++ matching).distinct.map { id =>
                 trySelection(ref, id, applications, probes, context, selectionExpected, checkpoint)
               }
-          val applicable    = trials.filter(_.applicable)
+          val applicable = trials.filter { trial =>
+            trial.applicable && trial.checked.value.typeSpec.exists { tpe =>
+              ProtocolSelection.matchesUses(tpe, localUses, context.module.resolvables)
+            }
+          }
           val needsEvidence = evidence.exists(_.evidence == SignatureEvidence.Unknown)
           applicable match
             case winner :: Nil if !needsEvidence => State.set(winner.diagnostics).as(winner.checked)
@@ -1204,6 +1215,115 @@ object TypeChecker:
       case _ => None
     }
 
+  /** Gather constraints once within a local continuation. Aliases retain binding identity;
+    * separately evaluated lambda bodies and unresolved binding dependencies supply no evidence.
+    * Probes are isolated: ordinary checking owns diagnostics and the final expression tree.
+    */
+  private def collectLocalProtocolUses(
+    parameter:    FnParam,
+    body:         Expr,
+    context:      CheckContext,
+    expectedType: Option[Type],
+    checkpoint:   DiagnosticStore
+  ): List[ProtocolSelection.UseEvidence] =
+    import ProtocolSelection.{ApplicationEvidence, UseEvidence}
+
+    def tracked(ref: Ref, aliases: Set[String]): Boolean =
+      ref.resolvedId.exists(aliases.contains)
+
+    def known(expr: Expr, scope: CheckContext): Option[Type] =
+      probeArgument(expr, scope, checkpoint).knownType
+
+    def usable(tpe: Option[Type], scope: CheckContext): Option[Type] =
+      tpe.filterNot(failedType(_, scope))
+
+    def walkExpr(
+      expr:     Expr,
+      scope:    CheckContext,
+      aliases:  Set[String],
+      expected: Option[Type]
+    ): List[UseEvidence] =
+      expr.terms.zipWithIndex.flatMap { (term, position) =>
+        val wanted =
+          if position == expr.terms.size - 1 then expr.typeAsc.orElse(expected)
+          else None
+        walkTerm(term, scope, aliases, usable(term.typeAsc.orElse(wanted), scope))
+      }
+
+    def walkTerm(
+      term:     Term,
+      scope:    CheckContext,
+      aliases:  Set[String],
+      expected: Option[Type]
+    ): List[UseEvidence] = term match
+
+      case ref: Ref if tracked(ref, aliases) =>
+        List(UseEvidence(Nil, usable(ref.typeAsc.orElse(expected), scope)))
+
+      case app: App =>
+        app.fn match
+          case lambda: Lambda if lambda.params.size == 1 =>
+            val param       = lambda.params.head
+            val isAlias     = bareRef(app.arg).exists(tracked(_, aliases))
+            val inputType   = if isAlias then param.typeAsc else known(app.arg, scope)
+            val typed       = param.copy(typeSpec = param.typeAsc.orElse(inputType))
+            val nested      = scope.withBinding(typed, app.arg.copy(typeSpec = inputType))
+            val nextAliases = if isAlias then aliases ++ param.id else aliases
+            walkExpr(app.arg, scope, aliases, usable(param.typeAsc, scope)) ++
+              walkExpr(lambda.body, nested, nextAliases, expected)
+
+          case _ =>
+            val (root, applications) = CallableValues.applicationNodes(app)
+            val own = root match
+              case ref: Ref if tracked(ref, aliases) =>
+                List(
+                  UseEvidence(
+                    applications.map { application =>
+                      ApplicationEvidence(
+                        known(application.arg, scope),
+                        calleeAscriptions(application).filterNot(failedType(_, scope))
+                      )
+                    },
+                    usable(app.typeAsc.orElse(expected), scope)
+                  )
+                )
+              case _ => Nil
+            val rootType = root match
+              case ref: Ref if !tracked(ref, aliases) =>
+                known(Expr(ref.source, List(ref)), scope)
+              case _ => None
+            val inputs = walkArguments(applications, rootType, scope, aliases)
+            own ++ inputs
+
+      case cond: Cond =>
+        walkExpr(cond.cond, scope, aliases, None) ++
+          walkExpr(cond.ifTrue, scope, aliases, expected) ++
+          walkExpr(cond.ifFalse, scope, aliases, expected)
+
+      case group:  TermGroup => walkExpr(group.inner, scope, aliases, expected)
+      case nested: Expr => walkExpr(nested, scope, aliases, expected)
+      case tuple:  Tuple =>
+        tuple.elements.toList.flatMap(walkExpr(_, scope, aliases, None))
+      case _ => Nil
+
+    def walkArguments(
+      applications: List[App],
+      remaining:    Option[Type],
+      scope:        CheckContext,
+      aliases:      Set[String]
+    ): List[UseEvidence] = applications match
+      case Nil => Nil
+      case application :: rest =>
+        val function = remaining.flatMap(extractTypeFn(_, scope.module))
+        val wanted   = function.map(_.paramTypes.head)
+        val result = function.map { fn =>
+          remainingCallableType(fn, fn.source)
+        }
+        walkExpr(application.arg, scope, aliases, wanted) ++
+          walkArguments(rest, result, scope, aliases)
+
+    walkExpr(body, context, parameter.id.toSet, expectedType)
+
   /** A local initializer supplies its binding, while the continuation supplies the result. */
   private def checkImmediateApplication(
     app:          App,
@@ -1232,7 +1352,13 @@ object TypeChecker:
       case _ => initializerContext
 
     for
-      initialArg <- checkExpr(app.arg, seededContext, parameter.typeAsc)
+      checkpoint <- State.get[DiagnosticStore]
+      localUses = bareRef(app.arg)
+        .filter(needsProtocolSelection(_, context.module.resolvables))
+        .fold(List.empty[ProtocolSelection.UseEvidence]) { _ =>
+          collectLocalProtocolUses(parameter, lambda.body, context, expectedType, checkpoint)
+        }
+      initialArg <- checkExpr(app.arg, seededContext, parameter.typeAsc, localUses)
       arg <- validateExpectedResult(
         initialArg,
         parameter.typeAsc,

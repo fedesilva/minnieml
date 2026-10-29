@@ -127,6 +127,11 @@ A value passed to a consuming parameter must:
 Literals and globals have no local owner to transfer. The compiler's handling of fresh ownership
 at these boundaries is described under [Clone operations](#clone-operations).
 
+Protocol instance members preserve the consuming parameter markers declared by their signature.
+Type checking selects a concrete member, including through local binding inference, before
+ownership analysis. The selected member follows the ordinary parameter, return, function-value,
+and partial-application ownership rules described here.
+
 ---
 
 ## Ownership acquisition

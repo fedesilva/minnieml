@@ -20,14 +20,6 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 
 ## Active Tasks
 
-### Protocols
-
-- **Tracker:** [Implement protocols](tasks/protocols.md)
-- **Status:** in_progress
-- **Current focus:** Prepare the bounded P6a local binding inference design for approval.
-  The Num checkpoint (P6) and [protocol repairs](tasks/protocols-review-repairs.md)
-  are complete and signed off.
-
 ### Explicit Clone and global ownership transfers
 
 - **Tracker:** [Explicit Clone and global ownership transfers](tasks/explicit-clone.md)

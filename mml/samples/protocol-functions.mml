@@ -27,8 +27,7 @@ pub fn main(): Int =
   render "answer: " 42;
   render "ready: " true;
 
-  // A function value needs a concrete type at this binding.
-  let render_int: String -> Int -> Unit = render;
+  let render_int = render;
   render_int "function value: " 5;
 
   // The remaining function type selects Render Int before the partial is stored.

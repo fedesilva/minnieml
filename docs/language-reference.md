@@ -335,6 +335,29 @@ must match it, even if the written value is the usual free-operator default.
 
 Function values and partial calls must select a concrete instance where they are bound.
 Their expected function type can supply missing information, as in `show_int` and `add_ten`.
+For a local binding initialized with a protocol reference, later uses in the same function
+body can also supply that information:
+
+```mml
+fn describe(): String =
+  let show_number = show;
+  show_number 42;
+;
+```
+
+This selects `Show Int` and gives `show_number` the single type `Int -> String`.
+All uses must agree on that choice; the binding cannot select a different instance per call.
+Inference follows simple local aliases and examines both conditional branches. It uses
+independently known argument types, written annotations, and the parameter types of known
+functions receiving the binding. Parentheses around the reference preserve this behavior.
+
+The inference boundary is local: stored or separately evaluated function and lambda bodies,
+global uses, and callers do not supply evidence. An immediately applied unary lambda extends
+its local scope and can supply evidence from its body. Partial-call and conditional initializers
+do not gather evidence from later uses. Inference makes one pass through local uses and does not repeatedly solve dependencies
+between unresolved bindings; add a type annotation when that boundary leaves too little evidence.
+Explicit annotations remain constraints on every use.
+
 An unconstrained reference is an error even if only one instance happens to be declared.
 Missing instances, incompatible operands, and multiple applicable signatures also produce errors.
 Ordinary lexical bindings and parameters shadow protocol member names.
