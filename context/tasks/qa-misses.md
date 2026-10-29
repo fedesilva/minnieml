@@ -42,6 +42,21 @@ item needs its own plan. A cleanup campaign can work through several approved gr
   resolved AST declarations; they do not establish multi-module source-language support.
 - **Resolution:** Compiler gates, independent review, and Author signoff are complete.
 
+### QA-002: Grow string builders to fit the complete append
+
+- **Status:** planned
+- **Source:** [mml_runtime.c](../../modules/mmlc-lib/src/main/resources/mml_runtime.c),
+  `string_builder_append`.
+- **Problem:** The append path doubles capacity once, then copies the entire input and writes
+  its terminator. A builder with capacity 16 and length 0 appending 100 bytes allocates only
+  32 bytes before copying 100 bytes and writing at offset 100.
+- **Evidence:** Direct code inspection of the growth, `memcpy`, and terminator-write sequence.
+  No runtime reproduction has been run for this finding.
+- **Expected outcome:** Capacity growth covers the existing contents, complete append, and
+  terminator with checked size arithmetic; a large single-append regression verifies the bound.
+- **Scope:** Deferred. Scalar ToString conversions do not use this builder; array conversion is
+  also deferred.
+
 ## Working memory
 
 QA-001 implementation and verification are tracked in the linked alias-resolution task.
