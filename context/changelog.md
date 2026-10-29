@@ -4,6 +4,9 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-10-28
 
+- Add ToString instances for scalar values, String, CString, and Unit, with owned string results.
+  Reuse canonical instances for aliases and migrate samples, benchmarks, and MML fixtures to to_str.
+
 - Display every remaining concrete alternative in insufficient-information and ambiguous
   protocol-selection errors, including callable types and protocol names in CLI and editor output.
 

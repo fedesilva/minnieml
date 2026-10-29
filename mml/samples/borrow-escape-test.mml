@@ -13,5 +13,5 @@ pub fn main() =
   let runaway_closure = escape_attempt 5;
   let result = runaway_closure 2;
 
-  println (int_to_str result);
+  println (to_str result);
 ;

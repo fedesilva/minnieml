@@ -1,9 +1,9 @@
 
 pub fn main(): Unit =
   let x = 1 << 10;
-  println ("1 << 10 = " ++ (int_to_str x));
+  println ("1 << 10 = " ++ (to_str x));
   let y = 8192 >> 3;
-  println ("8192 >> 3 = " ++ (int_to_str y));
+  println ("8192 >> 3 = " ++ (to_str y));
   let ack = (1 << 13) - 3;
-  println ("ackermann(3,10) via shift = " ++ (int_to_str ack));
+  println ("ackermann(3,10) via shift = " ++ (to_str ack));
 ;

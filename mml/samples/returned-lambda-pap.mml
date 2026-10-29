@@ -50,21 +50,21 @@ fn does_not_work(text: String): Counter =
 ;
 
 pub fn main(): Unit =
-  let plain_pap = make_pap (int_to_str 123);
-  println (int_to_str (plain_pap 1));  // 4
+  let plain_pap = make_pap (to_str 123);
+  println (to_str (plain_pap 1));  // 4
   // plain_pap 1;  // Rejected: the first call transferred its String.
 
-  let counter = make_counter (int_to_str 123);
+  let counter = make_counter (to_str 123);
   let result = counter 1;
-  println (int_to_str result);  // 4
+  println (to_str result);  // 4
   // counter 1;  // Rejected: counter was consumed by its first call.
 
-  let local_counter = make_counter_local (int_to_str 123);
-  println (int_to_str (local_counter 1));  // 4
+  let local_counter = make_counter_local (to_str 123);
+  println (to_str (local_counter 1));  // 4
 
-  let returner = make_pap_returner (int_to_str 123);
+  let returner = make_pap_returner (to_str 123);
   let returned_pap = returner ();
-  println (int_to_str (returned_pap 1));  // 4
+  println (to_str (returned_pap 1));  // 4
   // Rejected: returner already moved its capture out.
   // let another = returner ();
   // Rejected: returned_pap already transferred its String.

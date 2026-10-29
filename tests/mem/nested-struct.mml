@@ -11,8 +11,8 @@ fn consume_outer(o: Outer): Unit =
 ;
 
 fn test_nested(n: Int): Unit =
-  let i = Inner ("inner" ++ (int_to_str n));
-  let o = Outer i ("data" ++ (int_to_str n));
+  let i = Inner ("inner" ++ (to_str n));
+  let o = Outer i ("data" ++ (to_str n));
   consume_outer o;
 ;
 

@@ -8,20 +8,20 @@ fn borrow(text: String, extra: Int): Int = text.length + extra;;
 fn inc(n: Int): Int = n + 1;;
 
 fn repeated(flag: Bool): Int =
-  let value = if flag then int_to_str 123; else "abc";;
+  let value = if flag then to_str 123; else "abc";;
   let alias = value;
   let f = ~{ n: Int -> alias.length + n; };
   check (f 1 + f 2 == 9);
 ;
 
 fn local_function(flag: Bool): Int =
-  let value = if flag then int_to_str 123; else "abc";;
+  let value = if flag then to_str 123; else "abc";;
   fn ~measure(n: Int): Int = value.length + n;;
   check (measure 1 + measure 2 == 9);
 ;
 
 fn borrowed_closures(flag: Bool): Int =
-  let value = if flag then int_to_str 123; else "abc";;
+  let value = if flag then to_str 123; else "abc";;
   let first = { n: Int -> value.length + n; };
   fn second(n: Int): Int = value.length + n;;
   let p = borrow value;
@@ -29,13 +29,13 @@ fn borrowed_closures(flag: Bool): Int =
 ;
 
 fn invocation_or_drop(flag: Bool, invoked: Bool): Int =
-  let value = if flag then int_to_str 123; else "abc";;
+  let value = if flag then to_str 123; else "abc";;
   let f = ~{ n: Int -> take value + n; };
   if invoked then check (f 2 == 5); else 0;;
 ;
 
 fn capture_or_retain(flag: Bool, captured: Bool): Int =
-  let value = if flag then int_to_str 123; else "abc";;
+  let value = if flag then to_str 123; else "abc";;
   if captured then
     let f = ~{ n: Int -> value.length + n; };
     check (f 2 == 5);
@@ -45,15 +45,15 @@ fn capture_or_retain(flag: Bool, captured: Bool): Int =
 ;
 
 fn multiple_captures(first_owned: Bool, second_owned: Bool): Int =
-  let first = if first_owned then int_to_str 123; else "abc";;
-  let second = if second_owned then int_to_str 4567; else "defg";;
+  let first = if first_owned then to_str 123; else "abc";;
+  let second = if second_owned then to_str 4567; else "defg";;
   let f = ~{ n: Int -> take first + second.length + n; };
   check (f 1 == 8);
 ;
 
 fn make_reader(flag: Bool): Int -> Int =
   let value = (
-    let inner = if flag then int_to_str 123; else "abc";;
+    let inner = if flag then to_str 123; else "abc";;
     let alias = inner;
     alias
   );
@@ -66,7 +66,7 @@ fn returned_closure(flag: Bool): Int =
 ;
 
 fn nested(flag: Bool, invoked: Bool): Int =
-  let value = if flag then int_to_str 123; else "abc";;
+  let value = if flag then to_str 123; else "abc";;
   let outer = ~{ unit: Unit ->
     ~{ n: Int -> value.length + n; };
   };
@@ -79,14 +79,14 @@ fn nested(flag: Bool, invoked: Bool): Int =
 ;
 
 fn nested_inner_drop(flag: Bool): Int =
-  let value = if flag then int_to_str 123; else "abc";;
+  let value = if flag then to_str 123; else "abc";;
   let outer = ~{ unit: Unit -> ~{ n: Int -> value.length + n; }; };
   let inner = outer ();
   0;
 ;
 
 fn captured_field(flag: Bool): Int =
-  let value = if flag then int_to_str 123; else "abc";;
+  let value = if flag then to_str 123; else "abc";;
   let f = ~{ n: Int ->
     let box = Box value;
     box.text.length + n;
@@ -95,7 +95,7 @@ fn captured_field(flag: Bool): Int =
 ;
 
 fn captured_return(flag: Bool): Int =
-  let value = if flag then int_to_str 123; else "abc";;
+  let value = if flag then to_str 123; else "abc";;
   let f = ~{ unit: Unit -> value; };
   let result = f ();
   let expected = if flag then "123"; else "abc";;
@@ -103,7 +103,7 @@ fn captured_return(flag: Bool): Int =
 ;
 
 fn return_text(flag: Bool): String =
-  let value = if flag then int_to_str 123; else "abc";;
+  let value = if flag then to_str 123; else "abc";;
   let alias = value;
   alias;
 ;
@@ -114,15 +114,15 @@ fn returned_payload_pap(flag: Bool, invoked: Bool): Int =
 ;
 
 fn captured_payload_pap(flag: Bool, invoked: Bool): Int =
-  let value = if flag then int_to_str 123; else "abc";;
+  let value = if flag then to_str 123; else "abc";;
   let outer = ~{ unit: Unit -> staged value; };
   let p = outer ();
   if invoked then check (p 1 == 4); else 0;;
 ;
 
 fn conditional_capture(flag: Bool, first_selected: Bool): Int =
-  let value = if flag then int_to_str 123; else "abc";;
-  let other = int_to_str 4567;
+  let value = if flag then to_str 123; else "abc";;
+  let other = to_str 4567;
   let f =
     if first_selected then
       ~{ n: Int -> value.length + n; };
@@ -134,7 +134,7 @@ fn conditional_capture(flag: Bool, first_selected: Bool): Int =
 ;
 
 fn resource_free_alternative(flag: Bool): Int -> Int =
-  let value = if flag then int_to_str 123; else "abc";;
+  let value = if flag then to_str 123; else "abc";;
   if flag then ~{ n: Int -> value.length + n; }; else inc;;
 ;
 
@@ -145,10 +145,10 @@ fn callable_alternatives(flag: Bool): Int =
 ;
 
 fn shadowed_capture(flag: Bool, scoped: Bool): Int =
-  let value = int_to_str 4567;
+  let value = to_str 4567;
   let f =
     if scoped then
-      let value = if flag then int_to_str 123; else "abc";;
+      let value = if flag then to_str 123; else "abc";;
       ~{ n: Int -> value.length + n; };
     else
       make_reader flag;
@@ -163,7 +163,7 @@ fn decide(trace: IntArray, flag: Bool): Bool =
 
 fn allocate(trace: IntArray): String =
   ar_int_set trace 1 (ar_int_get trace 1 + 1);
-  int_to_str 123;
+  to_str 123;
 ;
 
 fn capture_effects(flag: Bool): Int =
@@ -177,7 +177,7 @@ fn capture_effects(flag: Bool): Int =
 ;
 
 fn recursive_capture(flag: Bool): Int =
-  let value = if flag then int_to_str 123; else "abc";;
+  let value = if flag then to_str 123; else "abc";;
   fn ~walk(remaining: Int, total: Int): Int =
     if remaining == 0 then
       total;

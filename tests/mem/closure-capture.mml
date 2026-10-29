@@ -19,5 +19,5 @@ fn loop(n: Int, acc: Int): Int =
 
 pub fn main(): Unit =
   let result = loop 100000 0;
-  println (int_to_str result);
+  println (to_str result);
 ;

@@ -7,7 +7,7 @@ fn make(): Int -> Unit =
     }
   ;
 
-  let msg = int_to_str 42;
+  let msg = to_str 42;
   say msg;
 ;
 

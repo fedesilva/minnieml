@@ -25,9 +25,9 @@ pub fn main(): Int =
   let first = p 10;
   let second = p 20;
 
-  let text = int_to_str 12345;
+  let text = to_str 12345;
   let borrowed = text_length text;
-  let temporary = text_length (int_to_str 123);
+  let temporary = text_length (to_str 123);
   let borrowed_result = (borrowed 1) + (borrowed 2);
   let temporary_result = (temporary 1) + (temporary 2);
 

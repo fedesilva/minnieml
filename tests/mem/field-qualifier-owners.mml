@@ -6,27 +6,27 @@ struct TextOps { call: Int -> String };
 struct BinaryOps { call: Int -> Int -> Int };
 
 fn length(text: String): Int = text.length;;
-fn make_box(value: Int): Box = Box value (int_to_str value);;
+fn make_box(value: Int): Box = Box value (to_str value);;
 fn make_outer(value: Int): Outer = Outer (make_box value);;
 fn take(~text: String, extra: Int): Int = text.length + extra;;
 fn keep(~text: String, extra: Int): String = text;;
-fn allocated(value: Int): String = int_to_str value;;
+fn allocated(value: Int): String = to_str value;;
 fn constant(value: Int): String = "static";;
 fn add(a: Int, b: Int): Int = a + b;;
 fn make_binary(): BinaryOps = BinaryOps add;;
 
 fn make_ops(value: Int): Ops =
-  let text = int_to_str value;
+  let text = to_str value;
   Ops ~{ extra: Int -> text.length + extra };
 ;
 
 fn make_once(value: Int): Ops =
-  let call = take (int_to_str value);
+  let call = take (to_str value);
   Ops call;
 ;
 
 fn make_keep(value: Int): TextOps =
-  let call = keep (int_to_str value);
+  let call = keep (to_str value);
   TextOps call;
 ;
 

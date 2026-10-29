@@ -688,6 +688,70 @@ String float_to_str(float value)
     return (String){len, data};
 }
 
+// Copies borrowed bytes into an owned String, retaining embedded NUL bytes.
+static String copy_string_bytes(const char *bytes, size_t length)
+{
+    int32_t string_length = checked_length(length);
+    char *data = (char *)malloc(length + 1);
+    if (!data)
+        mml_sys_oom_abort();
+    memcpy(data, bytes, length);
+    data[length] = '\0';
+    return (String){string_length, data};
+}
+
+// --- Scalar and Native String Conversions ---
+String int8_to_str(int8_t value)
+{
+    return int_to_str(value);
+}
+
+String int16_to_str(int16_t value)
+{
+    return int_to_str(value);
+}
+
+String double_to_str(double value)
+{
+    char buffer[32];
+    int length = snprintf(buffer, sizeof(buffer), "%.17g", value);
+    if (length < 0 || (size_t)length >= sizeof(buffer))
+        mml_panic("double_to_str: formatting failed");
+    return copy_string_bytes(buffer, (size_t)length);
+}
+
+String sizet_to_str(size_t value)
+{
+    char buffer[32];
+    int length = snprintf(buffer, sizeof(buffer), "%zu", value);
+    if (length < 0 || (size_t)length >= sizeof(buffer))
+        mml_panic("sizet_to_str: formatting failed");
+    return copy_string_bytes(buffer, (size_t)length);
+}
+
+String bool_to_str(_Bool value)
+{
+    return value ? copy_string_bytes("true", 4) : copy_string_bytes("false", 5);
+}
+
+String char_to_str(int8_t value)
+{
+    char byte = (char)value;
+    return copy_string_bytes(&byte, 1);
+}
+
+String unit_to_str(void)
+{
+    return copy_string_bytes("()", 2);
+}
+
+String cstring_to_str(const char *value)
+{
+    if (!value)
+        mml_panic("cstring_to_str: null CString");
+    return copy_string_bytes(value, strlen(value));
+}
+
 // --- String to Integer Conversion (strict) ---
 int32_t str_to_int(String s)
 {

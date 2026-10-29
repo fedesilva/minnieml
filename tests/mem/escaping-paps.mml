@@ -23,6 +23,6 @@ pub fn main() =
     }
   ;
 
-  println (int_to_str (loop 1000000 0));
+  println (to_str (loop 1000000 0));
 
 ;

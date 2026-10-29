@@ -6,10 +6,10 @@ fn take(~s: String): Int = s.length;;
 fn apply(f: Int -> Int, n: Int): Int = f n;;
 
 pub fn main(): Unit =
-  let x = int_to_str 123;
-  println (int_to_str (lengths x x));
-  println (int_to_str (lengths x (int_to_str 456)));
-  let y = int_to_str 789;
-  println (int_to_str (apply ~{ n: Int -> y.length + n; } 1));
-  println (int_to_str (take x));
+  let x = to_str 123;
+  println (to_str (lengths x x));
+  println (to_str (lengths x (to_str 456)));
+  let y = to_str 789;
+  println (to_str (apply ~{ n: Int -> y.length + n; } 1));
+  println (to_str (take x));
 ;

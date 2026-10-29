@@ -12,10 +12,10 @@ fn take_inline(trace: IntArray, flag: Bool): Int =
     text.length;
   } (if flag then
     mark trace 3;
-    int_to_str 456;
+    to_str 456;
   else
     mark trace 4;
-    int_to_str 789;
+    to_str 789;
   );
 ;
 
@@ -26,12 +26,12 @@ fn check(flag: Bool): Int =
   let first = take (
     mark trace 1;
     mark trace 2;
-    int_to_str 123
+    to_str 123
   );
   let second = take_inline trace flag;
   let third = borrow (
     mark trace 6;
-    int_to_str 123
+    to_str 123
   );
 
   let expected = if flag then 12356; else 12456; ;

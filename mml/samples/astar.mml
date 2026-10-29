@@ -270,5 +270,5 @@ pub fn main (): Unit =
 
   let cost = astar w h start goal walls;
 
-  println (int_to_str cost);
+  println (to_str cost);
 ;

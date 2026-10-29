@@ -34,7 +34,7 @@ pub fn main(): Int =
   let data = ar_int_new 1;
   unsafe_ar_int_set data 0 7;
   let result = compute data 4;
-  println ("Nested checksum: " ++ int_to_str result);
+  println ("Nested checksum: " ++ to_str result);
   if result == 6048 then 0;
   else 1;
   ;

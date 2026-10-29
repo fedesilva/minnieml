@@ -13,32 +13,32 @@ fn take_length(~text: String, extra: Int): Int = text.length + extra;;
 pub fn main(): Unit =
   println "1. Owning closure: both calls work";
 
-  // int_to_str allocates a String. The ~ closure moves it into its environment.
-  let owned_text = int_to_str 123;
+  // to_str allocates a String. The ~ closure moves it into its environment.
+  let owned_text = to_str 123;
   let owning = ~{ extra -> read_length owned_text extra; };
 
   // Each call lends the captured String to read_length, retaining ownership.
-  println (int_to_str (owning 0));  // 3
-  println (int_to_str (owning 1));  // 4
+  println (to_str (owning 0));  // 3
+  println (to_str (owning 1));  // 4
   // owning owns the String until the closure is destroyed.
   // Uncommenting this is rejected: the original binding moved at creation.
   //println owned_text;
 
   println "2. Borrowing PAP: both calls work";
 
-  let borrowed_text = int_to_str 456;
+  let borrowed_text = to_str 456;
   // Supplying only text makes a partial application (PAP) waiting for extra.
   // read_length has no ~ parameter, so this PAP borrows borrowed_text.
   let borrowing = read_length borrowed_text;
 
-  println (int_to_str (borrowing 0));   // 3
-  println (int_to_str (borrowing 1));   // 4
+  println (to_str (borrowing 0));   // 3
+  println (to_str (borrowing 1));   // 4
   println borrowed_text;                // 456: the outer binding still owns it.
   // borrowing must stay within borrowed_text's lifetime.
 
   println "3. Consuming PAP: one call transfers the value out";
 
-  let consumed_text = int_to_str 789;
+  let consumed_text = to_str 789;
   // take_length's ~ parameter moves consumed_text into the PAP at creation.
   // At this point, consuming owns the String; take_length has not run yet.
   let consuming = take_length consumed_text;
@@ -48,14 +48,14 @@ pub fn main(): Unit =
   // Invocation moves the String FROM the PAP TO take_length.
   // take_length destroys it after computing the result; the PAP is consumed.
   // Naming the result makes the transfer easy to follow. Using the call directly
-  // inside int_to_str also works; see pap-nested-consuming.mml for both forms.
+  // inside to_str also works; see pap-nested-consuming.mml for both forms.
   let result = consuming 0;
 
   // Uncomment this line to see the second call rejected as use after move:
   // let again = consuming 1;
-  // println (int_to_str again);  // 3
+  // println (to_str again);  // 3
 
-  println (int_to_str result);  // 3
+  println (to_str result);  // 3
 
   // The first call surrendered the String. Owning it before that call does
   // not give the PAP ownership afterward. Repeating would require a new value.

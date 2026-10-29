@@ -9,7 +9,7 @@ protocol Render 'T =
 instance Render Int =
   fn render(label, value) =
     print label;
-    println (int_to_str value);
+    println (to_str value);
   ;
 ;
 

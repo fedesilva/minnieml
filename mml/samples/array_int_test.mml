@@ -7,8 +7,8 @@ pub fn main(): Unit =
   let v0 = ar_int_get arr 0;
   let v1 = ar_int_get arr 1;
   let v2 = ar_int_get arr 2;
-  println ("Length: " ++ (int_to_str len));
-  println ("arr[0] = " ++ (int_to_str v0));
-  println ("arr[1] = " ++ (int_to_str v1));
-  println ("arr[2] = " ++ (int_to_str v2));
+  println ("Length: " ++ (to_str len));
+  println ("arr[0] = " ++ (to_str v0));
+  println ("arr[1] = " ++ (to_str v1));
+  println ("arr[2] = " ++ (to_str v2));
 ;

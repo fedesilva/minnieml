@@ -8,5 +8,5 @@ pub fn main() =
   fn get_sum(): Int =
     p.a + p.b;
   ;
-  println (int_to_str (get_sum ()));
+  println (to_str (get_sum ()));
 ;

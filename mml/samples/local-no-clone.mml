@@ -2,7 +2,7 @@
  fn cond(heap: Bool, n: Int): Unit =
     let a =
       if heap then
-        int_to_str n;
+        to_str n;
       else
         "static";
       ;

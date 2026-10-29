@@ -2,7 +2,7 @@
 struct Grouped { text: (String), values: (IntArray) };
 
 fn iteration(n: Int): Int =
-  let value = Grouped (int_to_str n) (ar_int_new 4);
+  let value = Grouped (to_str n) (ar_int_new 4);
   ar_int_set value.values 0 n;
   ar_int_get value.values 0;
 ;

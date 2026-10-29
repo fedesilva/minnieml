@@ -6,7 +6,7 @@ fn loop(n: Int, total: Int): Int =
   if n == 0 then
     total;
   else
-    let read = make_reader (int_to_str n);
+    let read = make_reader (to_str n);
     loop (n - 1) (total + read ());
   ;
 ;

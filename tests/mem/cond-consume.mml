@@ -4,7 +4,7 @@
 fn consume(~s: String): Unit = println s;;
 
 fn test_cond_consume(flag: Bool): Unit =
-  let s = int_to_str 1;
+  let s = to_str 1;
   if flag then
     consume s;
   else

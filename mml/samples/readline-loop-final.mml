@@ -3,7 +3,7 @@ fn loop(): Unit =
   println "Type a number:";
   let s = readline ();
   let n = str_to_int s;
-  println ("Number is: " ++ (int_to_str n));
+  println ("Number is: " ++ (to_str n));
   loop();
 ;
 

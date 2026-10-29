@@ -35,7 +35,7 @@ fn is_neighbor_event(kind: Int): Bool =
 ;
 
 fn coordinates(x: Int, y: Int): String =
-  "(" ++ (int_to_str x) ++ ", " ++ (int_to_str y) ++ ")";
+  "(" ++ (to_str x) ++ ", " ++ (to_str y) ++ ")";
 ;
 
 fn event_caption(event: Event): String =
@@ -55,14 +55,14 @@ fn event_caption(event: Event): String =
 fn event_detail(event: Event): String =
   if event.kind == event_kind_exhausted then "All reachable candidates have been processed.";
   elif event.kind == event_kind_skip then
-    "Already processed; discard queue entry with f = " ++ (int_to_str event.f);
+    "Already processed; discard queue entry with f = " ++ (to_str event.f);
   else
-    let costs = "g = " ++ (int_to_str event.g) ++ "    h = " ++
-      (int_to_str (event.f - event.g)) ++ "    f = g + h = " ++ (int_to_str event.f);
+    let costs = "g = " ++ (to_str event.g) ++ "    h = " ++
+      (to_str (event.f - event.g)) ++ "    f = g + h = " ++ (to_str event.f);
     if is_neighbor_event event.kind then
       let previous =
         if event.previous_g == infinity then "unreached";
-        else int_to_str event.previous_g;
+        else to_str event.previous_g;
         ;
       "Proposed " ++ costs ++ "    Best known g: " ++ previous;
     else costs ++ "    (g: cost so far, h: estimate to goal)";
@@ -80,7 +80,7 @@ fn reason_text(reason: Int): String =
 ;
 
 fn caption(allocated: Bool): String =
-  let text = int_to_str 123;
+  let text = to_str 123;
   if allocated then text ++ "!";
   else "abc";
   ;

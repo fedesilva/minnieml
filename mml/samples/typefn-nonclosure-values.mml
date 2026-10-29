@@ -18,5 +18,5 @@ let chooser =
 pub fn main(): Unit =
   let from_arg = apply inc 41;
   let from_global = chooser 1;
-  println (int_to_str (from_arg + from_global));
+  println (to_str (from_arg + from_global));
 ;

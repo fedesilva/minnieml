@@ -2,5 +2,5 @@ pub fn main(): Unit =
   fn local_inc(x) =
     x + 1;
   ;
-  println (int_to_str (local_inc 10));
+  println (to_str (local_inc 10));
 ;

@@ -1,6 +1,7 @@
 // Reference transcription of the compiler-injected standard library; this file is not loaded.
 // Sources: ../scala/mml/mmlclib/semantic/package.scala (types and common functions)
 //          ../scala/mml/mmlclib/semantic/StandardOperators.scala (Num and free operators)
+//          ../scala/mml/mmlclib/semantic/StandardConversions.scala (ToString)
 // Names, native symbols, ownership markers, and templates match those injectors.
 // The native void and named-struct pointer spellings below describe injected AST types;
 // the source parser does not currently accept those two representation forms.
@@ -102,6 +103,59 @@ op +(a: Int): Int 95 right = @metal:tpl["add %type 0, %operand"];;
 op and(a: Bool, b: Bool): Bool 40 left = @metal:tpl["and %type %operand1, %operand2"];;
 op or(a: Bool, b: Bool): Bool 30 left = @metal:tpl["or %type %operand1, %operand2"];;
 op not(a: Bool): Bool 95 right = @metal:tpl["xor %type 1, %operand"];;
+
+// String conversion protocol
+protocol ToString 'T =
+  fn to_str(value: 'T): String;
+;
+
+instance ToString Int =
+  fn to_str(value) = @metal:ffi[name="int_to_str", mem=alloc];;
+;
+
+instance ToString Float =
+  fn to_str(value) = @metal:ffi[name="float_to_str", mem=alloc];;
+;
+
+instance ToString Int64 =
+  fn to_str(value) = @metal:ffi[name="int64_to_str", mem=alloc];;
+;
+
+instance ToString Int8 =
+  fn to_str(value) = @metal:ffi[name="int8_to_str", mem=alloc];;
+;
+
+instance ToString Int16 =
+  fn to_str(value) = @metal:ffi[name="int16_to_str", mem=alloc];;
+;
+
+instance ToString Double =
+  fn to_str(value) = @metal:ffi[name="double_to_str", mem=alloc];;
+;
+
+instance ToString Bool =
+  fn to_str(value) = @metal:ffi[name="bool_to_str", mem=alloc];;
+;
+
+instance ToString Char =
+  fn to_str(value) = @metal:ffi[name="char_to_str", mem=alloc];;
+;
+
+instance ToString SizeT =
+  fn to_str(value) = @metal:ffi[name="sizet_to_str", mem=alloc];;
+;
+
+instance ToString Unit =
+  fn to_str(value) = @metal:ffi[name="unit_to_str", mem=alloc];;
+;
+
+instance ToString String =
+  fn to_str(value) = @metal:ffi[name="__clone_String", mem=alloc];;
+;
+
+instance ToString CString =
+  fn to_str(value) = @metal:ffi[name="cstring_to_str", mem=alloc];;
+;
 
 // I/O and strings
 fn mml_sys_flush(): Unit = @metal:ffi;;

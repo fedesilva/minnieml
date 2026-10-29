@@ -1,7 +1,7 @@
 fn print_randoms(rng: Rng, i: Int): Unit =
   if i < 10 then
     let n = rng_between rng 0 100;
-    println (int_to_str n);
+    println (to_str n);
     print_randoms rng (i + 1);
   ;
 ;

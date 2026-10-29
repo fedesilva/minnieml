@@ -8,5 +8,5 @@ fn top_inc(x: Int): Int =
 
 pub fn main(): Unit =
   let local_inc = { x: Int -> x + 1; };
-  println (int_to_str ((apply top_inc 10) + (apply local_inc 10)));
+  println (to_str ((apply top_inc 10) + (apply local_inc 10)));
 ;

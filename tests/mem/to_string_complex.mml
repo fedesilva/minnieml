@@ -1,9 +1,9 @@
 fn make_test_results(): String = 
   concat 
-    (concat "Zero: " (concat (int_to_str 0) ", "))
+    (concat "Zero: " (concat (to_str 0) ", "))
     (concat 
-      (concat "Positive: " (concat (int_to_str 123) ", "))
-      (concat "Large: " (int_to_str 1234567890))
+      (concat "Positive: " (concat (to_str 123) ", "))
+      (concat "Large: " (to_str 1234567890))
     );
 ;
 

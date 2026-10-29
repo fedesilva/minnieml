@@ -22,5 +22,5 @@ pub fn main(): Unit =
     ;
   ;
 
-  println (int_to_str (loop 5));
+  println (to_str (loop 5));
 ;

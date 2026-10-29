@@ -11,7 +11,7 @@ pub fn main() =
     
     let g = {
       let n = 2;
-      println (int_to_str n);
+      println (to_str n);
   
     }: Unit;
 

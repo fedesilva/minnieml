@@ -1,7 +1,7 @@
 let concat_results =
-  ("Zero: " ++ (int_to_str 0) ++ ", ")
-    ++ ("Positive: " ++ (int_to_str 123) ++ ", ")
-    ++ "Large: " ++ (int_to_str 1234567890);
+  ("Zero: " ++ (to_str 0) ++ ", ")
+    ++ ("Positive: " ++ (to_str 123) ++ ", ")
+    ++ "Large: " ++ (to_str 1234567890);
 
 pub fn main(): Unit =
   println concat_results;

@@ -191,13 +191,13 @@ fn fizzbuzz(n: Int): Unit =
   elif n % 5 == 0 then
     println "Buzz";
   else
-    println (int_to_str n);
+    println (to_str n);
   ;
 ;
 
 fn count_down(n: Int): Unit =
   if n > 0 then
-    println (int_to_str n);
+    println (to_str n);
     count_down (n - 1);
   ;
 ;
@@ -252,7 +252,7 @@ fn style_let_conditionals(): Int =
 pub fn countdown(from: Int): Unit =
   fn loop(i: Int): Unit =
     if i > 0 then
-      println (int_to_str i);
+      println (to_str i);
       loop (i - 1);
     ;
   ;
@@ -262,6 +262,6 @@ pub fn countdown(from: Int): Unit =
 
 pub fn main(): Unit =
   let n = helper cache_size;
-  println (greet (int_to_str n));
+  println (greet (to_str n));
   countdown 10;
 ;

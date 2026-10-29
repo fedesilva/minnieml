@@ -13,7 +13,7 @@ fn make_counter(~text: String): Int -> Int =
 ;
 
 pub fn main(): Unit =
-  let counter = make_counter (int_to_str 123);
+  let counter = make_counter (to_str 123);
   let result = counter 1;
-  println (int_to_str result);
+  println (to_str result);
 ;

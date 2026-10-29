@@ -20,8 +20,8 @@ instance Combine Bool =
 ;
 
 pub fn main(): Int =
-  println (int_to_str (20 <+> 22));
-  println (float_to_str (1.5 <+> 2.5));
+  println (to_str (20 <+> 22));
+  println (to_str (1.5 <+> 2.5));
   if false <+> true then println "true";
   else println "false";
   ;
@@ -31,15 +31,15 @@ pub fn main(): Int =
   // help the typer with annotations.
   // let combine_int: Int -> Int -> Int = (<+>);
   let combine_int  = (<+>);
-  println (int_to_str (combine_int 2 3));
+  println (to_str (combine_int 2 3));
 
   // Applying one argument creates an ordinary partial application.
   let add_ten: Int -> Int = (<+>) 10;
-  println (int_to_str (add_ten 5));
+  println (to_str (add_ten 5));
 
   // Num supplies the same + and * spellings for Int and Float.
-  println (int_to_str (2 + 3 * 4));
-  println (float_to_str (2.0 + 3.0 * 4.0));
+  println (to_str (2 + 3 * 4));
+  println (to_str (2.0 + 3.0 * 4.0));
   0;
 ;
 

@@ -106,7 +106,7 @@ same name, parameters, and return type:
 pub fn countdown(from: Int): Unit =
   fn loop(i: Int): Unit =
     if i > 0 then
-      println (int_to_str i);
+      println (to_str i);
       loop (i - 1);
     ;
   ;
@@ -292,7 +292,7 @@ protocol Show 'T =
 ;
 
 instance Show Int =
-  fn show(value) = int_to_str value;;
+  fn show(value) = to_str value;;
 ;
 
 instance Show Bool =
@@ -430,7 +430,7 @@ building an executable:
 fn zlibCompileFlags(): Int64 = @metal:ffi;;
 
 pub fn main(): Unit =
-  println (int64_to_str (zlibCompileFlags ()));
+  println (to_str (zlibCompileFlags ()));
 ;
 ```
 
@@ -617,7 +617,7 @@ fn fizzbuzz(n: Int): Unit =
   elif n % 5 == 0 then
     println "Buzz";
   else
-    println (int_to_str n);
+    println (to_str n);
   ;
 ;
 ```
@@ -635,7 +635,7 @@ returns:
 ```mml
 fn count_down(n: Int): Unit =
   if n > 0 then
-    println (int_to_str n);
+    println (to_str n);
     count_down (n - 1);
   ;
 ;
@@ -1387,6 +1387,37 @@ Unary Float negation computes `0.0 - value`, including its signed-zero behavior.
 | `println(s)`      | `String -> Unit` | Print string with newline        |
 | `readline()`      | `Unit -> String` | Read line from stdin. Allocates. |
 | `mml_sys_flush()` | `Unit -> Unit`   | Flush stdout                     |
+
+#### String conversion protocol
+
+The injected `ToString` protocol provides `to_str` for scalar values, strings, and Unit:
+
+```mml
+protocol ToString 'T =
+  fn to_str(value: 'T): String;
+;
+```
+
+The argument type selects the instance. Each conversion borrows its argument and returns an
+owned `String`. Aliases use the underlying type's instance: `Int` and `Int32` share one;
+`Byte`, `Word`, and `Int8` share another.
+
+| Types | Text |
+| ----- | ---- |
+| `Int8`, `Int16`, `Int32` / `Int`, `Int64` | Signed decimal |
+| `SizeT` | Unsigned decimal |
+| `Float` | Existing native `%g` formatting |
+| `Double` | 17 significant digits (`%.17g`) |
+| `Bool` | `true` or `false` |
+| `Char` | One raw byte, including a zero byte |
+| `Unit` | `()` |
+| `String` | Owned copy preserving its length and embedded zero bytes |
+| `CString` | Owned copy up to its terminating zero byte; null input panics |
+
+For example, `to_str 42`, `to_str true`, and `to_str (int_to_int64 42)` select their respective
+instances. The three named numeric conversion functions remain available as explicit operations.
+There is no implicit conversion when calling `print` or `println`; pass `to_str value` explicitly.
+Arrays, raw pointers, and opaque `Buffer` / `Rng` handles have no `ToString` instance.
 
 #### String operations
 

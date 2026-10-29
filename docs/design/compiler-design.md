@@ -1519,7 +1519,8 @@ Library loading is not implemented yet.
 
 The compiler injects predefined types, operators, and functions before semantic analysis.
 Types and common functions are injected in `semantic/package.scala`; numeric and Boolean
-operators are injected in `semantic/StandardOperators.scala`.
+operators are injected in `semantic/StandardOperators.scala`. The common-function injection
+also adds `ToString` through `semantic/StandardConversions.scala`.
 
 ### Injected types
 
@@ -1608,7 +1609,7 @@ fn readline(): String = @metal:ffi;
 
 // String operations
 fn concat(a: String, b: String): String = @metal:ffi[mem=alloc];
-fn to_string(n: Int): String = @metal:ffi[mem=alloc];
+fn int_to_str(n: Int): String = @metal:ffi[mem=alloc];
 fn float_to_str(a: Float): String = @metal:ffi[mem=alloc];
 fn str_to_int(s: String): Int = @metal:ffi;
 
@@ -1644,6 +1645,16 @@ fn ar_int_set(arr: IntArray, i: Int, value: Int): Unit = @metal:ffi;
 fn ar_int_get(arr: IntArray, i: Int): Int = @metal:ffi;
 // ... unsafe variants, ar_int_len, plus analogous ar_str_* and ar_float_* families
 ```
+
+`injectStandardConversions` supplies `ToString` with `to_str(value: 'T): String` and
+twelve concrete instances: Int, Int8, Int16, Int64, Float, Double, Bool, Char, SizeT, Unit,
+String, and CString. Aliases reuse canonical instances. Each instance member names its native
+conversion symbol explicitly and carries `MemEffect.Alloc`; the original three numeric
+conversions retain their formatting. String uses its existing clone helper, and the remaining
+scalar conversions allocate checked copies in the runtime. Unit's source argument is evaluated
+but omitted from the native call. Ordinary protocol checking supplies each concrete signature.
+The reference prelude mirrors these declarations; the three named numeric conversion functions
+remain available as direct operations. Arrays, raw pointers, and opaque handles are excluded.
 
 **Implementation**: `injectBasicTypes` and `injectCommonFunctions` live in
 `semantic/package.scala`; `injectStandardOperators` lives in `semantic/StandardOperators.scala`.

@@ -466,8 +466,8 @@ def injectBasicTypes(module: Module): Module =
     resolvables = typeIndex
   )
 
-/** Inject common native functions that are repeatedly defined across samples. Includes print,
-  * println, readline, concat, to_string, and str_to_int functions.
+/** Inject common native functions and the ToString protocol. Includes print, println, readline,
+  * concat, named numeric string conversions, and str_to_int functions.
   */
 def injectCommonFunctions(module: Module): Module =
   val syntheticSource = SourceOrigin.Synth
@@ -1158,7 +1158,9 @@ def injectCommonFunctions(module: Module): Module =
     idx.updated(bnd)
   }
 
-  module.copy(members = allFunctions ++ module.members, resolvables = fnIndex)
+  injectStandardConversions(
+    module.copy(members = allFunctions ++ module.members, resolvables = fnIndex)
+  )
 
 def lookupNames(name: String, module: Module): Seq[Member] =
   // For operators, we need to match by originalName from meta

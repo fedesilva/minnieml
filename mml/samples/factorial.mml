@@ -18,5 +18,5 @@ pub fn main(args: StringArray) =
   if num > 20 then
     println "Bigger than 20 overflows";
   ;
-  println (int_to_str(num!));
+  println (to_str(num!));
 ;
