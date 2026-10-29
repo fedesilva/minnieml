@@ -6,6 +6,16 @@ Do not read or act on them unless directed to do so explicitely.
 
 ## Notes
 
+* On struct ownership:
+  * change to non move by default
+    * have them work like lambdas
+    * if they borrow and don't escape scope that's legal.
+    * this allows for non escaping structs withing functions
+  * Introduce move constructors (call site?)
+    * just like move lambdas
+      * struct Person { name }
+      * let p = ~Person { fede } // can escape
+
 
 * LSP is broken, paps are displayed as $environment something
 * LSP still has problems with coloring
