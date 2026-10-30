@@ -55,7 +55,7 @@ context.
 
 If subagents are unavailable, stop before the review and ask the author whether
 to continue with a parent-agent review. Proceed only with explicit approval,
-execute the Primary Reviewer Protocol directly, including all three dedicated checks,
+execute the Primary Reviewer Protocol directly, including all four dedicated checks,
 and validate every candidate with its evidence checks. Report that primary-review,
 dedicated-check, and per-claim independence were skipped. The approval covers narrow
 re-reviews for the same review workstream while subagents remain unavailable. Never
@@ -174,12 +174,12 @@ agent was also blocked.
 
 ## Mandatory dedicated checks
 
-For every review, the primary reviewer launches three separate, fresh-context reviewers
+For every review, the primary reviewer launches four separate, fresh-context reviewers
 with `fork_turns: "none"`:
 
 1. **Code style and QA:** enforce the repository's Scala, functional-state, pattern-matching,
    shared-helper, comment, and spacing rules within the review scope. Check documentation
-   coverage as well as comment accuracy against QA section 9 and its positive examples.
+   coverage as well as comment accuracy against QA section 9 and its examples.
 2. **Test quality:** inspect what fixtures and assertions prove, boundary and negative controls,
    diagnostic and identity assertions, and whether tests would detect the claimed regression.
    Distinguish semantic checks, IR validity, execution, sanitizers, and measurements.
@@ -188,10 +188,14 @@ with `fork_turns: "none"`:
    follow the code. Apply **Documentation for a tired maintainer** below; missing explanations
    can be findings without a runtime defect. Require concrete reading or maintenance costs,
    not personal taste.
+4. **Code documentation reviewer:** evaluate every comment and docstring in the review scope
+   individually against the QA and coding rules. Follow **Review code documentation comment
+   by comment** below, including its humanizing pass. Check missing explanations using
+   **Documentation for a tired maintainer** as well.
 
 These checks supplement the primary review. A general correctness review, formatter, linter,
 passing test suite, or parent-agent QA pass does not replace any of them. Narrow re-reviews
-also run all three checks, limited to the correction and its directly affected code.
+also run all four checks, limited to the correction and its directly affected code.
 
 Give each reviewer a self-contained packet with its focus, exact scope, explicit purpose
 statement, applicable rules, technical sources, verification evidence, and read-only
@@ -211,6 +215,31 @@ and evidence limits. The primary reviewer owns synthesis and sends each atomic c
 a separate fresh verifier under **Verify every claim independently**. A dedicated reviewer
 cannot verify its own candidate. Do not report the review complete while any dedicated check
 or required independent verification remains incomplete.
+
+## Review code documentation comment by comment
+
+The code documentation reviewer reads section 9 of `context/qa-rules-and-coding-style.md`,
+including its negative and positive examples, and **Comments and Documentation** in
+`context/coding-rules.md`. Evaluate each comment and docstring within the approved scope:
+
+- Read it beside the declaration or statements it documents. Check its accuracy against the
+  implementation and relevant callers, but judge whether it helps a reader at this location.
+- Require a standalone explanation of the local contract, invariant, or reason. Flag comments
+  that assume the reader came from a particular caller or knows the implementation plan or
+  change history. Keep reasons for a caller's policy at that caller.
+- Check whether it adds information. Flag narration of obvious names or statements, irrelevant
+  background, and explanations placed away from the code whose decision they justify.
+- Humanize the prose: use concrete nouns, direct verbs, and natural sentences. Remove filler,
+  inflated claims, canned contrasts, and conversational residue. Preserve technical terms,
+  conditions, and uncertainty that matter; do not invent a rationale or add personality at the
+  expense of precision. Use the `humanizer` skill when available; these criteria still apply
+  when it is unavailable.
+
+Return findings with the specific reading problem and a suggested rewrite, relocation, or
+deletion. Humanizing applies to comments and docstrings, not identifiers or executable code.
+Keep the review read-only; suggested wording is part of the finding. Account for the comments
+reviewed and any coverage gaps, and apply **Documentation for a tired maintainer** to missing
+explanations. A few accurate comments do not establish coverage of the rest of the scope.
 
 ## Follow the code
 
@@ -301,7 +330,7 @@ Assume an experienced reader whose attention is limited. Humane code makes purpo
 and important decisions accessible without requiring the reader to reconstruct them from bodies
 and callers. Explain the local meaning of an operation, not elementary programming concepts.
 
-Read section 9 of `context/qa-rules-and-coding-style.md`, including its positive examples.
+Read section 9 of `context/qa-rules-and-coding-style.md`, including its negative and positive examples.
 Inspect documentation coverage across the approved scope, including private types and helpers;
 a whole-file pass includes undocumented declarations, not only existing comments or changed lines.
 Check whether the reader can understand:
@@ -477,8 +506,8 @@ Label proven bugs separately from design, readability, performance, and test
 findings. Do not dilute material issues with taste-only nitpicks.
 
 Report the completion and result of each mandatory dedicated check: code style and QA,
-test quality, and human readability. Identify missing checks and approved fallbacks explicitly;
-do not summarize partial coverage as a clean review.
+test quality, human readability, and code documentation. Identify missing checks and approved
+fallbacks explicitly; do not summarize partial coverage as a clean review.
 
 If no actionable findings remain, say so explicitly. Then state residual risks,
 verification gaps, and which conclusions still depend on target execution or
