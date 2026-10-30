@@ -59,6 +59,7 @@ case class OwnershipScope(
   movedAt:                Map[String, SourceOrigin]             = Map.empty,
   bindingOwner:           BindingOwner,
   resolvables:            ResolvablesIndex,
+  protocols:              ProtocolRegistry                      = ProtocolRegistry.empty,
   bindingIds:             BindingIdSupply                       = BindingIdSupply(),
   returningOwned:         Map[CallableIdentity, ReturnContract] = Map.empty,
   tempCounter:            Int                                   = 0,
@@ -582,13 +583,15 @@ object OwnershipAnalyzer:
   private def wrapWithClone(
     expr:        Expr,
     tpe:         Type,
-    resolvables: ResolvablesIndex
+    resolvables: ResolvablesIndex,
+    protocols:   ProtocolRegistry
   ): Either[SemanticError, Expr] =
     CloneCalls.build(
       expr,
       tpe,
       resolvables,
-      PhaseName
+      PhaseName,
+      protocols
     )
 
   private def resourceFree(value: Term, scope: OwnershipScope): Boolean =
@@ -794,7 +797,7 @@ object OwnershipAnalyzer:
       )
       val promoted =
         if needsClone then
-          wrapWithClone(value, tpe, scope.resolvables).map: cloned =>
+          wrapWithClone(value, tpe, scope.resolvables, scope.protocols).map: cloned =>
             if facts.owns then
               val cond = Cond(
                 value.source,
@@ -2443,7 +2446,9 @@ object OwnershipAnalyzer:
                   )
                 else
                   val cloneId =
-                    ref.typeSpec.flatMap(MemoryFunctions.clone(_, s.resolvables)).map(_.id)
+                    ref.typeSpec
+                      .flatMap(CloneCalls.target(_, s.resolvables, s.protocols))
+                      .flatMap(_.id)
 
                   cloneId match
 
@@ -2486,7 +2491,9 @@ object OwnershipAnalyzer:
                 (s, errs :+ SemanticError.CapturedBorrowedHeapBinding(ref, PhaseName), caps :+ cap)
               case Some(OwnershipState.Literal) =>
                 val cloneId =
-                  ref.typeSpec.flatMap(MemoryFunctions.clone(_, s.resolvables)).map(_.id)
+                  ref.typeSpec
+                    .flatMap(CloneCalls.target(_, s.resolvables, s.protocols))
+                    .flatMap(_.id)
                 cloneId match
                   case Some(id) => (s, errs, caps :+ Capture.CapturedLiteral(ref, id))
                   case None =>
@@ -2673,7 +2680,8 @@ object OwnershipAnalyzer:
     returningOwned: Map[CallableIdentity, ReturnContract],
     globals:        Map[String, BindingInfo],
     callableValues: CallableValues,
-    bindingIds:     BindingIdSupply
+    bindingIds:     BindingIdSupply,
+    protocols:      ProtocolRegistry
   ): (Member, List[OwnershipDiagnostic], BindingIdSupply) =
     member match
       case bnd @ Bnd(_, _, _, value, _, _, _, meta, _) =>
@@ -2688,6 +2696,7 @@ object OwnershipAnalyzer:
           bindings               = globals,
           bindingOwner           = BindingOwner.binding(moduleName, bnd.name),
           resolvables            = resolvables,
+          protocols              = protocols,
           bindingIds             = bindingIds,
           returningOwned         = returningOwned,
           skipConsumingOwnership = skipConsuming,
@@ -2720,6 +2729,23 @@ object OwnershipAnalyzer:
     val module         = state.module
     val callableValues = CallableValues.fromModule(module)
     val returningOwned = ReturnOwnershipAnalysis.discover(module, callableValues)
+    val cloneErrors =
+      state.protocols.memberBindingIds(CloneCalls.signatureId).toList.flatMap { id =>
+        module.resolvables.lookup(id).collect { case binding: Bnd => binding }.toList.flatMap {
+          binding =>
+            binding.value.terms.collect {
+              case lambda: Lambda
+                  if lambdaReturnType(lambda).exists(isOwnedType(_, module.resolvables)) &&
+                    returningOwned.get(CallableIdentity(lambda)).flatMap(_.ownedType).isEmpty =>
+                SemanticError.InvalidExpression(
+                  lambda.body,
+                  "Clone must return an independently owned value; " +
+                    "returning its borrowed input is invalid",
+                  PhaseName
+                )
+            }
+        }
+      }
 
     val globals = module.members.collect {
       case bnd: Bnd if bnd.typeSpec.exists(TypeUtils.isHeapType(_, module.resolvables)) =>
@@ -2739,10 +2765,14 @@ object OwnershipAnalyzer:
               returningOwned,
               globals,
               callableValues,
-              ids
+              ids,
+              state.protocols
             )
           (newMember :: membersAcc, errors.reverse_:::(errorsAcc), nextIds)
 
     val newModule   = module.copy(members = newMembersRev.reverse)
     val diagnostics = recordErrors(allErrorsRev.reverse, state.diagnostics, callableValues, module)
-    state.copy(bindingIds = finalIds, diagnostics = diagnostics).withModule(newModule)
+    state
+      .copy(bindingIds = finalIds, diagnostics = diagnostics)
+      .withModule(newModule)
+      .addErrors(cloneErrors)

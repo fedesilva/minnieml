@@ -133,7 +133,7 @@ class PapStructOwnershipTest extends BaseEffFunSuite:
       assertEquals(structs.size, 1)
       assert(TypeUtils.containsFunction(structs.head, module.resolvables))
       assertEquals(
-        TypeUtils.cloneFnFor(typeReference("Outer", module.resolvables), module.resolvables),
+        cloneNameFor(typeReference("Outer", module.resolvables), module),
         None
       )
     }

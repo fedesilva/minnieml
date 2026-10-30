@@ -75,10 +75,13 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
       case TXCall1(TXRefNamed(n), _) if n == freeName => 1
     }
 
-  private def containsCloneString(term: Term): Boolean =
+  private def containsCloneString(module: Module, term: Term): Boolean =
     existsTerm(term) {
-      case TXRefResolved(id) if id.endsWith("::__clone_String") => true
-      case TXRefNamed(name) if name == "__clone_String" => true
+      case TXRefResolved(id)
+          if cloneBindingFor(typeReference("String", module.resolvables), module)
+            .flatMap(_.id)
+            .contains(id) =>
+        true
     }
 
   test("early cleanup gives each hoisted call operand a distinct name") {
@@ -1043,7 +1046,7 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     semNotFailed(code).map { module =>
       val body = topLevelLambdaBody(module, "echo")
       assert(!containsFreeString(body), "returned ownership must not be freed in the callee")
-      assert(!containsCloneString(body), "returning the moved value must not clone it")
+      assert(!containsCloneString(module, body), "returning the moved value must not clone it")
     }
   }
 
@@ -1170,7 +1173,7 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
       }.get
 
       assert(
-        !containsCloneString(mainBody),
+        !containsCloneString(module, mainBody),
         "owned args to constructor should be moved, not cloned"
       )
     }
@@ -1194,7 +1197,7 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
       }.get
 
       assert(
-        containsCloneString(mainBody),
+        containsCloneString(module, mainBody),
         "literal args to constructor should be auto-cloned"
       )
     }
@@ -1360,7 +1363,9 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
       // A struct holding a function value transitively is not clonable.
       assert(
         !module.members.exists {
-          case b: Bnd => b.name == "__clone_Outer"
+          case b: Bnd =>
+            cloneBindingFor(typeReference("Outer", module.resolvables), module)
+              .exists(_.id == b.id)
           case _ => false
         },
         "a struct transitively holding a function value must not get a clone function"
@@ -1420,7 +1425,7 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
       }.get
 
       assert(
-        !containsCloneString(mkPointBody),
+        !containsCloneString(module, mkPointBody),
         "non-heap fields should not trigger cloning"
       )
 
@@ -1695,13 +1700,13 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
 
       val p1Body = member("p1").value
       assert(
-        containsCloneString(p1Body),
+        containsCloneString(module, p1Body),
         "expected global 'name' to be cloned when passed to Person constructor"
       )
 
       val p2Body = member("p2").value
       assert(
-        containsCloneString(p2Body),
+        containsCloneString(module, p2Body),
         "expected global 'name' inside TermGroup to be cloned when passed to Person constructor"
       )
     }

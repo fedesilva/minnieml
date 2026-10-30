@@ -108,7 +108,7 @@ class PapOwnershipTest extends BaseEffFunSuite:
         ;
       """).map { module =>
         val cloneName =
-          TypeUtils.cloneFnFor(typeReference("String", module.resolvables), module.resolvables)
+          cloneNameFor(typeReference("String", module.resolvables), module)
         val cloneId = module.members.collectFirst {
           case binding: Bnd if cloneName.contains(binding.name) => binding.id
         }.flatten

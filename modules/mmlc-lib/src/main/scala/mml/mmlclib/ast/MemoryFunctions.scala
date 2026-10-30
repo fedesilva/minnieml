@@ -12,21 +12,13 @@ object MemoryFunctions:
   ): Option[Target] =
     TypeUtils
       .freeFnFor(tpe, index)
-      .flatMap(resolve(tpe, _, index, generatingModule, allowImportedDestructor = true))
-
-  def clone(
-    tpe:              Type,
-    index:            ResolvablesIndex,
-    generatingModule: Option[String] = None
-  ): Option[Target] =
-    TypeUtils.cloneFnFor(tpe, index).flatMap(resolve(tpe, _, index, generatingModule))
+      .flatMap(resolve(tpe, _, index, generatingModule))
 
   private def resolve(
-    tpe:                     Type,
-    name:                    String,
-    index:                   ResolvablesIndex,
-    generatingModule:        Option[String],
-    allowImportedDestructor: Boolean = false
+    tpe:              Type,
+    name:             String,
+    index:            ResolvablesIndex,
+    generatingModule: Option[String]
   ): Option[Target] =
     TypeUtils.declaration(tpe, index).flatMap { declaration =>
 
@@ -49,7 +41,7 @@ object MemoryFunctions:
 
         val importedDestructor = TypeUtils
           .resolveNativeType(tpe, index)
-          .filter(native => allowImportedDestructor && native.freeFn.contains(name))
+          .filter(native => native.freeFn.contains(name))
           .flatMap(_ => registered(s"stdlib::bnd::$name"))
 
         registered(id)

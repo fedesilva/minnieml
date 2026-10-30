@@ -190,10 +190,10 @@ object ExpressionRewriter:
         }
 
       case (head :: rest) =>
-        val prefix = OperatorGrouping.prefix(head, resolvables).filter(_ => rest.nonEmpty)
+        val prefix = OperatorCoherence.prefix(head, resolvables).filter(_ => rest.nonEmpty)
         val conflict = Option
           .when(rest.nonEmpty)(
-            OperatorGrouping.conflict(head, CallableArity.Unary, resolvables)
+            OperatorCoherence.conflict(head, CallableArity.Unary, resolvables)
           )
           .flatten
         (prefix, conflict) match
@@ -251,9 +251,9 @@ object ExpressionRewriter:
     terms match
       case head :: rest =>
         // Check for binary operator with sufficient precedence
-        val binary = OperatorGrouping.binary(head, resolvables).filter { grouped =>
+        val binary = OperatorCoherence.binary(head, resolvables).filter { grouped =>
           grouped.precedence >= minPrec &&
-          (OperatorGrouping.postfix(head, resolvables).isEmpty ||
+          (OperatorCoherence.postfix(head, resolvables).isEmpty ||
             rest.headOption.exists(canStartOperand(_, resolvables)))
         }
         binary match
@@ -281,7 +281,7 @@ object ExpressionRewriter:
             }
           case None =>
             // Check for postfix operator with sufficient precedence
-            OperatorGrouping
+            OperatorCoherence
               .postfix(head, resolvables)
               .filter(_.precedence >= minPrec) match
               case Some(grouped) =>
@@ -300,7 +300,7 @@ object ExpressionRewriter:
     * prefix syntax can begin an operand, so 1 ! -2 keeps the binary interpretation of !.
     */
   private def canStartOperand(term: Term, index: ResolvablesIndex): Boolean =
-    !OperatorGrouping.isOperator(term, index) || OperatorGrouping.prefix(term, index).nonEmpty
+    !OperatorCoherence.isOperator(term, index) || OperatorCoherence.prefix(term, index).nonEmpty
 
   /** Handle remaining cases in rewriteOps when no binary/postfix op matched */
   private def rewriteOpsRemainder(
@@ -320,7 +320,7 @@ object ExpressionRewriter:
             )
           )
           .rejected
-      case term if !OperatorGrouping.isOperator(term, resolvables) && !canBeApplied(lhs) =>
+      case term if !OperatorCoherence.isOperator(term, resolvables) && !canBeApplied(lhs) =>
         // Non-operator term after an expression that can't be applied to
         NEL
           .one(
@@ -332,9 +332,9 @@ object ExpressionRewriter:
           )
           .rejected
       case ref: Ref =>
-        val conflict = OperatorGrouping
+        val conflict = OperatorCoherence
           .conflict(ref, CallableArity.Binary, resolvables)
-          .orElse(OperatorGrouping.conflict(ref, CallableArity.Unary, resolvables))
+          .orElse(OperatorCoherence.conflict(ref, CallableArity.Unary, resolvables))
         conflict match
           case Some(error) =>
             NEL.one(SemanticError.ProtocolErrorFound(error, phaseName)).rejected
@@ -372,7 +372,7 @@ object ExpressionRewriter:
     terms match
       case Nil =>
         (Expr(fn.source, List(fn)), terms).accepted
-      case t :: _ if OperatorGrouping.isOperator(t, resolvables) =>
+      case t :: _ if OperatorCoherence.isOperator(t, resolvables) =>
         (Expr(fn.source, List(fn)), terms).accepted
       case (g: TermGroup) :: restTerms =>
         // Groups are processed as sub-expressions (may contain nested applications)
@@ -416,7 +416,7 @@ object ExpressionRewriter:
       remainingTerms match
         case Nil =>
           (Expr(source, List(lowered)), remainingTerms).accepted
-        case head :: _ if OperatorGrouping.isOperator(head, resolvables) =>
+        case head :: _ if OperatorCoherence.isOperator(head, resolvables) =>
           (Expr(source, List(lowered)), remainingTerms).accepted
         case _ =>
           buildAppChain(
@@ -437,7 +437,7 @@ object ExpressionRewriter:
       terms match
         case Nil =>
           (Nil, terms).accepted
-        case head :: _ if OperatorGrouping.isOperator(head, resolvables) =>
+        case head :: _ if OperatorCoherence.isOperator(head, resolvables) =>
           (Nil, terms).accepted
         case _ =>
           rewriteDirectLambdaArg(terms, resolvables).flatMap { case (arg, rest) =>

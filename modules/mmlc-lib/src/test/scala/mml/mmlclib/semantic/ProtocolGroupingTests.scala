@@ -18,7 +18,7 @@ class ProtocolGroupingTests extends BaseEffFunSuite:
       val initial  = phaseInput(source, parsed)
       val expected = signatures(initial.module).flatMap(_.id).toSet
 
-      val checked = OperatorGrouping.checkModule(initial)
+      val checked = OperatorCoherence.checkModule(initial)
       val result  = ExpressionRewriter.rewriteModule(checked)
       val outer   = binaryCall(binding(result.module, "value").value)
       val inner   = binaryCall(outer.left)
@@ -44,7 +44,7 @@ class ProtocolGroupingTests extends BaseEffFunSuite:
       val initial  = phaseInput(source, parsed)
       val expected = signatures(initial.module).flatMap(_.id).toSet
 
-      val checked = OperatorGrouping.checkModule(initial)
+      val checked = OperatorCoherence.checkModule(initial)
       val result  = ExpressionRewriter.rewriteModule(checked)
       val outer   = binaryCall(binding(result.module, "value").value)
       val inner   = binaryCall(outer.left)
@@ -73,7 +73,7 @@ class ProtocolGroupingTests extends BaseEffFunSuite:
       val additions      = declared.filter(_.meta.originalName == "+").flatMap(_.id).toSet
       val multiplication = declared.find(_.meta.originalName == "*").get
 
-      val checked = OperatorGrouping.checkModule(initial)
+      val checked = OperatorCoherence.checkModule(initial)
       val result  = ExpressionRewriter.rewriteModule(checked)
       val outer   = binaryCall(binding(result.module, "value").value)
       val inner   = binaryCall(outer.right)
@@ -106,7 +106,7 @@ class ProtocolGroupingTests extends BaseEffFunSuite:
       val leftId    = binding(initial.module, "left").id
       val rightId   = binding(initial.module, "right").id
 
-      val checked  = OperatorGrouping.checkModule(initial)
+      val checked  = OperatorCoherence.checkModule(initial)
       val result   = ExpressionRewriter.rewriteModule(checked)
       val outer    = binaryCall(binding(result.module, "value").value)
       val prefix   = application(outer.left)
@@ -135,7 +135,7 @@ class ProtocolGroupingTests extends BaseEffFunSuite:
         .flatMap(_.id)
         .toSet
 
-      val checked  = OperatorGrouping.checkModule(initial)
+      val checked  = OperatorCoherence.checkModule(initial)
       val result   = ExpressionRewriter.rewriteModule(checked)
       val postfix  = application(binding(result.module, "value").value)
       val operator = reference(postfix.fn)
@@ -162,7 +162,7 @@ class ProtocolGroupingTests extends BaseEffFunSuite:
       val postfixIds     = declared.filter(_.meta.arity == CallableArity.Unary).flatMap(_.id).toSet
       val multiplication = declared.find(_.meta.originalName == "*").get
 
-      val checked  = OperatorGrouping.checkModule(initial)
+      val checked  = OperatorCoherence.checkModule(initial)
       val result   = ExpressionRewriter.rewriteModule(checked)
       val outer    = binaryCall(binding(result.module, "value").value)
       val postfix  = application(outer.left)
@@ -193,7 +193,7 @@ class ProtocolGroupingTests extends BaseEffFunSuite:
       val binaryIds = declared.filter(_.meta.arity == CallableArity.Binary).flatMap(_.id).toSet
       val prefixIds = declared.filter(_.meta.originalName == "-").flatMap(_.id).toSet
 
-      val checked  = OperatorGrouping.checkModule(initial)
+      val checked  = OperatorCoherence.checkModule(initial)
       val result   = ExpressionRewriter.rewriteModule(checked)
       val outer    = binaryCall(binding(result.module, "value").value)
       val prefix   = application(outer.right)
@@ -217,7 +217,7 @@ class ProtocolGroupingTests extends BaseEffFunSuite:
       val initial  = phaseInput(source, parsed)
       val declared = signatures(initial.module)
 
-      val checked = OperatorGrouping.checkModule(initial)
+      val checked = OperatorCoherence.checkModule(initial)
       val result  = ExpressionRewriter.rewriteModule(checked)
 
       result.errors match
@@ -245,7 +245,7 @@ class ProtocolGroupingTests extends BaseEffFunSuite:
       val initial  = phaseInput(source, parsed)
       val declared = signatures(initial.module)
 
-      val checked = OperatorGrouping.checkModule(initial)
+      val checked = OperatorCoherence.checkModule(initial)
       val result  = ExpressionRewriter.rewriteModule(checked)
 
       result.errors match
@@ -269,7 +269,7 @@ class ProtocolGroupingTests extends BaseEffFunSuite:
       val initial  = phaseInput(source, parsed)
       val declared = signatures(initial.module)
 
-      val checked = OperatorGrouping.checkModule(initial)
+      val checked = OperatorCoherence.checkModule(initial)
       val result  = ExpressionRewriter.rewriteModule(checked)
 
       result.errors match
@@ -294,7 +294,7 @@ class ProtocolGroupingTests extends BaseEffFunSuite:
       val ordinary  = initial.module.members.collectFirst { case value: Bnd => value }.get
       val signature = signatures(initial.module).head
 
-      val checked = OperatorGrouping.checkModule(initial)
+      val checked = OperatorCoherence.checkModule(initial)
       val result  = ExpressionRewriter.rewriteModule(checked)
 
       result.errors match
@@ -322,7 +322,7 @@ class ProtocolGroupingTests extends BaseEffFunSuite:
       }.get
       val signature = signatures(initial.module).head
 
-      val checked = OperatorGrouping.checkModule(initial)
+      val checked = OperatorCoherence.checkModule(initial)
       val result  = ExpressionRewriter.rewriteModule(checked)
       val call    = binaryCall(binding(result.module, "value").value)
 
@@ -339,7 +339,7 @@ class ProtocolGroupingTests extends BaseEffFunSuite:
       val initial  = phaseInput(source, parsed)
       val expected = signatures(initial.module).flatMap(_.id).toSet
 
-      val checked = OperatorGrouping.checkModule(initial)
+      val checked = OperatorCoherence.checkModule(initial)
       val result  = ExpressionRewriter.rewriteModule(checked)
       val value   = binding(result.module, "value").value
       val ref     = reference(value)
@@ -356,7 +356,7 @@ class ProtocolGroupingTests extends BaseEffFunSuite:
       val initial  = phaseInput(source, parsed)
       val expected = signatures(initial.module).flatMap(_.id).toSet
 
-      val checked = OperatorGrouping.checkModule(initial)
+      val checked = OperatorCoherence.checkModule(initial)
       val result  = ExpressionRewriter.rewriteModule(checked)
       val value   = binding(result.module, "value").value
       val ref     = reference(value)
@@ -377,7 +377,7 @@ class ProtocolGroupingTests extends BaseEffFunSuite:
       val expected = signatures(initial.module).flatMap(_.id).toSet
       val keepId   = binding(initial.module, "keep").id
 
-      val checked  = OperatorGrouping.checkModule(initial)
+      val checked  = OperatorCoherence.checkModule(initial)
       val result   = ExpressionRewriter.rewriteModule(checked)
       val value    = binding(result.module, "value").value
       val call     = application(value)
@@ -396,7 +396,7 @@ class ProtocolGroupingTests extends BaseEffFunSuite:
       val initial  = phaseInput(source, parsed)
       val expected = signatures(initial.module).flatMap(_.id).toSet
 
-      val checked = OperatorGrouping.checkModule(initial)
+      val checked = OperatorCoherence.checkModule(initial)
       val result  = ExpressionRewriter.rewriteModule(checked)
       val value   = binding(result.module, "value").value
       val call    = application(value)
@@ -419,7 +419,7 @@ class ProtocolGroupingTests extends BaseEffFunSuite:
       val initial  = phaseInput(source, parsed)
       val expected = signatures(initial.module).flatMap(_.id).toSet
 
-      val checked = OperatorGrouping.checkModule(initial)
+      val checked = OperatorCoherence.checkModule(initial)
       val result  = ExpressionRewriter.rewriteModule(checked)
       val value   = binding(result.module, "value").value
       val ref     = reference(value)
@@ -440,7 +440,7 @@ class ProtocolGroupingTests extends BaseEffFunSuite:
       val initial  = phaseInput(source, parsed)
       val expected = signatures(initial.module).flatMap(_.id).toSet
 
-      val checked = OperatorGrouping.checkModule(initial)
+      val checked = OperatorCoherence.checkModule(initial)
       val result  = ExpressionRewriter.rewriteModule(checked)
       val value   = binding(result.module, "value").value
       val ref     = reference(value)
@@ -461,7 +461,7 @@ class ProtocolGroupingTests extends BaseEffFunSuite:
       val initial  = phaseInput(source, parsed)
       val expected = signatures(initial.module).flatMap(_.id).toSet
 
-      val checked = OperatorGrouping.checkModule(initial)
+      val checked = OperatorCoherence.checkModule(initial)
       val result  = ExpressionRewriter.rewriteModule(checked)
       val value   = binding(result.module, "value").value
       val ref     = reference(value)
@@ -482,7 +482,7 @@ class ProtocolGroupingTests extends BaseEffFunSuite:
       val initial  = phaseInput(source, parsed)
       val expected = signatures(initial.module).flatMap(_.id).toSet
 
-      val checked = OperatorGrouping.checkModule(initial)
+      val checked = OperatorCoherence.checkModule(initial)
       val result  = ExpressionRewriter.rewriteModule(checked)
       val value   = binding(result.module, "value").value
       val call    = application(value)
@@ -502,7 +502,7 @@ class ProtocolGroupingTests extends BaseEffFunSuite:
       val original  = lambda(binding(initial.module, "use"))
       val parameter = original.params.head
 
-      val checked = OperatorGrouping.checkModule(initial)
+      val checked = OperatorCoherence.checkModule(initial)
       val result  = ExpressionRewriter.rewriteModule(checked)
       val body    = lambda(binding(result.module, "use")).body
       val call    = application(body)
@@ -528,11 +528,11 @@ class ProtocolGroupingTests extends BaseEffFunSuite:
           case ref: Ref if ref.name == "<+>" => ref
         }
         .getOrElse(fail("Expected the operator in the source expression"))
-      val checked = OperatorGrouping.checkModule(initial)
+      val checked = OperatorCoherence.checkModule(initial)
       val result  = ExpressionRewriter.rewriteModule(checked)
 
       assertEquals(checked.visibleErrors.size, 1)
-      assertEquals(OperatorGrouping.binary(use, initial.module.resolvables), None)
+      assertEquals(OperatorCoherence.binary(use, initial.module.resolvables), None)
       assertEquals(
         TermTraversal.collect(binding(result.module, "value").value) { case app: App =>
           app
@@ -554,11 +554,11 @@ class ProtocolGroupingTests extends BaseEffFunSuite:
           case ref: Ref if ref.name == "<+>" => ref
         }
         .getOrElse(fail("Expected the operator in the source expression"))
-      val checked = OperatorGrouping.checkModule(initial)
+      val checked = OperatorCoherence.checkModule(initial)
       val result  = ExpressionRewriter.rewriteModule(checked)
 
       assertEquals(checked.visibleErrors.size, 1)
-      assertEquals(OperatorGrouping.binary(use, initial.module.resolvables), None)
+      assertEquals(OperatorCoherence.binary(use, initial.module.resolvables), None)
       assertEquals(
         TermTraversal.collect(binding(result.module, "value").value) { case app: App =>
           app
@@ -574,7 +574,7 @@ class ProtocolGroupingTests extends BaseEffFunSuite:
     """
     parseNotFailed(source).map { parsed =>
       val initial = phaseInput(source, injectStandardOperators(parsed))
-      val checked = OperatorGrouping.checkModule(initial)
+      val checked = OperatorCoherence.checkModule(initial)
       val use = binding(initial.module, "value").value.terms
         .collectFirst {
           case ref: Ref if ref.name == "+" => ref
@@ -587,7 +587,7 @@ class ProtocolGroupingTests extends BaseEffFunSuite:
           "Operator '+' has conflicting precedence or associativity for the same arity"
         )
       )
-      assertEquals(OperatorGrouping.binary(use, initial.module.resolvables), None)
+      assertEquals(OperatorCoherence.binary(use, initial.module.resolvables), None)
     }
 
   test("a source signature cannot change the associativity of a free standard operator"):
@@ -597,7 +597,7 @@ class ProtocolGroupingTests extends BaseEffFunSuite:
     """
     parseNotFailed(source).map { parsed =>
       val initial = phaseInput(source, injectStandardOperators(parsed))
-      val checked = OperatorGrouping.checkModule(initial)
+      val checked = OperatorCoherence.checkModule(initial)
       val use = binding(initial.module, "value").value.terms
         .collectFirst {
           case ref: Ref if ref.name == "%" => ref
@@ -610,7 +610,7 @@ class ProtocolGroupingTests extends BaseEffFunSuite:
           "Operator '%' has conflicting precedence or associativity for the same arity"
         )
       )
-      assertEquals(OperatorGrouping.binary(use, initial.module.resolvables), None)
+      assertEquals(OperatorCoherence.binary(use, initial.module.resolvables), None)
     }
 
   test("a coherent source signature preserves Num addition as an unresolved grouping candidate"):
@@ -627,7 +627,7 @@ class ProtocolGroupingTests extends BaseEffFunSuite:
         )
         .flatMap(_.id)
         .toSet
-      val checked = OperatorGrouping.checkModule(initial)
+      val checked = OperatorCoherence.checkModule(initial)
       val result  = ExpressionRewriter.rewriteModule(checked)
       val call    = binaryCall(binding(result.module, "value").value)
 

@@ -75,7 +75,9 @@ class PapCreationTest extends BaseEffFunSuite:
       ;
     """).map { ir =>
       assert(
-        !ir.linesIterator.exists(line => line.contains("call") && line.contains("__clone_")),
+        !expandCallsTo(ir, functionBody(ir, "test_main"), "__clone_String").linesIterator.exists(
+          line => line.contains("call") && line.contains("__clone_String")
+        ),
         ir
       )
       assert(ir.contains("store ptr @mml_free_raw"), ir)

@@ -384,16 +384,13 @@ on every path; its local witness is not part of the returned value's representat
 
 ## Generated memory functions
 
-For each struct with heap fields, the compiler generates:
+For each struct with heap fields, the compiler generates a destructor that frees those fields.
+Eligible structs also receive Clone instances: scalar fields are copied and other fields use
+registered Clone members. This includes scalar-only structs. Structs with function fields,
+directly or transitively, do not receive generated Clone instances.
 
-- A destructor that frees each heap field
-- A clone function that deep-copies heap fields, unless the struct contains a function field
-  directly or transitively. Function environments cannot be cloned.
-
-Native types implement their own free/clone in the runtime.
-
-Generated clone functions are compiler-facing helpers. Source-level clone support is described
-under [Clone operations](#clone-operations).
+Native Clone instances explicitly call FFI helpers with allocating result contracts. Native
+layout and helper naming do not imply clone support. See [Clone operations](#clone-operations).
 
 ---
 
@@ -710,8 +707,13 @@ Use-after-move rejection and keeping borrows within their owners' lifetimes rema
 
 ### Clone operations
 
-There is no user-accessible clone syntax or clone protocol. Generated clone functions are
-compiler-facing helpers. The compiler inserts implicit clones at these boundaries:
+`^value` selects the declared Clone instance, borrows its input, and produces an independent
+owned copy. Native instances forward to `clone_String`, `clone_Buffer`, `clone_Rng`,
+`clone_IntArray`, `clone_StringArray`, and `clone_FloatArray`; each helper explicitly names
+its `__clone_*` C symbol. Generated struct instances and internal duplication use the same
+protocol member lookup. Ownership-tracked instances cannot simply return their borrowed input.
+
+The compiler still inserts implicit clones at these boundaries:
 
 - Literal and some global values passed to consuming parameters or owning struct fields.
 - Heap literals captured by move closures, including the literal alternative of a mixed capture.

@@ -109,12 +109,10 @@ class StringReturnTests extends BaseEffFunSuite:
   cases.foreach { example =>
     test(s"return ownership: ${example.name}") {
       semNotFailed(example.source).map { module =>
-        val cloneName = TypeUtils
-          .cloneFnFor(
-            typeReference("String", module.resolvables),
-            module.resolvables
-          )
-          .get
+        val cloneName = cloneNameFor(
+          typeReference("String", module.resolvables),
+          module
+        ).get
         val freeName = TypeUtils
           .freeFnFor(
             typeReference("String", module.resolvables),

@@ -49,7 +49,7 @@ class TypeUtilsTests extends BaseEffFunSuite:
           .flatten
         assert(calls.contains(expectedFree.get), calls)
         val cloneName =
-          TypeUtils.cloneFnFor(typeReference(fieldType, module.resolvables), module.resolvables)
+          cloneNameFor(typeReference(fieldType, module.resolvables), module)
         val clone = module.members.collectFirst {
           case binding: Bnd if cloneName.contains(binding.name) => binding
         }.get
@@ -162,13 +162,12 @@ class TypeUtilsTests extends BaseEffFunSuite:
         assertEquals(canonicalId, stringId)
       }
       assertEquals(
-        TypeUtils.cloneFnFor(typeReference("HeapName", module.resolvables), module.resolvables),
-        Some("__clone_String")
+        cloneNameFor(typeReference("HeapName", module.resolvables), module),
+        cloneNameFor(typeReference("String", module.resolvables), module)
       )
       assertEquals(
-        TypeUtils
-          .cloneFnFor(typeReference("OtherHeapName", module.resolvables), module.resolvables),
-        Some("__clone_String")
+        cloneNameFor(typeReference("OtherHeapName", module.resolvables), module),
+        cloneNameFor(typeReference("String", module.resolvables), module)
       )
     }
   }
@@ -188,8 +187,8 @@ class TypeUtilsTests extends BaseEffFunSuite:
         Some("__free_BaseBuf")
       )
       assertEquals(
-        TypeUtils.cloneFnFor(typeReference("AliasBuf", module.resolvables), module.resolvables),
-        Some("__clone_BaseBuf")
+        cloneNameFor(typeReference("AliasBuf", module.resolvables), module),
+        none[String]
       )
     }
 
@@ -232,13 +231,12 @@ class TypeUtilsTests extends BaseEffFunSuite:
         Some("__free_Person")
       )
       assertEquals(
-        TypeUtils.cloneFnFor(typeReference("PersonAlias", module.resolvables), module.resolvables),
-        Some("__clone_Person")
+        cloneNameFor(typeReference("PersonAlias", module.resolvables), module),
+        cloneNameFor(typeReference("Person", module.resolvables), module)
       )
       assertEquals(
-        TypeUtils
-          .cloneFnFor(typeReference("OtherPersonAlias", module.resolvables), module.resolvables),
-        Some("__clone_Person")
+        cloneNameFor(typeReference("OtherPersonAlias", module.resolvables), module),
+        cloneNameFor(typeReference("Person", module.resolvables), module)
       )
     }
 
@@ -258,22 +256,22 @@ class TypeUtilsTests extends BaseEffFunSuite:
     semNotFailed(source).map { module =>
       val index = module.resolvables
       assertEquals(
-        TypeUtils.cloneFnFor(typeReference("FirstAlias", index), index),
-        "__clone_First".some
+        cloneNameFor(typeReference("FirstAlias", index), module),
+        none[String]
       )
       assertEquals(
-        TypeUtils.cloneFnFor(typeReference("SecondAlias", index), index),
-        "__clone_Second".some
+        cloneNameFor(typeReference("SecondAlias", index), module),
+        none[String]
       )
-      assertEquals(TypeUtils.cloneFnFor(typeReference("Count", index), index), none[String])
+      assertEquals(cloneNameFor(typeReference("Count", index), module), none[String])
       List("CallbackAlias", "WrapperAlias").foreach { name =>
         assert(TypeUtils.isStructWithHeapFields(typeReference(name, index), index))
-        assertEquals(TypeUtils.cloneFnFor(typeReference(name, index), index), none[String])
+        assertEquals(cloneNameFor(typeReference(name, index), module), none[String])
       }
     }
   }
 
-  test("structs without heap fields and their aliases have no clone function") {
+  test("scalar struct aliases share their generated Clone instance") {
     val source = """
       struct P { x: Int };
       type PA = P;
@@ -283,8 +281,8 @@ class TypeUtilsTests extends BaseEffFunSuite:
     semNotFailed(source).map { module =>
       List("P", "PA", "PAA").foreach { name =>
         assertEquals(
-          TypeUtils.cloneFnFor(typeReference(name, module.resolvables), module.resolvables),
-          none[String],
+          cloneNameFor(typeReference(name, module.resolvables), module),
+          cloneNameFor(typeReference("P", module.resolvables), module),
           name
         )
         assert(
@@ -324,7 +322,6 @@ class TypeUtilsTests extends BaseEffFunSuite:
     assert(!TypeUtils.isHeapType(tpe, index))
     assert(!TypeUtils.requiresDestruction(tpe, index))
     assertEquals(TypeUtils.freeFnFor(tpe, index), none[String])
-    assertEquals(TypeUtils.cloneFnFor(tpe, index), none[String])
     assertEquals(TypeUtils.resolveNativeType(tpe, index), scalar.typeSpec)
     assert(!TypeUtils.isPointerLike(tpe, index))
     assert(TypeUtils.isHeapType(refTo(heap), index))
@@ -339,7 +336,6 @@ class TypeUtilsTests extends BaseEffFunSuite:
       assert(!TypeUtils.requiresDestruction(tpe, index))
       assertEquals(TypeUtils.resolveNativeType(tpe, index), none[NativeType])
       assertEquals(TypeUtils.freeFnFor(tpe, index), none[String])
-      assertEquals(TypeUtils.cloneFnFor(tpe, index), none[String])
     }
   }
 
@@ -370,7 +366,6 @@ class TypeUtilsTests extends BaseEffFunSuite:
       assert(TypeUtils.requiresDestruction(ref, index))
       assert(TypeUtils.isStructWithHeapFields(ref, index))
       assert(TypeUtils.containsFunction(ref, index))
-      assertEquals(TypeUtils.cloneFnFor(ref, index), none[String])
     }
     val scalarSecond = second.copy(fields = second.fields.take(1))
     val scalarIndex  = index.updatedType(scalarSecond)
@@ -396,7 +391,6 @@ class TypeUtilsTests extends BaseEffFunSuite:
     assertEquals(TypeUtils.resolveNativeType(refTo(a), index), none[NativeType])
     assert(!TypeUtils.requiresDestruction(refTo(a), index))
     assertEquals(TypeUtils.freeFnFor(refTo(a), index), none[String])
-    assertEquals(TypeUtils.cloneFnFor(refTo(a), index), none[String])
   }
 
   private def memoryBinding(owner: String, name: String): Bnd =
@@ -425,13 +419,10 @@ class TypeUtilsTests extends BaseEffFunSuite:
       .updatedAllTypes(List(first, second, alias))
       .updatedAll(List(firstFree, secondFree, firstClone, secondClone))
     assertEquals(MemoryFunctions.free(refTo(first), index).map(_.id), firstFree.id)
-    assertEquals(MemoryFunctions.clone(refTo(first), index).map(_.id), firstClone.id)
     assertEquals(MemoryFunctions.free(refTo(alias), index).map(_.id), secondFree.id)
-    assertEquals(MemoryFunctions.clone(refTo(alias), index).map(_.id), secondClone.id)
     assertEquals(DestructionTargets.forType(refTo(alias), index), secondFree.id)
     val missing = index.copy(resolvables = index.resolvables -- secondFree.id -- secondClone.id)
     assertEquals(MemoryFunctions.free(refTo(alias), missing), none[MemoryFunctions.Target])
-    assertEquals(MemoryFunctions.clone(refTo(alias), missing), none[MemoryFunctions.Target])
   }
 
   test("pending struct helpers are available only to generation in their owning module") {
@@ -446,15 +437,12 @@ class TypeUtilsTests extends BaseEffFunSuite:
     )
     val index = ResolvablesIndex().updatedAllTypes(List(heap, struct))
     assertEquals(MemoryFunctions.free(struct, index), none[MemoryFunctions.Target])
-    assertEquals(MemoryFunctions.clone(struct, index), none[MemoryFunctions.Target])
     assertEquals(MemoryFunctions.free(struct, index, "Other".some), none[MemoryFunctions.Target])
     val free  = memoryBinding("User", "__free_Box")
     val clone = memoryBinding("User", "__clone_Box")
     assertEquals(MemoryFunctions.free(struct, index, "User".some).map(_.id), free.id)
-    assertEquals(MemoryFunctions.clone(struct, index, "User".some).map(_.id), clone.id)
     val registered = index.updatedAll(List(free, clone))
     assertEquals(MemoryFunctions.free(struct, registered).map(_.id), free.id)
-    assertEquals(MemoryFunctions.clone(struct, registered).map(_.id), clone.id)
   }
 
   test("struct generation reports missing native destructors") {
@@ -489,7 +477,6 @@ class TypeUtilsTests extends BaseEffFunSuite:
     val local    = memoryBinding("User", name)
     val index    = ResolvablesIndex().updatedType(heap).updated(imported)
     assertEquals(MemoryFunctions.free(refTo(heap), index).map(_.id), imported.id)
-    assertEquals(MemoryFunctions.clone(refTo(heap), index), none[MemoryFunctions.Target])
     assertEquals(MemoryFunctions.free(refTo(heap), index.updated(local)).map(_.id), local.id)
   }
 
@@ -507,6 +494,5 @@ class TypeUtilsTests extends BaseEffFunSuite:
       assert(!TypeUtils.requiresDestruction(tpe, index))
       assertEquals(TypeUtils.resolveNativeType(tpe, index), none[NativeType])
       assertEquals(MemoryFunctions.free(tpe, index), none[MemoryFunctions.Target])
-      assertEquals(MemoryFunctions.clone(tpe, index), none[MemoryFunctions.Target])
     }
   }

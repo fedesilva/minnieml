@@ -53,7 +53,7 @@ class OwnershipExpressionTests extends BaseEffFunSuite:
 
   private def cloneReferences(module: Module, value: Expr): List[Ref] =
     val cloneName =
-      TypeUtils.cloneFnFor(typeReference("String", module.resolvables), module.resolvables).get
+      cloneNameFor(typeReference("String", module.resolvables), module).get
     val cloneId = binding(module, cloneName).id
     TermTraversal.collect(value) { case r: Ref if r.resolvedId == cloneId => r }
 

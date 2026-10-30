@@ -38,10 +38,10 @@ class ClosureCodegenTest extends BaseEffFunSuite with ClosureAssertions:
   )(using Location): Unit =
 
     val main     = functionBody(llvmIr, "test_main")
-    val expanded = expandNativeAdapters(llvmIr, main)
+    val expanded = expandCallsTo(llvmIr, main, "__clone_String")
 
     assertCalls(expanded, "__clone_String", cloneCount)
-    assertCalls(expanded, "__free_String", 0)
+    assertCalls(expandNativeAdapters(llvmIr, expanded), "__free_String", 0)
 
     val owned   = assertOwnedEnvironment(llvmIr, main, "%struct.String", "__free_String")
     val capture = owned.capture
@@ -49,7 +49,11 @@ class ClosureCodegenTest extends BaseEffFunSuite with ClosureAssertions:
       main,
       s"${Regex.quote(capture.storedValue)} = call %struct.String @([^ (]+)"
     ).group(1)
-    assertCalls(functionBody(llvmIr, producer), producerSymbol, 1)
+    assertCalls(
+      expandCallsTo(llvmIr, functionBody(llvmIr, producer), producerSymbol),
+      producerSymbol,
+      1
+    )
 
     val entry = closureEntry(main)
     assertCaptureLifetime(main, capture, entry, owned.destructor)
@@ -183,6 +187,38 @@ class ClosureCodegenTest extends BaseEffFunSuite with ClosureAssertions:
     compileAndGenerate(source).map { llvmIr =>
       assertOwnedStringCapture(llvmIr, cloneCount = 0, producerSymbol = "int_to_str")
     }
+  }
+
+  List(
+    ("literal", "let msg = \"hello\";", 1, "__clone_String"),
+    ("owned", "let msg = int_to_str 42;", 0, "int_to_str")
+  ).foreach { (label, binding, cloneCount, producerSymbol) =>
+    test(s"capture assertions reject premature native-adapter frees of $label Strings"):
+      compileAndGenerate(s"""
+        fn main(): Unit =
+          $binding
+          let greet = ~{ println msg; };
+          greet ();
+        ;
+      """).map { ir =>
+        assertOwnedStringCapture(ir, cloneCount, producerSymbol)
+        val main  = functionBody(ir, "test_main")
+        val owned = assertOwnedEnvironment(ir, main, "%struct.String", "__free_String")
+        val release = uniqueMatch(
+          functionBody(ir, owned.destructor),
+          s"call void @([^ (]+)\\(%struct.String ${Regex.quote(owned.capture.loadedValue)}\\)"
+        ).group(1)
+        assert(release != "__free_String", "Fixture must release the capture through an adapter")
+        val store = uniqueMatch(
+          main,
+          s"(?m)^  store %struct.String ${Regex.quote(owned.capture.storedValue)}, ptr [^\\n]*$$"
+        )
+        val prematureFree = s"\n  call void @$release(%struct.String ${owned.capture.storedValue})"
+        val invalidMain   = main.take(store.end) + prematureFree + main.drop(store.end)
+        intercept[munit.ComparisonFailException] {
+          assertOwnedStringCapture(ir.replace(main, invalidMain), cloneCount, producerSymbol)
+        }
+      }
   }
 
   test("move lambda capturing an owned struct frees it through its destructor") {

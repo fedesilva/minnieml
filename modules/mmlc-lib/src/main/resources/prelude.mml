@@ -2,6 +2,7 @@
 // Sources: ../scala/mml/mmlclib/semantic/package.scala (types and common functions)
 //          ../scala/mml/mmlclib/semantic/StandardOperators.scala (Num and free operators)
 //          ../scala/mml/mmlclib/semantic/StandardConversions.scala (ToString)
+//          ../scala/mml/mmlclib/semantic/StandardClones.scala (Clone and native cloning helpers)
 // Names, native symbols, ownership markers, and templates match those injectors.
 // The native void and named-struct pointer spellings below describe injected AST types;
 // the source parser does not currently accept those two representation forms.
@@ -241,13 +242,41 @@ fn __free_IntArray(~a: IntArray): Unit = @metal:ffi;;
 fn __free_StringArray(~a: StringArray): Unit = @metal:ffi;;
 fn __free_FloatArray(~a: FloatArray): Unit = @metal:ffi;;
 
-// Compiler-facing cloning helpers return newly allocated values.
-fn __clone_String(s: String): String = @metal:ffi[mem=alloc];;
-fn __clone_Buffer(b: Buffer): Buffer = @metal:ffi[mem=alloc];;
-fn __clone_Rng(rng: Rng): Rng = @metal:ffi[mem=alloc];;
-fn __clone_IntArray(a: IntArray): IntArray = @metal:ffi[mem=alloc];;
-fn __clone_StringArray(a: StringArray): StringArray = @metal:ffi[mem=alloc];;
-fn __clone_FloatArray(a: FloatArray): FloatArray = @metal:ffi[mem=alloc];;
+// Native cloning helpers borrow their input and return newly allocated values.
+fn clone_String(s: String): String = @metal:ffi[name="__clone_String", mem=alloc];;
+fn clone_Buffer(b: Buffer): Buffer = @metal:ffi[name="__clone_Buffer", mem=alloc];;
+fn clone_Rng(rng: Rng): Rng = @metal:ffi[name="__clone_Rng", mem=alloc];;
+fn clone_IntArray(a: IntArray): IntArray = @metal:ffi[name="__clone_IntArray", mem=alloc];;
+fn clone_StringArray(a: StringArray): StringArray = @metal:ffi[name="__clone_StringArray", mem=alloc];;
+fn clone_FloatArray(a: FloatArray): FloatArray = @metal:ffi[name="__clone_FloatArray", mem=alloc];;
+
+protocol Clone 'T =
+  op ^(value: 'T): 'T 95 right;
+;
+
+instance Clone String =
+  op ^(value) = clone_String value;;
+;
+
+instance Clone Buffer =
+  op ^(value) = clone_Buffer value;;
+;
+
+instance Clone Rng =
+  op ^(value) = clone_Rng value;;
+;
+
+instance Clone IntArray =
+  op ^(value) = clone_IntArray value;;
+;
+
+instance Clone StringArray =
+  op ^(value) = clone_StringArray value;;
+;
+
+instance Clone FloatArray =
+  op ^(value) = clone_FloatArray value;;
+;
 
 // Buffer-writing operators
 op write(a: Buffer, b: String): Unit 20 left = buffer_write a b;;

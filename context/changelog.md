@@ -2,6 +2,12 @@
 
 Durable product changes belong here. Current task state belongs in task files.
 
+## 2026-10-30
+
+- Add explicit borrowing Clone (`^`) for native values and eligible concrete structs.
+  Generate nested copies through registered instances, require owned Clone results, and use
+  ordinary callable lowering for capture promotion. Document Clone syntax and ownership.
+
 ## 2026-10-28
 
 - Add ToString instances for scalar values, String, CString, and Unit, with owned string results.

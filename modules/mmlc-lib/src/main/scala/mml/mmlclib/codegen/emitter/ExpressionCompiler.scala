@@ -2,7 +2,6 @@ package mml.mmlclib.codegen.emitter
 
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
-import mml.mmlclib.codegen.emitter.abis.NativeAbiPlan
 import mml.mmlclib.codegen.emitter.alias.AliasScopeEmitter
 import mml.mmlclib.codegen.emitter.expression.*
 import mml.mmlclib.codegen.emitter.tbaa.TbaaEmitter
@@ -546,16 +545,6 @@ private def emitCallSiteEnv(
     }
     (captureState, captureOperands) = captureValues
     envLayout <- state.layout.of(s"%struct.${envStruct.name}", state)
-    clonePlans <- captureTypes
-      .traverse { case (capture, typ) =>
-        capture match
-          case Capture.CapturedLiteral(_, id) =>
-            NativeAbiPlan.classify(typ, List(typ), state).map(plan => (id -> plan).some)
-          case Capture.CapturedConditional(_, _, id) =>
-            NativeAbiPlan.classify(typ, List(typ), state).map(plan => (id -> plan).some)
-          case _ => none[(String, NativeAbiPlan)].asRight[CodeGenError]
-      }
-      .map(_.flatten.toMap)
     destructor <- Option.when(lambda.isMove)(envStruct).traverse { layout =>
       layout.id
         .flatMap(DestructionTargets.forEnvironment(_, state.resolvables))
@@ -570,7 +559,6 @@ private def emitCallSiteEnv(
       destructor,
       captureTypes,
       captureOperands,
-      clonePlans,
       envLayout.size,
       captureState
     )
@@ -589,7 +577,6 @@ private def emitEnvironmentStorage(
   destructor:      Option[Bnd],
   captureTypes:    List[(Capture, String)],
   captureOperands: Map[String, String],
-  clonePlans:      Map[String, NativeAbiPlan],
   envSize:         Int,
   captureState:    CodeGenState
 ): Either[CodeGenError, EnvSetupResult] =
@@ -654,7 +641,6 @@ private def emitEnvironmentStorage(
           cap,
           llvmType,
           captureOperands(cap.ref.name),
-          clonePlans,
           previous.state,
           functionScope
         ).map: value =>
@@ -695,12 +681,11 @@ private def emitEnvironmentStorage(
 
 /** Promotion happens once at creation; deferred entries receive an already-owning payload. */
 private def prepareCapturedValue(
-  capture:    Capture,
-  llvmType:   String,
-  operand:    String,
-  clonePlans: Map[String, NativeAbiPlan],
-  state:      CodeGenState,
-  scope:      Map[String, ScopeEntry]
+  capture:  Capture,
+  llvmType: String,
+  operand:  String,
+  state:    CodeGenState,
+  scope:    Map[String, ScopeEntry]
 ): Either[CodeGenError, CapturedValue] =
 
   def cloneValue(id: String, current: CodeGenState): Either[CodeGenError, CapturedValue] =
@@ -709,12 +694,19 @@ private def prepareCapturedValue(
         .lookup(id)
         .collect { case value: Bnd => value }
         .toRight(CodeGenError("Missing capture clone target", capture.ref.some))
-      plan <- clonePlans
-        .get(id)
-        .toRight(CodeGenError("Missing capture clone ABI plan", capture.ref.some))
-      symbol             = resolveMemFnLlvmName(binding.name, current)
-      (register, cloned) = plan.emitCall(symbol, List(operand), plan.declare(symbol, current))
-    yield CapturedValue(cloned, s"%$register")
+      // The capture is already evaluated. Clear its projection and bind both lookup keys to
+      // that operand; literal materialization reuses it when ordinary call lowering reads input.
+      input     = capture.ref.copy(qualifier = None)
+      value     = ScopeEntry(0, llvmType, isLiteral = true, literalValue = operand.some)
+      arguments = scope.updated(input.name, value) ++ input.resolvedId.map(_ -> value)
+      call = App(
+        input.source,
+        Ref(input.source, binding.name, resolvedId = binding.id, typeSpec = binding.typeSpec),
+        Expr(input.source, List(input), typeSpec   = input.typeSpec),
+        typeSpec = input.typeSpec
+      )
+      result <- compileApp(call, current, arguments)
+    yield CapturedValue(result.state, result.operandStr, result.exitBlock)
 
   capture match
 

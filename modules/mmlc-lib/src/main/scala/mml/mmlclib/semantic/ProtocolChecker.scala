@@ -101,7 +101,7 @@ object ProtocolChecker:
     protocols: List[Protocol],
     current:   ProtocolCheckState
   ): ProtocolCheckState =
-    protocols.find(_.name == instance.protocol.nameNode.value) match
+    ProtocolRegistry.resolveDeclaration(instance.protocol, protocols) match
 
       case None => current.retain(instance, List(ProtocolError.UnknownProtocol(instance.protocol)))
 

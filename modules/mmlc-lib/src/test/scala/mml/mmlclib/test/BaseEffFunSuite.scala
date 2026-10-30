@@ -33,15 +33,42 @@ import scala.sys.process.{Process, ProcessLogger}
 /** Base trait for effectful tests; adds common MML specific assertions. */
 trait BaseEffFunSuite extends CatsEffectSuite with LlvmAssertions:
 
+  /** Inspect the declared instance association, independently of compiler clone selection. */
+  protected def cloneBindingFor(
+    tpe:    mml.mmlclib.ast.Type,
+    module: Module
+  ): Option[Bnd] =
+    val index = module.resolvables
+    val key   = ProtocolRegistry.typeKey(tpe, index).toOption
+    module.members
+      .collect {
+        case instance: mml.mmlclib.ast.ProtocolInstance
+            if instance.protocol.resolvedId.contains(
+              BindingIds.declaration("stdlib", "Clone", "protocol")
+            ) && key.nonEmpty && ProtocolRegistry
+              .typeKey(instance.concreteType, index)
+              .toOption == key =>
+          instance
+      }
+      .toList
+      .flatMap(_.memberIds)
+      .flatMap(index.lookup)
+      .collectFirst { case binding: Bnd => binding }
+
+  protected def cloneNameFor(tpe: mml.mmlclib.ast.Type, module: Module): Option[String] =
+    cloneBindingFor(tpe, module).map(_.name)
+
   /** Assign identities and prepare references for grouping; duplicate checks precede this list. */
   protected val phasesBeforeExpressionRewriting: List[CompilerState => CompilerState] = List(
     IdAssigner.rewriteModule,
     TypeResolver.rewriteModule,
     ConstructorGenerator.rewriteModule,
     MemoryFunctionGenerator.rewriteModule,
+    StructCloneGenerator.register,
     ProtocolChecker.rewriteModule,
     RefResolver.rewriteModule,
-    OperatorGrouping.checkModule
+    StructCloneGenerator.generateBodies,
+    OperatorCoherence.checkModule
   )
 
   /** Retain each phase boundary through grouping, expression rewriting, and capture analysis. */

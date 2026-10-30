@@ -328,12 +328,18 @@ final case class ProtocolRegistry private (
 
 object ProtocolRegistry:
 
+  /** Resolve a source protocol name before registration assigns its reference an identity. Instance
+    * checking and generated-instance eligibility share this declaration lookup.
+    */
+  def resolveDeclaration(ref: ProtocolRef, protocols: List[Protocol]): Option[Protocol] =
+    protocols.find(_.name == ref.nameNode.value)
+
   private val unitTypeId = stdlibTypeId("Unit")
 
   val empty: ProtocolRegistry =
     ProtocolRegistry(Map.empty, Map.empty, Map.empty, Map.empty, Map.empty, Map.empty, Map.empty)
 
-  /** Lowered bodies remain module bindings, but their source declarations are instance members. */
+  /** Returns the binding IDs of protocol instance implementations in this module. */
   def loweredMemberIds(module: Module): Set[String] =
     module.members.collect { case instance: ProtocolInstance => instance.memberIds }.flatten.toSet
 
@@ -351,9 +357,9 @@ object ProtocolRegistry:
     * identity. Grouping such as (Int) does not change the key, and the built-in Unit declaration
     * shares its key with TypeUnit. A user-defined nominal type named Unit remains distinct.
     *
-    * Alias expansion tracks visited aliases so a cycle fails instead of looping. Unresolved
-    * references, type variables, polymorphic schemes, and unsupported type forms fail explicitly:
-    * none provides the concrete identity required to register an instance in this slice.
+    * Alias expansion tracks visited aliases so a cycle fails instead of looping. Instance keys
+    * require resolved concrete types. Unresolved references, type variables, quantified type
+    * schemes, and unsupported type forms return InvalidConcreteType.
     */
   def typeKey(tpe: Type, index: ResolvablesIndex): Either[ProtocolLookupError, ProtocolTypeKey] =
 

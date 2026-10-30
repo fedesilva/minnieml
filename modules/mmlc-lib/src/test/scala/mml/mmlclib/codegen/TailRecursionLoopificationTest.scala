@@ -86,7 +86,7 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite with ClosureAsserti
     assertCalls(papBody, forwarded.group(1), 1)
     assertCalls(expandNativeAdapters(ir, papBody), "__free_String", 0)
 
-    assertCalls(ir, "__clone_String", 0)
+    assertCalls(expandCallsTo(ir, mainBody, "__clone_String"), "__clone_String", 0)
     assertCalls(mainBody, "malloc", 0)
     assertCalls(mainBody, "mml_free_raw", 0)
     assertCalls(papBody, "mml_free_raw", 0)
@@ -513,7 +513,7 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite with ClosureAsserti
       val payloadStore = mainBody.indexOf(s"store %struct.String ${capture.storedValue}")
       assert(slot.start < payloadStore, mainBody)
 
-      assertCalls(llvmIr, "__clone_String", 0)
+      assertCalls(expandCallsTo(llvmIr, mainBody, "__clone_String"), "__clone_String", 0)
       assertCalls(expandNativeAdapters(llvmIr, mainBody), "__free_String", 0)
       assertCalls(expandNativeAdapters(llvmIr, papBody), "__free_String", 0)
       assertCalls(papBody, "mml_free_raw", 0)

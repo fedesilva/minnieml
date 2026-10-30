@@ -466,8 +466,8 @@ def injectBasicTypes(module: Module): Module =
     resolvables = typeIndex
   )
 
-/** Inject common native functions and the ToString protocol. Includes print, println, readline,
-  * concat, named numeric string conversions, and str_to_int functions.
+/** Inject common native functions and the ToString and Clone protocols with their native instances.
+  * Includes print, println, readline, concat, named numeric string conversions, and str_to_int.
   */
 def injectCommonFunctions(module: Module): Module =
   val syntheticSource = SourceOrigin.Synth
@@ -1047,43 +1047,6 @@ def injectCommonFunctions(module: Module): Module =
         )
       ),
       unitType
-    ),
-    // Memory management clone functions - return heap copies
-    mkFn(
-      "__clone_String",
-      List(FnParam(SourceOrigin.Synth, Name.synth("s"), typeAsc = Some(stringType))),
-      stringType,
-      Some(MemEffect.Alloc)
-    ),
-    mkFn(
-      "__clone_Buffer",
-      List(FnParam(SourceOrigin.Synth, Name.synth("b"), typeAsc = Some(bufferType))),
-      bufferType,
-      Some(MemEffect.Alloc)
-    ),
-    mkFn(
-      "__clone_Rng",
-      List(FnParam(SourceOrigin.Synth, Name.synth("rng"), typeAsc = Some(rngType))),
-      rngType,
-      Some(MemEffect.Alloc)
-    ),
-    mkFn(
-      "__clone_IntArray",
-      List(FnParam(SourceOrigin.Synth, Name.synth("a"), typeAsc = Some(intArrayType))),
-      intArrayType,
-      Some(MemEffect.Alloc)
-    ),
-    mkFn(
-      "__clone_StringArray",
-      List(FnParam(SourceOrigin.Synth, Name.synth("a"), typeAsc = Some(stringArrayType))),
-      stringArrayType,
-      Some(MemEffect.Alloc)
-    ),
-    mkFn(
-      "__clone_FloatArray",
-      List(FnParam(SourceOrigin.Synth, Name.synth("a"), typeAsc = Some(floatArrayType))),
-      floatArrayType,
-      Some(MemEffect.Alloc)
     )
   )
 
@@ -1158,8 +1121,10 @@ def injectCommonFunctions(module: Module): Module =
     idx.updated(bnd)
   }
 
-  injectStandardConversions(
-    module.copy(members = allFunctions ++ module.members, resolvables = fnIndex)
+  injectStandardClones(
+    injectStandardConversions(
+      module.copy(members = allFunctions ++ module.members, resolvables = fnIndex)
+    )
   )
 
 def lookupNames(name: String, module: Module): Seq[Member] =

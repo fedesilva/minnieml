@@ -41,6 +41,34 @@ trait LlvmAssertions extends Assertions:
       }
       .mkString("\n")
 
+  /** Expand direct forwarding paths to one runtime symbol, stopping at recursive edges. */
+  protected def expandCallsTo(ir: String, body: String, target: String): String =
+    val bodies = definitions
+      .findAllMatchIn(ir)
+      .map(m => m.group(1).takeWhile(_ != '(') -> m.group(2))
+      .toMap
+    val call = "\\bcall\\b[^@\\n]*@([^\\s(]+)\\(".r
+
+    def expand(text: String, visiting: Set[String]): String =
+      text.linesIterator
+        .map { line =>
+          call
+            .findFirstMatchIn(line)
+            .flatMap { matched =>
+              val symbol = matched.group(1)
+              bodies.get(symbol).filter(_ => !visiting.contains(symbol)).map { nested =>
+                val expanded = expand(nested, visiting + symbol)
+                if call.findAllMatchIn(expanded).exists(_.group(1) == target) then
+                  s"$line\n$expanded"
+                else line
+              }
+            }
+            .getOrElse(line)
+        }
+        .mkString("\n")
+
+    expand(body, Set.empty)
+
   protected final case class Block(label: String, instructions: List[String]):
     def phis: List[String] = instructions.filter(_.matches("%\\S+\\s*=\\s*phi\\b.*"))
 

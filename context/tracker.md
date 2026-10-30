@@ -23,9 +23,9 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 ### Explicit Clone and global ownership transfers
 
 - **Tracker:** [Explicit Clone and global ownership transfers](tasks/explicit-clone.md)
-- **Status:** planned
-- **Current focus:** After Protocols: explicit Clone and generated instances (P7), then
-  explicit cloning for global ownership transfers (P8).
+- **Status:** in_progress
+- **Current focus:** Global ownership transfers (P8) on `dev/explicit-clone`; P7 is complete
+  and signed off.
 
 ### Centralize, and Unify ast queries
 

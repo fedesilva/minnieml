@@ -626,10 +626,10 @@ Each phase takes a `CompilerState`, returns an updated `CompilerState`, and reco
 2. **IdAssigner**
 3. **TypeResolver**
 4. **ConstructorGenerator**
-5. **MemoryFunctionGenerator**
+5. **MemoryFunctionGenerator**, followed by **StructCloneGenerator.register**.
 6. **ProtocolChecker**
-7. **RefResolver**
-8. **OperatorGrouping**
+7. **RefResolver**, followed by **StructCloneGenerator.generateBodies**.
+8. **OperatorCoherence**
 9. **ExpressionRewriter**
 10. **Simplifier**
 11. **CaptureAnalyzer**
@@ -792,8 +792,6 @@ constructors so ownership transfer is visible in the callable signature.
   through their fields.
 - Generates:
   - `__free_StructName(~s: StructName): Unit`
-  - `__clone_StructName(s: StructName): StructName` only for structs without function fields,
-    directly or transitively.
 - Rewrites generated constructors so owned fields, including functions, become consuming while
   value-type fields stay borrowed.
 - Leaves native heap types to the runtime / stdlib path.
@@ -804,19 +802,34 @@ constructors so ownership transfer is visible in the callable signature.
   rewritten consuming constructor parameters.
 
 **AST rewrites**:
-- Adds generated `__free_*` and `__clone_*` `Bnd` members to the module
+- Adds generated `__free_*` `Bnd` members to the module
 - Rewrites constructor params to mark heap fields as consuming
 - Extends the resolvables index with the synthetic helpers
 
 Type-property queries in `TypeUtils` accept typed AST nodes and resolve nominal declarations
 through `ResolvablesIndex`. Alias, group, and scheme unwrapping shares `canonical`; unresolved
 references do not fall back to short-name lookup. Recursive heap queries track declaration IDs.
-`MemoryFunctions` selects clone and destructor bindings in the resolved declaration's owning
+`MemoryFunctions` selects destructor bindings in the resolved declaration's owning
 module. Explicit native destructors may also name an injected stdlib binding. Struct generation
 can reference its own pending helpers; later phases require registered bindings. Missing native
 field destructors accumulate diagnostics during generation.
 
 ---
+
+### Struct Clone registration and bodies
+
+`StructCloneGenerator.register` adds eligible concrete Clone instance signatures after memory
+function generation. ProtocolChecker registers them with native and source instances, using
+ordinary duplicate detection. After lexical reference resolution, `generateBodies` supplies
+bodies whose calls already carry registered member identities. All signatures exist before
+nested clone bodies select members, so source declaration order does not affect lookup.
+
+Fields copy scalar values or call the registered Clone member. Unsupported native types and
+function-bearing structs do not receive generated instances. Native instances call named
+`clone_*` bindings with explicit FFI symbols and allocating results. `CloneCalls` uses the
+shared protocol registry for generated bodies and internal ownership promotion; it never
+constructs a helper name from a type name. Ownership analysis requires an owned result from
+Clone implementations whose result type needs ownership tracking.
 
 ### Semantic Phase 6: ProtocolChecker
 
@@ -868,7 +881,7 @@ its source origin for both CLI and editor diagnostics.
 
 ---
 
-### Semantic Phase 8: OperatorGrouping
+### Semantic Phase 8: OperatorCoherence (`op-coherence`)
 
 **Purpose**: Check that operator syntax is unambiguous before operand types are known.
 
@@ -940,7 +953,7 @@ let f = get_value;
 
 **AST rewrites**:
 - Transforms flat `Expr(terms)` into nested `App` structures
-- Narrows operator candidates by syntax through `OperatorGrouping`, preserving overloads
+- Narrows operator candidates by syntax through `OperatorCoherence`, preserving overloads
 - Preserves references and complete application chains for type-directed selection;
   function-value forwarding lambdas are constructed by `PartialApplicationElaborator`
 - Leaves nullary references untouched; explicit `()` remains an application
@@ -2016,9 +2029,11 @@ flowchart TD
     IDA --> TR[TypeResolver]
     TR --> CG[ConstructorGenerator]
     CG --> MFG[MemoryFunctionGenerator]
-    MFG --> PC[ProtocolChecker]
+    MFG --> CR[Struct Clone registration]
+    CR --> PC[ProtocolChecker]
     PC --> RR[RefResolver]
-    RR --> OG[OperatorGrouping]
+    RR --> CB[Struct Clone bodies]
+    CB --> OG[OperatorCoherence]
     OG --> ER[ExpressionRewriter]
     ER --> S[Simplifier]
     S --> CA[CaptureAnalyzer]
@@ -2051,7 +2066,7 @@ flowchart TD
 - **ast/**: `AstNode.scala` (AST definitions)
 - **parser/**: `Parser.scala`, `MmlWhitespace.scala`
 - **compiler/**: `IngestStage.scala`, `SemanticStage.scala`, `CodegenStage.scala`, `Compilation.scala`, `FileOperations.scala`
-- **semantic/**: Phase implementations (`ParsingErrorChecker`, `DuplicateNameChecker`, `IdAssigner`, `TypeResolver`, `ConstructorGenerator`, `ProtocolChecker`, `RefResolver`, `OperatorGrouping`, `ExpressionRewriter`, `Simplifier`, `TypeChecker`, `MemoryFunctionGenerator`, `ResolvablesIndexer`, `TailRecursionDetector`, `OwnershipAnalyzer`) plus stdlib injection in `package.scala`
+- **semantic/**: Phase implementations (`ParsingErrorChecker`, `DuplicateNameChecker`, `IdAssigner`, `TypeResolver`, `ConstructorGenerator`, `ProtocolChecker`, `RefResolver`, `OperatorCoherence`, `ExpressionRewriter`, `Simplifier`, `TypeChecker`, `MemoryFunctionGenerator`, `ResolvablesIndexer`, `TailRecursionDetector`, `OwnershipAnalyzer`) plus stdlib injection in `package.scala`
 - **codegen/**: `LlvmIrEmitter.scala`, `LlvmToolchain.scala`, `emitter/*`
 - **api/**: `ParserApi.scala`, `SemanticApi.scala`, `FrontEndApi.scala`, `CompilerApi.scala`, `CodeGenApi.scala`, `NativeEmitterApi.scala`
 - **lsp/**: LSP server, diagnostics, document manager
@@ -2064,7 +2079,7 @@ flowchart TD
 The MML compiler flows through staged pipelines:
 
 1. **IngestStage**: Parse source, collect parser counters, lift parse errors.
-2. **SemanticStage**: Stdlib injection -> DuplicateNameChecker -> IdAssigner -> TypeResolver -> ConstructorGenerator -> MemoryFunctionGenerator -> ProtocolChecker -> RefResolver -> OperatorGrouping -> ExpressionRewriter -> Simplifier -> CaptureAnalyzer -> TypeChecker -> PartialApplicationElaborator -> ClosureMemoryFnGenerator -> StructDestructorBodyGenerator -> OwnershipAnalyzer -> ClosureDestructorBodyGenerator -> TailRecursionDetector -> DestructionValidator.
+2. **SemanticStage**: Stdlib injection -> DuplicateNameChecker -> IdAssigner -> TypeResolver -> ConstructorGenerator -> MemoryFunctionGenerator -> Struct Clone registration -> ProtocolChecker -> RefResolver -> Struct Clone bodies -> OperatorCoherence -> ExpressionRewriter -> Simplifier -> CaptureAnalyzer -> TypeChecker -> PartialApplicationElaborator -> ClosureMemoryFnGenerator -> StructDestructorBodyGenerator -> OwnershipAnalyzer -> ClosureDestructorBodyGenerator -> TailRecursionDetector -> DestructionValidator.
 3. **CodegenStage**: Pre-codegen validation -> resolve target triple -> gather LLVM tool info -> resolve cached Clang CPU/features -> emit LLVM IR -> write IR -> native compilation.
 
 Each phase takes a `CompilerState` and returns an updated one. Timings are recorded via `CompilerState.timePhase`/`timePhaseIO`. Errors accumulate without halting compilation, so partial results remain available for the LSP.
