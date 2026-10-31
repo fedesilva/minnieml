@@ -27,6 +27,13 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 - **Current focus:** Global ownership transfers (P8) on `dev/explicit-clone`; P7 is complete
   and signed off.
 
+### Typed compiler diagnostics
+
+- **Tracker:** [Typed compiler errors and shared diagnostic rendering](tasks/typed-compiler-diagnostics.md)
+- **Status:** design
+- **Current focus:** After protocol work: typed error payloads, shared presentation-side message
+  templates and substitutions, and removal of message-based error discrimination.
+
 ### Centralize, and Unify ast queries
 
 - **Tracker:** [Centralize, and Unify ast queries](tasks/centralize-and-unify-ast-queries.md)
