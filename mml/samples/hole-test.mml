@@ -13,6 +13,11 @@ fn tunel(): Int =
 ;
 
 fn annotated() =
-  // This should not fail?
+  // Ok, we provide a hint
   ???: Int;
 ;
+
+// fn un_resolvable() =
+//   // fails, impossible to infer
+//   ???;
+// ;
