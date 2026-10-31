@@ -20,12 +20,6 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 
 ## Active Tasks
 
-### Allow globals at owning boundaries without cloning
-
-- **Tracker:** [Allow globals at owning boundaries without cloning](tasks/global-owning-boundaries.md)
-- **Status:** design
-- **Current focus:** Preserve global modes through owning boundaries and infer ownership
-  requirements from explicit drops; replace mandatory global cloning with mode-aware acceptance.
 
 ### Typed compiler diagnostics
 
@@ -48,18 +42,20 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 - **Current focus:** After Protocols: calls to signatures, protocols to implementations,
   and instances or their members to references.
 
-### Operator partial application
+### Allow globals at owning boundaries without cloning
 
-- **Tracker:** [Decide what to do with operator partial application](tasks/decide-operator-partial-application.md)
+- **Tracker:** [Allow globals at owning boundaries without cloning](tasks/global-owning-boundaries.md)
 - **Status:** design
-- **Current focus:** Deferred discussion after Protocols: unary/binary selection, annotation
-  burden, rewriter changes, and whether to keep both operator application and placeholders.
+- **Current focus:** Preserve global modes through owning boundaries and infer ownership
+  requirements from explicit drops; replace mandatory global cloning with mode-aware acceptance.
 
-### Bug notes
+### Struct capture ownership
 
-- **Tracker:** [Bug notes](tasks/bug-notes.md)
-- **Status:** in_progress
-- **Current focus:** Collect confirmed bugs and fix status; split into focused tasks later.
+- **Tracker:** [Struct capture ownership](tasks/struct-capture-ownership.md)
+- **Status:** design
+- **Current focus:** Revisit borrowing construction and explicit all-field move construction,
+  following the lambda capture model.
+
 
 ### Protocol derivation
 
@@ -75,6 +71,21 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 - **Current focus:** Revisit implicit cloning and ownership promotion after the initial
   protocol work, preserving explicit Clone and `^`.
 
+### Operator partial application
+
+- **Tracker:** [Decide what to do with operator partial application](tasks/decide-operator-partial-application.md)
+- **Status:** design
+- **Current focus:** Deferred discussion after Protocols: unary/binary selection, annotation
+  burden, rewriter changes, and whether to keep both operator application and placeholders.
+
+### Bug notes
+
+- **Tracker:** [Bug notes](tasks/bug-notes.md)
+- **Status:** in_progress
+- **Current focus:** Collect confirmed bugs and fix status; split into focused tasks later.
+
+
+
 ### Module naming
 
 - **Tracker:** [Prevent module symbol and output-name collisions](tasks/module-name-collisions.md)
@@ -88,10 +99,3 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 - **Status:** design
 - **Current focus:** Settle remaining module and inclusion semantics and prepare a bounded
   plan for Package and nested modules in one source file, followed by source inclusion.
-
-### Struct capture ownership
-
-- **Tracker:** [Struct capture ownership](tasks/struct-capture-ownership.md)
-- **Status:** design
-- **Current focus:** Revisit borrowing construction and explicit all-field move construction,
-  following the lambda capture model.
