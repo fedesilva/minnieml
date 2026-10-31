@@ -20,6 +20,13 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 
 ## Active Tasks
 
+### Allow globals at owning boundaries without cloning
+
+- **Tracker:** [Allow globals at owning boundaries without cloning](tasks/global-owning-boundaries.md)
+- **Status:** design
+- **Current focus:** Preserve global modes through owning boundaries and infer ownership
+  requirements from explicit drops; replace mandatory global cloning with mode-aware acceptance.
+
 ### Typed compiler diagnostics
 
 - **Tracker:** [Typed compiler errors and shared diagnostic rendering](tasks/typed-compiler-diagnostics.md)
