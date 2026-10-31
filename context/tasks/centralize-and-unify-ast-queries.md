@@ -12,12 +12,12 @@
 
 ## Execution Checklist
 
-1. [ ] **design** — Inventory AST queries and settle package boundaries and query contracts.
-   - Query extraction contracts remain open; operator metadata representation is approved.
+1. [x] **complete** — Inventory AST queries and settle the first operator-query boundary and contracts.
 2. [x] **complete** — Make operator grouping attributes mandatory in binding metadata.
-3. [ ] **planned** — Approve a bounded extraction and unification plan, starting with operator queries.
-4. [ ] **planned** — Migrate approved query families and their callers; remove duplicate queries.
-5. [ ] **planned** — Verify behavior preservation, update architecture documentation, and review.
+3. [x] **complete** — Approve the bounded operator-query extraction plan.
+4. [x] **complete** — Extract operator queries and migrate coherence checking and rewriting.
+5. [x] **complete** — Verify operator behavior preservation, update architecture documentation, and review.
+6. [ ] **planned** — [Consume grouping outcomes directly in ExpressionRewriter](#follow-up-consume-grouping-outcomes-directly).
 
 ## Tags
 
@@ -28,9 +28,9 @@
 ## Problem
 
 Reusable AST queries are distributed among phase objects and helper modules, making shared
-operations difficult to discover. The operator-coherence phase combines module-wide checking
-with the prefix, binary, postfix, operator-classification, and conflict queries used by
-`ExpressionRewriter`. One compiler phase therefore depends on another phase's query API.
+operations difficult to discover. Shared queries need explicit contracts and owners independent
+of compiler phases. Operator candidate inspection and grouping establish the first shared domain;
+other query families need their own boundary and migration decisions.
 
 ## Outcome
 
@@ -55,14 +55,14 @@ queries use one implementation, with their inputs, results, and failure contract
 
 ## Plan (Approval Gate)
 
-### Initial query inventory
+### Query inventory
 
 This source inventory identifies query families and boundaries for staged migration. It is not
 an exhaustive audit of private helpers or evidence that similarly named queries are equivalent.
 
 | Family | Current home and consumers | Proposed treatment |
 | --- | --- | --- |
-| Operator classification, candidates, precedence, and associativity | [OperatorCoherence](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/OperatorCoherence.scala); used throughout ExpressionRewriter | Extract first: one compiler phase owns another phase's query API. |
+| Operator classification, candidates, precedence, and associativity | [OperatorQueries](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/queries/OperatorQueries.scala); consumed by OperatorCoherence and ExpressionRewriter | Shared query extraction implemented; preserve the division between facts, diagnostics, and AST construction. |
 | Declaration metadata, source names, and instance-member IDs | [ProtocolRegistry companion](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/ProtocolRegistry.scala); used by registration, coherence, ID assignment, diagnostics, and entry-point selection | Separate AST facts from registry operations in a subsequent slice. |
 | Protocol visibility, candidates, and concrete implementations | ProtocolRegistry instance methods | Keep association lookup with the registry; reuse its typed failures and authoritative state. |
 | Type canonicalization, declarations, native representation, and destruction requirements | [TypeUtils](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/TypeUtils.scala); used across parsing, semantics, and codegen | Already shared. Consider domain separation later without routing AST helpers through semantic phases. |
@@ -71,7 +71,7 @@ an exhaustive audit of private helpers or evidence that similarly named queries 
 | Callable origins, application structure, and parameter ownership | [CallableValues](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/CallableValues.scala) and [CallStages](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/CallStages.scala) | Distinguish structural queries from value-flow analysis before migration; retain the analysis owner. |
 | Cursor lookup, definitions, references, and source spans | [AstLookup](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/lsp/AstLookup.scala); used by LSP features | Keep editor policy in LSP; compare recovery behavior before extracting reusable semantic facts. |
 
-### Proposed package and contracts
+### Approved operator-query package and contracts
 
 Start with `semantic.queries.OperatorQueries` for queries requiring semantic context.
 Keep existing AST-only helpers beneath `ast` until a separate migration establishes their
@@ -85,7 +85,8 @@ identities and grouping attributes; ExpressionRewriter constructs the narrowed r
 Preserve candidate order, arity filtering, diagnostic causes, and partial-AST behavior. A single
 protocol signature must remain unresolved until operand types select an implementation.
 
-The exact query result types need agreement before extraction. Operator metadata carries
+The approved outcomes are `Absent`, `Coherent` with ordered candidates and grouping attributes,
+and `Conflict` with declaration pairs. Operator metadata carries
 mandatory precedence and associativity; missing associativity is not a query outcome. Registry
 associations remain authoritative; the query layer must not copy them or depend on phase objects.
 
@@ -99,7 +100,7 @@ Derived metadata accessors support shared classification and presentation. Opera
 consumes the concrete operator case directly.
 
 Scope: migrate metadata producers and consumers, verify the type restriction and existing
-operator behavior, and review. Query extraction remains a separate approval gate.
+operator behavior, and review. The operator-query extraction is approved as a separate bounded slice.
 
 ### First implementation slice: operator queries
 
@@ -118,14 +119,35 @@ Later query families require their own bounded migration decisions. This first s
 the shared pattern without moving type helpers, registry operations, Clone construction, callable
 analysis, or LSP policy.
 
-Approval: complete operator metadata prerequisite approved. Query extraction pending approval.
+Approval: metadata prerequisite complete; bounded operator-query extraction approved.
+
+### Follow-up: consume grouping outcomes directly
+
+`ExpressionRewriter` uses separate adapters for successful grouping and conflict lookup. Both
+call `OperatorQueries.grouping`, so the same term and arity can be analyzed repeatedly during
+one rewriting decision. Consume the three-way result directly before migrating another query
+family.
+
+- Analyze each relevant arity once per rewriting decision and reuse its `Absent`, `Coherent`,
+  or `Conflict` result for operator selection and diagnostics.
+- Remove separate success/conflict query adapters where direct result handling replaces them.
+  Keep narrowed-reference and expression construction in `ExpressionRewriter`.
+- Preserve prefix, postfix, and binary selection, precedence thresholds, bare operator values,
+  candidate order and identities, unresolved protocol signatures, recovery, and diagnostic causes.
+- Keep the documented same-name precondition on candidate-list queries. Strengthening it with
+  another type is outside this follow-up; no query cache is required.
+
+Verification: retain grouping and diagnostic regression assertions, add focused coverage only
+for uncovered decision paths, and complete the required compiler checks and independent review.
+
+Dependency: operator-query extraction complete and signed off. Implementation approval is pending.
 
 ## Verification
 
 For each approved migration, preserve existing semantic assertions and add regression coverage
 where unification exposes a gap. Check identity-based lookup, coherent and conflicting operators,
 unresolved candidates, and partial/error ASTs. Run applicable compiler verification and independent
-review under the repository rules. Query-extraction verification is pending.
+review under the repository rules. Operator-extraction results are recorded below.
 
 [ProtocolGroupingTests](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/ProtocolGroupingTests.scala)
 already covers declaration order, mixed free/protocol operators, unary/binary selection,
@@ -153,6 +175,28 @@ Host: Darwin arm64, Homebrew Clang 23.1.1; sbt 2.0.10 on GraalVM Java 25.0.4.1.
   checks completed with no actionable findings. Three documentation candidates were independently
   rejected as unchanged pre-existing issues. Review was read-only; execution evidence is above.
 
+### Operator-query extraction verification — 2026-10-31
+
+Host: Darwin arm64, Homebrew Clang 23.1.1; sbt 2.0.10 on GraalVM Java 25.0.4.1.
+
+- `sbtn "scalafmtAll; scalafixAll; testFull"`: passed; 2,499 library tests and 9 CLI tests.
+- `./tests/smoke/run.sh all`: 8/8 passed; `sbtn mmlcPublishLocal` then passed.
+- `make -C benchmark clean` and `make -C benchmark mml`: passed (executable builds only).
+- `./tests/mem/run.sh all`: 52/52 passed with ASan and LSan (89 seconds).
+- No compiler source warnings; sbt reports multiple discovered main classes.
+- Two added `ProtocolGroupingTests` cover recovery filtering, stable candidate order,
+  deduplication, absent arities, and agreement between query conflicts and module diagnostics.
+  Existing conflict assertions use the explicit query outcome; expression assertions remain.
+- `git diff --check`: passed. No ABI change; additional Linux ABI-container checks are not
+  applicable.
+- Independent primary review and all four dedicated checks completed. Four independently verified
+  documentation findings were corrected: architecture dependency, same-name query preconditions,
+  grouping outcomes/recovery, and recognition contract. Fresh narrow checks confirmed the corrections
+  with no remaining findings. No behavioral defect was found.
+- Final `sbtn scalafmtAll` and `git diff --check` passed after comment-only corrections;
+  extraction executable code is unchanged from the tested version. Separate edits to
+  `ast/common.scala` and `mml/samples/hole-test.mml` are outside this extraction's verification scope.
+
 ## Risks / Notes
 
 Follow-up after [Implement protocols](protocols.md). Protocol registration owns its associations;
@@ -167,17 +211,21 @@ cyclic partial AST reaches that path before proposing a repair.
 
 ## Signoff
 
-- Workstream signoff: metadata prerequisite approved and complete.
+- Workstream signoff: metadata prerequisite and operator-query extraction approved and complete.
 - Tracked item completion: pending.
-- Commit authorization: granted for the completed metadata prerequisite; extraction not authorized.
+- Commit authorization: granted for operator-query extraction; no implementation or commit
+  authorization for the direct grouping-outcome follow-up.
 
 ## Task Working Memory
 
-The metadata prerequisite is complete on `main`; required execution checks and independent
-review pass. Its implementation, verification, and Author signoff are included in the
-`Make operator grouping metadata complete` commit.
-`BindingKind.Operator` requires concrete grouping attributes and supplies constructor defaults.
-Operator coherence reads those attributes directly. Existing parser defaults and protocol
-inheritance are preserved. The inventory and proposed query extraction remain in the Plan section.
+The metadata prerequisite is complete in `2f807e96`. Operator-query extraction is complete on
+`main`, with execution checks, independent review, and Author signoff. Its source, tests,
+architecture documentation, and completion records are included in the
+`Extract shared operator queries` commit.
 
-Next action: settle the remaining query contracts and approve the bounded operator extraction.
+`OperatorQueries` owns candidate inspection and shared conflict accumulation. `OperatorCoherence`
+owns visible-declaration enumeration and module diagnostics; `ExpressionRewriter` owns narrowed
+references and use-site diagnostics. The rewriter retains separate success/conflict adapters.
+
+Next action: approve step 6, direct grouping-outcome integration, before selecting another query
+family. Later query families remain subject to separate bounded plans.

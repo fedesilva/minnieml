@@ -24,8 +24,8 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 
 - **Tracker:** [Centralize, and Unify ast queries](tasks/centralize-and-unify-ast-queries.md)
 - **Status:** in_progress
-- **Current focus:** Settle the shared operator-query contracts and approve the bounded extraction.
-  The operator metadata prerequisite is complete.
+- **Current focus:** Approve step 6: consume grouping outcomes directly in ExpressionRewriter.
+  Operator-query extraction is complete.
 
 ### Typed compiler diagnostics
 

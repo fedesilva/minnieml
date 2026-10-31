@@ -1,8 +1,7 @@
 package mml.mmlclib.semantic
 
-import cats.syntax.all.*
-import mml.mmlclib.ast.*
 import mml.mmlclib.compiler.CompilerState
+import mml.mmlclib.semantic.queries.OperatorQueries
 
 /** Enforces operator syntax coherence while retaining every possible implementation. */
 object OperatorCoherence:
@@ -20,109 +19,11 @@ object OperatorCoherence:
         case Left(ProtocolLookupError.RejectedDeclaration(_)) => Nil
         case Left(error) => List(ProtocolError.RegistryFailure(state.module, error))
         case Right(candidates) =>
-          val operators = candidates.flatMap(candidate => operator(candidate.id, index))
-          val checked = operators.foldLeft(CheckedOperators()) { (current, declaration) =>
-            current.firstByArity.get(declaration.meta.arity) match
-              case Some(first) if first.grouping != declaration.grouping =>
-                current.copy(errors =
-                  current.errors :+
-                    ProtocolError.OperatorGroupingConflict(first.node, declaration.node)
-                )
-              case Some(_) => current
-              case None =>
-                current.copy(firstByArity =
-                  current.firstByArity.updated(declaration.meta.arity, declaration)
-                )
+          val operators = OperatorQueries.candidates(candidates.map(_.id), index)
+          OperatorQueries.conflicts(operators).map { conflict =>
+            ProtocolError.OperatorGroupingConflict(conflict.first, conflict.other)
           }
-          checked.errors
     }
     state.addErrors(errors.map(SemanticError.ProtocolErrorFound(_, phaseName)))
 
-  /** Binary syntax retains all binary candidates; it does not choose a concrete instance. */
-  def binary(term: Term, index: ResolvablesIndex): Option[GroupedOperator] =
-    grouped(term, CallableArity.Binary, index)
-
-  /** Right-associative unary declarations are prefix operators, such as -value. */
-  def prefix(term: Term, index: ResolvablesIndex): Option[GroupedOperator] =
-    grouped(term, CallableArity.Unary, index).filter(_.associativity == Associativity.Right)
-
-  /** Left-associative unary declarations are postfix operators, such as value!. */
-  def postfix(term: Term, index: ResolvablesIndex): Option[GroupedOperator] =
-    grouped(term, CallableArity.Unary, index).filter(_.associativity == Associativity.Left)
-
-  /** Operator names end an ordinary juxtaposed argument sequence. */
-  def isOperator(term: Term, index: ResolvablesIndex): Boolean = term match
-    case ref: Ref => ref.candidateIds.exists(id => operator(id, index).nonEmpty)
-    case _ => false
-
-  /** Explain a refused grouping using the same declarations and arity as the successful query. A
-    * binary + conflict does not invalidate a consistent unary + used in prefix position.
-    */
-  def conflict(
-    term:  Term,
-    arity: CallableArity,
-    index: ResolvablesIndex
-  ): Option[ProtocolError.OperatorGroupingConflict] = term match
-    case ref: Ref =>
-      val candidates = operatorCandidates(ref, arity, index)
-      for
-        first <- candidates.headOption
-        other <- candidates.find(candidate => first.grouping != candidate.grouping)
-      yield ProtocolError.OperatorGroupingConflict(first.node, other.node)
-    case _ => none
-
   private val phaseName = "mml.mmlclib.semantic.OperatorCoherence"
-
-  private def grouped(
-    term:  Term,
-    arity: CallableArity,
-    index: ResolvablesIndex
-  ): Option[GroupedOperator] = term match
-    case ref: Ref =>
-      val candidates = operatorCandidates(ref, arity, index)
-      for
-        first <- candidates.headOption
-        if candidates.forall(candidate => first.grouping == candidate.grouping)
-      yield
-        val ids = candidates.flatMap(_.node.id)
-        val resolvedId = candidates match
-          case OperatorDeclaration(binding: Bnd, _, _) :: Nil => binding.id
-          case _ => none
-        GroupedOperator(
-          ref.copy(candidateIds = ids, resolvedId = resolvedId),
-          first.grouping.precedence,
-          first.grouping.associativity
-        )
-    case _ => none
-
-  private def operatorCandidates(
-    ref:   Ref,
-    arity: CallableArity,
-    index: ResolvablesIndex
-  ): List[OperatorDeclaration] =
-    ref.candidateIds.distinct.flatMap(id => operator(id, index)).filter(_.meta.arity == arity)
-
-  private def operator(id: String, index: ResolvablesIndex): Option[OperatorDeclaration] =
-    for
-      node <- index.lookup(id)
-      meta <- ProtocolRegistry.metadata(node)
-      grouping <- meta.kind match
-        case operator: BindingKind.Operator => operator.some
-        case _ => none
-    yield OperatorDeclaration(node, meta, grouping)
-
-  private case class OperatorDeclaration(
-    node:     Resolvable,
-    meta:     BindingMeta,
-    grouping: BindingKind.Operator
-  )
-
-  private case class CheckedOperators(
-    firstByArity: Map[CallableArity, OperatorDeclaration] = Map.empty,
-    errors:       List[ProtocolError]                     = Nil
-  )
-
-/** The expression rewriter consumes shared grouping attributes and an arity-narrowed reference.
-  * Even one protocol signature remains unresolved: its implementation depends on operand types.
-  */
-case class GroupedOperator(ref: Ref, precedence: Int, associativity: Associativity)

@@ -4,6 +4,10 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-10-31
 
+- Share operator candidate and grouping queries between coherence checking and expression rewriting.
+  Return explicit absent, coherent, and conflicting outcomes while preserving candidate order,
+  arity filtering, recovery, unresolved protocol signatures, and diagnostic causes.
+
 - Represent operator grouping with mandatory precedence and associativity in `BindingKind.Operator`.
   Preserve source defaults and protocol inheritance; compare complete grouping values in coherence
   checks. Document the metadata representation.

@@ -892,7 +892,13 @@ Visible operators with the same source name and arity must agree on precedence a
 The check includes free operators and protocol signatures, including unused signatures and those
 without instances. Conflicts produce `ProtocolError.OperatorGroupingConflict` at the declaration.
 
-The expression rewriter uses the same grouping API for prefix, postfix, and binary syntax.
+`semantic.queries.OperatorQueries` inspects operator candidates and returns `Absent`,
+`Coherent`, or `Conflict`. Coherent results retain ordered declarations and complete grouping
+attributes; conflicts retain declaration pairs. Both query analysis and module checking use the
+same conflict accumulation, preserving declaration order. Queries neither construct AST nodes nor
+emit diagnostics. Missing index entries and non-operator metadata are ignored during recovery.
+
+The expression rewriter consumes these facts for prefix, postfix, and binary syntax.
 It narrows candidates by arity while retaining all matching signatures. For example, unary and
 binary `-` group differently, but two protocols' binary `+` signatures must describe the same tree.
 A single ordinary binding can be selected immediately; signatures await type checking.
@@ -956,7 +962,7 @@ let f = get_value;
 
 **AST rewrites**:
 - Transforms flat `Expr(terms)` into nested `App` structures
-- Narrows operator candidates by syntax through `OperatorCoherence`, preserving overloads
+- Uses `OperatorQueries` facts to construct arity-narrowed references, preserving overloads
 - Preserves references and complete application chains for type-directed selection;
   function-value forwarding lambdas are constructed by `PartialApplicationElaborator`
 - Leaves nullary references untouched; explicit `()` remains an application
@@ -2076,6 +2082,7 @@ flowchart TD
 - **parser/**: `Parser.scala`, `MmlWhitespace.scala`
 - **compiler/**: `IngestStage.scala`, `SemanticStage.scala`, `CodegenStage.scala`, `Compilation.scala`, `FileOperations.scala`
 - **semantic/**: Phase implementations (`ParsingErrorChecker`, `DuplicateNameChecker`, `IdAssigner`, `TypeResolver`, `ConstructorGenerator`, `ProtocolChecker`, `RefResolver`, `OperatorCoherence`, `ExpressionRewriter`, `Simplifier`, `TypeChecker`, `MemoryFunctionGenerator`, `ResolvablesIndexer`, `TailRecursionDetector`, `OwnershipAnalyzer`) plus stdlib injection in `package.scala`
+- **semantic/queries/**: Shared semantic facts; `OperatorQueries` supplies operator candidates and grouping outcomes.
 - **codegen/**: `LlvmIrEmitter.scala`, `LlvmToolchain.scala`, `emitter/*`
 - **api/**: `ParserApi.scala`, `SemanticApi.scala`, `FrontEndApi.scala`, `CompilerApi.scala`, `CodeGenApi.scala`, `NativeEmitterApi.scala`
 - **lsp/**: LSP server, diagnostics, document manager

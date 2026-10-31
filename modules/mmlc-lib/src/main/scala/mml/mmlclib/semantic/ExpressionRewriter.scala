@@ -5,6 +5,8 @@ import cats.syntax.all.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.compiler.CompilerState
 import mml.mmlclib.errors.{DiagnosticId, DiagnosticStore}
+import mml.mmlclib.semantic.queries.OperatorQueries
+import mml.mmlclib.semantic.queries.OperatorQueries.Grouping
 
 /** ExpressionRewriter handles expression transformations, including function applications and
   * operator precedence. It treats function application as an implicit high-precedence operator
@@ -95,6 +97,49 @@ object ExpressionRewriter:
   private val phaseName = "mml.mmlclib.semantic.ExpressionRewriter"
 
   private val MinPrecedence: Int = 1
+
+  private case class GroupedOperator(ref: Ref, precedence: Int, associativity: Associativity)
+
+  /** Narrow syntax candidates without selecting a protocol implementation. */
+  private def groupedOperator(
+    term:  Term,
+    arity: CallableArity,
+    index: ResolvablesIndex
+  ): Option[GroupedOperator] = term match
+    case ref: Ref =>
+      OperatorQueries.grouping(ref, arity, index) match
+        case Grouping.Coherent(candidates, attributes) =>
+          val declarations = candidates.toList.map(_.node)
+          val resolvedId = declarations match
+            case (binding: Bnd) :: Nil => binding.id
+            case _ => none
+          GroupedOperator(
+            ref.copy(candidateIds = declarations.flatMap(_.id), resolvedId = resolvedId),
+            attributes.precedence,
+            attributes.associativity
+          ).some
+        case _ => none
+    case _ => none
+
+  private def binaryOperator(term: Term, index: ResolvablesIndex): Option[GroupedOperator] =
+    groupedOperator(term, CallableArity.Binary, index)
+
+  private def prefixOperator(term: Term, index: ResolvablesIndex): Option[GroupedOperator] =
+    groupedOperator(term, CallableArity.Unary, index).filter(_.associativity == Associativity.Right)
+
+  private def postfixOperator(term: Term, index: ResolvablesIndex): Option[GroupedOperator] =
+    groupedOperator(term, CallableArity.Unary, index).filter(_.associativity == Associativity.Left)
+
+  private def operatorConflict(
+    term:  Term,
+    arity: CallableArity,
+    index: ResolvablesIndex
+  ): Option[ProtocolError.OperatorGroupingConflict] =
+    OperatorQueries.grouping(term, arity, index) match
+      case Grouping.Conflict(disagreements) =>
+        val first = disagreements.head
+        ProtocolError.OperatorGroupingConflict(first.first, first.other).some
+      case _ => none
 
   /** Rewrite an expression using precedence climbing for both operators and function application
     */
@@ -190,10 +235,10 @@ object ExpressionRewriter:
         }
 
       case (head :: rest) =>
-        val prefix = OperatorCoherence.prefix(head, resolvables).filter(_ => rest.nonEmpty)
+        val prefix = prefixOperator(head, resolvables).filter(_ => rest.nonEmpty)
         val conflict = Option
           .when(rest.nonEmpty)(
-            OperatorCoherence.conflict(head, CallableArity.Unary, resolvables)
+            operatorConflict(head, CallableArity.Unary, resolvables)
           )
           .flatten
         (prefix, conflict) match
@@ -251,9 +296,9 @@ object ExpressionRewriter:
     terms match
       case head :: rest =>
         // Check for binary operator with sufficient precedence
-        val binary = OperatorCoherence.binary(head, resolvables).filter { grouped =>
+        val binary = binaryOperator(head, resolvables).filter { grouped =>
           grouped.precedence >= minPrec &&
-          (OperatorCoherence.postfix(head, resolvables).isEmpty ||
+          (postfixOperator(head, resolvables).isEmpty ||
             rest.headOption.exists(canStartOperand(_, resolvables)))
         }
         binary match
@@ -281,8 +326,7 @@ object ExpressionRewriter:
             }
           case None =>
             // Check for postfix operator with sufficient precedence
-            OperatorCoherence
-              .postfix(head, resolvables)
+            postfixOperator(head, resolvables)
               .filter(_.precedence >= minPrec) match
               case Some(grouped) =>
                 // Transform postfix operator to function application
@@ -300,7 +344,7 @@ object ExpressionRewriter:
     * prefix syntax can begin an operand, so 1 ! -2 keeps the binary interpretation of !.
     */
   private def canStartOperand(term: Term, index: ResolvablesIndex): Boolean =
-    !OperatorCoherence.isOperator(term, index) || OperatorCoherence.prefix(term, index).nonEmpty
+    !OperatorQueries.isOperator(term, index) || prefixOperator(term, index).nonEmpty
 
   /** Handle remaining cases in rewriteOps when no binary/postfix op matched */
   private def rewriteOpsRemainder(
@@ -320,7 +364,7 @@ object ExpressionRewriter:
             )
           )
           .rejected
-      case term if !OperatorCoherence.isOperator(term, resolvables) && !canBeApplied(lhs) =>
+      case term if !OperatorQueries.isOperator(term, resolvables) && !canBeApplied(lhs) =>
         // Non-operator term after an expression that can't be applied to
         NEL
           .one(
@@ -332,9 +376,8 @@ object ExpressionRewriter:
           )
           .rejected
       case ref: Ref =>
-        val conflict = OperatorCoherence
-          .conflict(ref, CallableArity.Binary, resolvables)
-          .orElse(OperatorCoherence.conflict(ref, CallableArity.Unary, resolvables))
+        val conflict = operatorConflict(ref, CallableArity.Binary, resolvables)
+          .orElse(operatorConflict(ref, CallableArity.Unary, resolvables))
         conflict match
           case Some(error) =>
             NEL.one(SemanticError.ProtocolErrorFound(error, phaseName)).rejected
@@ -372,7 +415,7 @@ object ExpressionRewriter:
     terms match
       case Nil =>
         (Expr(fn.source, List(fn)), terms).accepted
-      case t :: _ if OperatorCoherence.isOperator(t, resolvables) =>
+      case t :: _ if OperatorQueries.isOperator(t, resolvables) =>
         (Expr(fn.source, List(fn)), terms).accepted
       case (g: TermGroup) :: restTerms =>
         // Groups are processed as sub-expressions (may contain nested applications)
@@ -416,7 +459,7 @@ object ExpressionRewriter:
       remainingTerms match
         case Nil =>
           (Expr(source, List(lowered)), remainingTerms).accepted
-        case head :: _ if OperatorCoherence.isOperator(head, resolvables) =>
+        case head :: _ if OperatorQueries.isOperator(head, resolvables) =>
           (Expr(source, List(lowered)), remainingTerms).accepted
         case _ =>
           buildAppChain(
@@ -437,7 +480,7 @@ object ExpressionRewriter:
       terms match
         case Nil =>
           (Nil, terms).accepted
-        case head :: _ if OperatorCoherence.isOperator(head, resolvables) =>
+        case head :: _ if OperatorQueries.isOperator(head, resolvables) =>
           (Nil, terms).accepted
         case _ =>
           rewriteDirectLambdaArg(terms, resolvables).flatMap { case (arg, rest) =>

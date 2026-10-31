@@ -3,6 +3,7 @@ package mml.mmlclib.semantic
 import mml.mmlclib.ast.*
 import mml.mmlclib.compiler.{CompilerConfig, CompilerState}
 import mml.mmlclib.parser.SourceInfo
+import mml.mmlclib.semantic.queries.OperatorQueries
 import mml.mmlclib.test.BaseEffFunSuite
 import mml.mmlclib.test.ast.{termApplication, termLambda, termReference, unwrappedTerm as unwrapped}
 
@@ -532,7 +533,11 @@ class ProtocolGroupingTests extends BaseEffFunSuite:
       val result  = ExpressionRewriter.rewriteModule(checked)
 
       assertEquals(checked.visibleErrors.size, 1)
-      assertEquals(OperatorCoherence.binary(use, initial.module.resolvables), None)
+      assert(
+        OperatorQueries
+          .grouping(use, CallableArity.Binary, initial.module.resolvables)
+          .isInstanceOf[OperatorQueries.Grouping.Conflict]
+      )
       assertEquals(
         TermTraversal.collect(binding(result.module, "value").value) { case app: App =>
           app
@@ -558,7 +563,11 @@ class ProtocolGroupingTests extends BaseEffFunSuite:
       val result  = ExpressionRewriter.rewriteModule(checked)
 
       assertEquals(checked.visibleErrors.size, 1)
-      assertEquals(OperatorCoherence.binary(use, initial.module.resolvables), None)
+      assert(
+        OperatorQueries
+          .grouping(use, CallableArity.Binary, initial.module.resolvables)
+          .isInstanceOf[OperatorQueries.Grouping.Conflict]
+      )
       assertEquals(
         TermTraversal.collect(binding(result.module, "value").value) { case app: App =>
           app
@@ -587,7 +596,11 @@ class ProtocolGroupingTests extends BaseEffFunSuite:
           "Operator '+' has conflicting precedence or associativity for the same arity"
         )
       )
-      assertEquals(OperatorCoherence.binary(use, initial.module.resolvables), None)
+      assert(
+        OperatorQueries
+          .grouping(use, CallableArity.Binary, initial.module.resolvables)
+          .isInstanceOf[OperatorQueries.Grouping.Conflict]
+      )
     }
 
   test("a source signature cannot change the associativity of a free standard operator"):
@@ -610,7 +623,11 @@ class ProtocolGroupingTests extends BaseEffFunSuite:
           "Operator '%' has conflicting precedence or associativity for the same arity"
         )
       )
-      assertEquals(OperatorCoherence.binary(use, initial.module.resolvables), None)
+      assert(
+        OperatorQueries
+          .grouping(use, CallableArity.Binary, initial.module.resolvables)
+          .isInstanceOf[OperatorQueries.Grouping.Conflict]
+      )
     }
 
   test("a coherent source signature preserves Num addition as an unresolved grouping candidate"):
@@ -637,6 +654,62 @@ class ProtocolGroupingTests extends BaseEffFunSuite:
       assertEquals(call.operator.resolvedId, None)
       assertEquals(intValue(call.left), 1L)
       assertEquals(intValue(call.right), 2L)
+    }
+
+  test("query recovery retains candidate order and deduplicates before arity filtering"):
+    val source = """
+      protocol First 'T = op +(x: 'T, y: 'T): 'T 60 left; ;
+      protocol Second 'T = op +(x: 'T, y: 'T): 'T 60 left; ;
+      protocol Unary 'T = op +(x: 'T): 'T 90 right; ;
+      let value = 1;
+    """
+    parseNotFailed(source).map { parsed =>
+      val initial      = phaseInput(source, parsed)
+      val declarations = signatures(initial.module)
+      val binary       = declarations.filter(_.meta.arity == CallableArity.Binary).flatMap(_.id)
+      val unary        = declarations.filter(_.meta.arity == CallableArity.Unary).flatMap(_.id)
+      val reversed     = binary.reverse
+      val use = Ref(
+        SourceOrigin.Synth,
+        "+",
+        candidateIds =
+          List("missing") ++ unary ++ reversed ++ reversed ++ binding(initial.module, "value").id
+      )
+      OperatorQueries.grouping(use, CallableArity.Binary, initial.module.resolvables) match
+        case OperatorQueries.Grouping.Coherent(candidates, attributes) =>
+          assertEquals(candidates.toList.flatMap(_.node.id), reversed)
+          assertEquals(attributes, BindingKind.Operator(60, Associativity.Left))
+        case other => fail(s"Expected coherent candidates, got $other")
+      assertEquals(
+        OperatorQueries.grouping(use, CallableArity.Nullary, initial.module.resolvables),
+        OperatorQueries.Grouping.Absent
+      )
+    }
+
+  test("shared grouping analysis retains every conflict against the first declaration"):
+    val source = """
+      protocol First 'T = op +(x: 'T, y: 'T): 'T 60 left; ;
+      protocol Second 'T = op +(x: 'T, y: 'T): 'T 70 left; ;
+      protocol Third 'T = op +(x: 'T, y: 'T): 'T 80 right; ;
+    """
+    parseNotFailed(source).map { parsed =>
+      val initial = phaseInput(source, parsed)
+      val ids     = signatures(initial.module).flatMap(_.id)
+      val use     = Ref(SourceOrigin.Synth, "+", candidateIds = ids)
+      OperatorQueries.grouping(use, CallableArity.Binary, initial.module.resolvables) match
+        case OperatorQueries.Grouping.Conflict(disagreements) =>
+          val pairs = disagreements.toList.map(pair => (pair.first.id, pair.other.id))
+          assertEquals(pairs, ids.tail.map(id => (ids.headOption, Some(id))))
+          val checked = OperatorCoherence.checkModule(initial)
+          val reported = checked.errors.collect {
+            case SemanticError.ProtocolErrorFound(
+                  ProtocolError.OperatorGroupingConflict(first, other),
+                  _
+                ) =>
+              (first.id, other.id)
+          }
+          assertEquals(reported.toList, pairs)
+        case other => fail(s"Expected conflicting candidates, got $other")
     }
 
   private val namedSignatures = """
