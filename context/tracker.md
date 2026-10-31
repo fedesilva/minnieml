@@ -20,13 +20,6 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 
 ## Active Tasks
 
-### Explicit Clone and global ownership transfers
-
-- **Tracker:** [Explicit Clone and global ownership transfers](tasks/explicit-clone.md)
-- **Status:** in_progress
-- **Current focus:** Global ownership transfers (P8) on `dev/explicit-clone`; P7 is complete
-  and signed off.
-
 ### Typed compiler diagnostics
 
 - **Tracker:** [Typed compiler errors and shared diagnostic rendering](tasks/typed-compiler-diagnostics.md)

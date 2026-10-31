@@ -3,7 +3,7 @@
 ## Metadata
 
 - **Owner:** The Author
-- **Status:** in_progress
+- **Status:** complete
 - **Kind:** feature
 - **Priority:** unassigned
 - **Created:** 2026-10-28
@@ -13,8 +13,8 @@
 ## Execution Checklist
 
 1. [x] **complete** — [P7: Integrate explicit Clone and generated instances](#p7-explicit-clone).
-2. [ ] **planned** — [P8: Require explicit cloning for global ownership transfers](#p8-global-ownership-transfers).
-3. [ ] **planned** — Complete documentation, compiler verification, and final review.
+2. [x] **complete** — [P8: Require explicit cloning for global ownership transfers](#p8-global-ownership-transfers).
+3. [x] **complete** — Complete documentation, compiler verification, and final review.
 
 ## Tags
 
@@ -23,8 +23,8 @@
 
 ## Problem
 
-Ownership transfers from global-backed values currently rely on implicit cloning. Explicit
-cloning needs a compiler-recognized protocol and concrete native and generated instances.
+Implicit cloning at global ownership transfers hides duplication. Explicit cloning requires
+a compiler-recognized protocol and concrete native and generated instances.
 
 ## Outcome
 
@@ -146,7 +146,59 @@ P7 verification (2026-10-29):
   coverage, Buffer content observations, and three inaccurate or incomplete comments. Host
   verification passes on the corrections. Fresh narrow re-review completed all four dedicated
   checks with no actionable findings or unresolved claims.
-- Optional hosted validation is not run. P8 global-transfer behavior is not implemented or verified.
+- Optional hosted validation was not run for P7. These results cover P7 only.
+
+P8 verification (2026-10-30):
+
+- `sbtn 'scalafmtAll; scalafixAll; testFull'`: formatting and lint passed; 2,492 compiler
+  tests and nine CLI tests passed. Two legacy diagnostic expectations were migrated from
+  unavailable-clone errors to global-transfer rejection before the passing full run.
+- `GlobalOwnershipTests` covers nine source forms across five owning boundaries with paired
+  rejection and explicit-copy cases, plus borrowing, scalar copies, top-level initialization,
+  and stored global closure environments. Helper tests cover recursion and shadowing. Static
+  global-field/literal returns cover direct, aliased, and alias-chain forms. Named and immediate
+  borrowed-parameter controls require the parameter's resolved identity in the return diagnostic.
+- `GlobalOwnershipExecutionTests` executes O0/O3 with ASan/LSan, checks output from each owning
+  boundary, compares direct and aliased static returns on both branches, and reuses original
+  global storage after local copies are destroyed.
+- `./tests/smoke/run.sh all`: eight of eight passed.
+- `sbtn mmlcPublishLocal`: installed the verified compiler locally.
+- `make -C benchmark clean` and `make -C benchmark mml`: all configurations compiled.
+  No execution-time performance measurements were taken.
+- `./tests/mem/run.sh all`: 52 of 52 ASan/LSan fixtures passed.
+- `mmlc run` passed for `mml/samples/person-struct-borrow-global.mml`,
+  `mml/samples/person-struct-borrow-global-grouped.mml`, and
+  `mml/samples/globals-stress-test.mml`; outputs were one, one, and three `fede` lines.
+- No ABI lowering or C interoperability implementation changed; Linux container checks were
+  not repeated. Optional hosted validation was not run.
+- Independent review completed all four dedicated checks and confirmed two findings: mixed
+  global-field/literal helper returns were rejected, and the escape-check exemption needed a
+  local explanation. The correction accepts only proven non-owning global/literal alternatives,
+  retains owning-return enforcement, and adds semantic and O0/O3 runtime regressions.
+  The correction passed full tests, smoke, publishing, benchmark compilation, and memory reruns.
+  Fresh narrow review confirmed both fixes and identified a weak negative assertion. That test
+  requires the borrowed parameter's resolved diagnostic identity. Fresh narrow re-review completed
+  all four dedicated checks with no actionable findings or unresolved claims.
+- Before correcting alias origin reads, `sbtn 'testOnly *GlobalOwnershipTests'` passed 109 of
+  111 tests; aliased and alias-chain static returns failed while the direct and borrowed-parameter
+  controls passed. With exact alias origins and explicit immediate-parameter borrow origins,
+  `sbtn 'testOnly *GlobalOwnershipTests *GlobalOwnershipExecutionTests'` passed all 113 tests.
+  Formatting, lint, full tests, smoke, local publishing, benchmark compilation, and all 52 memory
+  fixtures also passed on the alias correction. Fresh narrow independent review completed primary,
+  QA/style, test-quality, readability, and code-documentation checks with no actionable findings
+  or unresolved claims. Alias chains have semantic coverage; direct and single-alias returns have
+  O0/O3 runtime coverage. Immediate-parameter controls use literal arguments and check rejection
+  behavior without isolating origin metadata from dependency-based rejection.
+- The global-transfer diagnostic reads `A global value cannot transfer ownership; use an
+  explicit ^ copy`. Formatting, lint, and the three affected semantic suites passed all 224
+  tests after the wording change; smoke passed eight of eight and local publishing passed.
+  The installed CLI emitted the revised wording.
+- Closure verification corrected leading package indentation in `GlobalOwnershipTests`, then
+  `sbtn 'scalafmtAll; scalafixAll; testFull'` passed formatting, lint, all 2,492 compiler tests,
+  and nine CLI tests. Fresh independent review of the wording change completed primary,
+  QA/style, test-quality, readability, and code-documentation checks with no actionable findings
+  or unresolved claims. This narrow review covers the diagnostic literal and seven assertion
+  literals; the ownership implementation has the broader review coverage recorded above.
 
 ## Risks / Notes
 
@@ -156,29 +208,23 @@ General derivation and [implicit cloning policy](implicit-cloning.md) remain sep
 
 ## Signoff
 
-- Workstream signoff: P7/P8 plan approved; P7 implementation signed off. P8 signoff pending.
-- Tracked item completion: Pending.
-- Commit authorization: Granted for P7 closure.
+- Workstream signoff: P7/P8 implementation and final documentation/verification signed off.
+- Tracked item completion: complete.
+- Commit authorization: granted for task closure; push is not authorized.
 
 ## Task Working Memory
 
-The protocol mechanism and local binding inference dependency in [Implement
-protocols](protocols.md) is complete and signed off. P7 precedes P8.
+P7 and P8 are complete on `dev/explicit-clone`. Explicit Clone uses registered native and generated
+instances. Global provenance survives aliases, projections, conditionals, and proven helpers;
+owning boundaries require explicit copies. Static returns retain their precise alternatives,
+while borrowed parameters remain rejected. Samples and documentation describe these contracts.
+Verification and independent review coverage are recorded above, including target limits.
 
-The working branch is based on `main`. P7 implements native Clone forwarding through named
-`clone_*` FFI bindings, registry-based internal cloning, eligible struct instance registration
-and body generation, and ordinary callable lowering for capture promotion. Name-derived clone
-queries and the legacy injected native bindings are removed. P8 is unchanged.
-
-Root struct derivation checks its fields independently of an explicit instance for the root.
-Declared instances remain available to generated outer structs. Capture assertions inspect
-native adapters as well as clone forwarding paths; Buffer tests observe independent contents.
-
-Host formatting, lint, all 2,383 tests, smoke eight of eight, local publishing, benchmark
-compilation, and all 52 memory fixtures pass. Linux verification and its scope are recorded above.
-The six review corrections pass narrow independent re-review. P7 is complete and signed off.
-
-Next action: P8 global ownership transfers, within the approved implementation plan.
+Message-based diagnostic assertions are follow-up work in
+[Typed compiler diagnostics](typed-compiler-diagnostics.md). The source/sink fixture matrix in
+`modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/GlobalOwnershipTests.scala` retains its
+`NOTE:QA` about assembling source fragments mentally; fixture readability remains deferred QA
+feedback. The note is preserved in the source. These follow-ups do not change P7/P8 semantics.
 
 ### Separate runtime finding: StringArray replacement
 

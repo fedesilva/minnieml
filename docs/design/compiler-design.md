@@ -1328,8 +1328,8 @@ immediate bodies.
    predicates run once in their original scopes. Its temporary destructor runs only when that
    result owns storage.
    Consuming conditional arguments transfer owned sources branch by branch, reject borrowed
-   sources, and clone static branches through the registered clone contract. A temporary and
-   its destructor operand use the same type.
+   and global-backed sources, and clone literal branches through the registered clone contract.
+   A temporary and its destructor operand use the same type.
 
 4. **Mixed ownership conditionals**: A binding owns storage unconditionally only in `Owned`.
    `Mixed` retains both its resolved witness and the origins of its non-owning alternatives.
@@ -1338,8 +1338,12 @@ immediate bodies.
 
    Result analysis uses three requirements: `Preserve` inspects the result without taking
    ownership, `Rebind` transfers its obligation to a local, and `Owned` establishes ownership at
-   a consuming argument or return boundary. The last requirement rejects borrowed alternatives
-   and uses the registered clone helper for permitted static alternatives.
+   a consuming argument or return boundary. The last requirement rejects borrowed and global-backed
+   alternatives and uses the registered clone helper for literal alternatives. Binding evidence
+   retains non-owning origins across aliases even when there is no ownership witness. Field
+   projections retain global provenance and borrow dependencies. Static helper-result proofs
+   use resolved global identities and require evidence for every possible result. Move captures
+   and consuming PAP payloads apply the same global-transfer rejection.
 
    A rebind destination retains the identities of owners that must remain borrowed. Direct
    aliases and unconditional scoped results transfer; conditional initializer branches and
@@ -1395,9 +1399,10 @@ immediate bodies.
    Supplied arguments retain their caller's binding and cycle contexts, so separate nested calls
    to the same helper do not look recursive when the proof follows an argument into its caller.
 
-6. **Constructor auto-clone**: When calling a constructor with consuming parameters, literal and
-   global arguments use the type's clone helper when available. Borrowed references and field
-   projections cannot supply ownership. Owned values move in directly without cloning:
+6. **Constructor ownership**: When calling a constructor with consuming parameters, literal
+   arguments use the type's clone helper when available. Global-backed values require explicit
+   copies. Borrowed references and field projections cannot supply ownership. Owned values move
+   in directly without cloning:
    ```
    let name = make_name();  // owned
    let u = User name 30;    // name moves in, no clone

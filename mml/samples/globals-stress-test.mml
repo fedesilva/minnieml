@@ -1,11 +1,10 @@
 struct Wrapper { value: String };
 struct Container { outer: Wrapper, tag: String };
 
-// Corrected to lowercase start
 let g_name = "fede"; 
 
 // Deeply nested consumption with intentional grouping
-let c = Container (Wrapper (((g_name)))) ((((g_name))));
+let c = Container (Wrapper (^(((g_name))))) (^((((g_name)))));
 
 fn borrow_string(s: String): Unit =
   println s;

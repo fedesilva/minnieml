@@ -155,7 +155,7 @@ class MixedOwnershipTests extends BaseEffFunSuite:
       assert(
         result.errors.exists {
           case error: SemanticError.InvalidExpression =>
-            error.message.contains("capture cannot establish ownership")
+            error.message.contains("global value")
           case _ => false
         },
         result.errors
@@ -488,6 +488,55 @@ class MixedOwnershipTests extends BaseEffFunSuite:
     }
   }
 
+  List(
+    "direct" -> "fixed ()",
+    "aliases" -> "let first = fixed (); let second = first; second",
+    "recursive" -> "recursive 3",
+    "known alternatives" -> "let f = if flag then fixed; else nested;; f ()"
+  ).foreach { (name, result) =>
+    test(s"global helper provenance survives $name") {
+      semState(s"""
+        let global = "abc";
+        fn fixed(): String = global;;
+        fn nested(): String = let alias = global; alias;;
+        fn recursive(n: Int): String =
+          if n == 0 then nested (); else recursive (n - 1);;
+        ;
+        fn choose(flag: Bool): String =
+          if flag then int_to_str 123; else $result;;
+        ;
+      """).map { result =>
+        assert(
+          result.errors.exists {
+            case error: SemanticError.InvalidExpression => error.message.contains("global value")
+            case _ => false
+          },
+          result.errors
+        )
+      }
+    }
+  }
+
+  test("a shadowed global name does not prove an unknown helper result static") {
+    semState("""
+      let global = "abc";
+      fn unknown(): String = @metal:ffi;;
+      fn fixed(): String = let global = unknown (); global;;
+      fn choose(flag: Bool): String =
+        if flag then int_to_str 123; else fixed ();;
+      ;
+    """).map { result =>
+      assert(
+        result.errors.exists {
+          case error: SemanticError.InvalidExpression =>
+            error.message.contains("borrowed ownership")
+          case _ => false
+        },
+        result.errors
+      )
+    }
+  }
+
   test("an unowned native result is not proof of a static return") {
     semState("""
       fn unknown(text: String): String = @metal:ffi;;
@@ -628,7 +677,7 @@ class MixedOwnershipTests extends BaseEffFunSuite:
     """).void
   }
 
-  test("function-bearing global alternatives still require an unavailable clone") {
+  test("function-bearing global alternatives cannot transfer ownership") {
     semState("""
       struct Holder { f: Int -> Int };
       fn inc(n: Int): Int = n + 1;;
@@ -641,7 +690,7 @@ class MixedOwnershipTests extends BaseEffFunSuite:
       assert(
         result.errors.exists {
           case error: SemanticError.InvalidExpression =>
-            error.message == "This type cannot be cloned"
+            error.message.contains("global value")
           case _ => false
         },
         result.errors

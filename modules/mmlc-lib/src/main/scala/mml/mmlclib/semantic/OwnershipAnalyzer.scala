@@ -31,12 +31,15 @@ enum ReturnContract derives CanEqual:
     case Owned(tpe) => tpe.some
     case Unowned => none
 
-/** Ownership evidence retains the resolved binding and its destruction contract. */
+/** Ownership evidence retains binding identity, cleanup, and non-owning alternatives. Origins
+  * remain available when a borrowed alias has no runtime ownership witness.
+  */
 case class BindingInfo(
   state:              OwnershipState,
-  bindingTpe:         Option[Type]   = None,
-  bindingId:          Option[String] = None,
-  destructorTargetId: Option[String] = None // Resolved closure destructor target
+  bindingTpe:         Option[Type]         = None,
+  bindingId:          Option[String]       = None,
+  destructorTargetId: Option[String]       = None, // Resolved closure destructor target
+  nonOwningOrigins:   Set[NonOwningOrigin] = Set.empty
 )
 
 case class OwnedBinding(
@@ -620,7 +623,22 @@ object OwnershipAnalyzer:
           case _: LiteralString => Set(NonOwningOrigin.Literal).some
 
           case ref: Ref if ref.qualifier.isEmpty =>
-            ref.resolvedId.flatMap(locals.get).flatten
+            ref.resolvedId.flatMap { id =>
+              locals
+                .get(id)
+                .getOrElse(
+                  scope.bindings.values
+                    .find(info =>
+                      info.bindingId.contains(id) && info.state == OwnershipState.Global
+                    )
+                    .map(_ => Set(NonOwningOrigin.Global))
+                )
+            }
+
+          case ref: Ref =>
+            ref.qualifier
+              .flatMap(fromTerm(_, locals, active))
+              .filter(_ == Set(NonOwningOrigin.Global))
 
           case cond: Cond =>
             (fromTerm(cond.ifTrue, locals, active), fromTerm(cond.ifFalse, locals, active))
@@ -673,7 +691,15 @@ object OwnershipAnalyzer:
           ResultOwnership(nonOwning = Set(NonOwningOrigin.ResourceFree))
 
         case Some(ref: Ref) if ownershipPath(ref, scope).exists(_.fields.nonEmpty) =>
-          ResultOwnership(nonOwning = Set(NonOwningOrigin.Borrowed), dependencies = dependencies)
+          val origins = ownershipPath(ref, scope)
+            .flatMap(pathOwner(_, scope))
+            .fold(
+              Set(NonOwningOrigin.Borrowed)
+            ) { owner =>
+              if owner.state == OwnershipState.Global then Set(NonOwningOrigin.Global)
+              else Set(NonOwningOrigin.Borrowed) ++ owner.nonOwningOrigins
+            }
+          ResultOwnership(nonOwning = origins, dependencies = dependencies)
 
         case Some(ref: Ref) =>
           scope
@@ -691,14 +717,20 @@ object OwnershipAnalyzer:
                   ResultOwnership(nonOwning = Set(NonOwningOrigin.Global))
 
                 case OwnershipState.Borrowed =>
+                  // Non-owning aliases retain exact alternatives; absent evidence means a borrow.
                   ResultOwnership(
-                    nonOwning    = Set(NonOwningOrigin.Borrowed),
+                    nonOwning =
+                      if info.nonOwningOrigins.nonEmpty then info.nonOwningOrigins
+                      else Set(NonOwningOrigin.Borrowed),
                     dependencies = List(ref)
                   )
 
                 case OwnershipState.Moved => ResultOwnership()
 
-              result.copy(destructorTargetId = info.destructorTargetId)
+              result.copy(
+                nonOwning          = result.nonOwning ++ info.nonOwningOrigins,
+                destructorTargetId = info.destructorTargetId
+              )
 
         case Some(_: LiteralString) =>
           ResultOwnership(nonOwning = Set(NonOwningOrigin.Literal))
@@ -778,6 +810,14 @@ object OwnershipAnalyzer:
           PhaseName
         )
 
+  /** Global storage stays borrowed; an owning boundary requires a source-visible copy. */
+  private def globalTransferError(value: Expr): SemanticError =
+    SemanticError.InvalidExpression(
+      value,
+      "A global value cannot transfer ownership; use an explicit ^ copy",
+      PhaseName
+    )
+
   /** Establish ownership using the boundary's clone policy and the already evaluated value. */
   private def establishOwnership(
     value:    Expr,
@@ -789,12 +829,12 @@ object OwnershipAnalyzer:
 
     if scope.skipConsumingOwnership || !isOwnedType(tpe, scope.resolvables) then
       ExprResult(scope, value, ownership = facts)
+    else if facts.nonOwning.contains(NonOwningOrigin.Global) then
+      ExprResult(scope, value, List(globalTransferError(value)), facts)
     else if facts.nonOwning.contains(NonOwningOrigin.Borrowed) || facts.dependencies.nonEmpty then
       ExprResult(scope, value, List(owningError(value, boundary, facts, scope)), facts)
     else
-      val needsClone = facts.nonOwning.exists(origin =>
-        origin == NonOwningOrigin.Literal || origin == NonOwningOrigin.Global
-      )
+      val needsClone = facts.nonOwning.contains(NonOwningOrigin.Literal)
       val promoted =
         if needsClone then
           wrapWithClone(value, tpe, scope.resolvables, scope.protocols).map: cloned =>
@@ -1617,11 +1657,18 @@ object OwnershipAnalyzer:
       case None if facts.nonOwning == Set(NonOwningOrigin.Global) => OwnershipState.Global
       case _ => OwnershipState.Borrowed
 
+    // Source parameters keep their borrow contract even when supplied static storage.
+    val boundOrigins =
+      if lambda.borrowsArgument then facts.nonOwning + NonOwningOrigin.Borrowed
+      else facts.nonOwning
     val dependencies = facts.dependencies
     val bound = parameter.fold(argument.scope): param =>
       argument.scope.copy(
         bindings = argument.scope.bindings
-          .updated(param.name, BindingInfo(state, valueType, param.id, facts.destructorTargetId)),
+          .updated(
+            param.name,
+            BindingInfo(state, valueType, param.id, facts.destructorTargetId, boundOrigins)
+          ),
         borrowedDependencies =
           argument.scope.borrowedDependencies ++ param.id.map(_ -> dependencies)
       )
@@ -1879,7 +1926,8 @@ object OwnershipAnalyzer:
             state,
             binding.local.param.typeSpec,
             binding.local.param.id,
-            facts.destructorTargetId
+            facts.destructorTargetId,
+            facts.nonOwning
           )
         ),
         borrowedDependencies = current.borrowedDependencies ++
@@ -2368,8 +2416,13 @@ object OwnershipAnalyzer:
         !ownedByInvocation && (borrowedCapture || borrowedParam)
 
     val returnTypeIsOwned = returnType.exists(t => isOwnedType(t, scope.resolvables))
+    val resultOrigins     = bodyResult.ownership.nonOwning
+    // Global storage and literals outlive this call, including field projections. Owning returns
+    // are checked separately by analyzeResult and establishOwnership before this escape check.
+    val staticReturn = !bodyResult.ownership.owns && resultOrigins.nonEmpty &&
+      resultOrigins.subsetOf(Set(NonOwningOrigin.Global, NonOwningOrigin.Literal))
     val borrowEscapeErrors =
-      if returnTypeIsOwned then
+      if returnTypeIsOwned && !staticReturn then
         origins.collect:
           case ref: Ref if isBorrowedReturn(ref) || ref.qualifier.isDefined =>
             SemanticError.BorrowEscapeViaReturn(ref, PhaseName)
@@ -2403,6 +2456,13 @@ object OwnershipAnalyzer:
               SemanticError.UseAfterMove(ref, movedAt, PhaseName, ref.resolvedId, ref.source)
             }
             (s, errs ++ errors, caps :+ Capture.BorrowedRef(ref))
+          else if lambda.isMove && resultOwnership(
+              Expr(ref.source, List(ref), typeSpec = ref.typeSpec),
+              s
+            ).nonOwning.contains(NonOwningOrigin.Global)
+          then
+            val payload = Expr(ref.source, List(ref), typeSpec = ref.typeSpec)
+            (s, errs :+ globalTransferError(payload), caps :+ cap)
           else if lambda.isMove then
             // Move lambda: transfer ownership into env
             s.getState(ref.name) match
@@ -2488,7 +2548,11 @@ object OwnershipAnalyzer:
                 )
               case Some(OwnershipState.Literal | OwnershipState.Global)
                   if isTransferred && lambda.meta.exists(_.isPartialApplication) =>
-                (s, errs :+ SemanticError.CapturedBorrowedHeapBinding(ref, PhaseName), caps :+ cap)
+                (
+                  s,
+                  errs :+ SemanticError.CapturedBorrowedHeapBinding(ref, PhaseName),
+                  caps :+ cap
+                )
               case Some(OwnershipState.Literal) =>
                 val cloneId =
                   ref.typeSpec
@@ -2507,7 +2571,11 @@ object OwnershipAnalyzer:
                       caps :+ cap
                     )
               case Some(OwnershipState.Borrowed) =>
-                (s, errs :+ SemanticError.CapturedBorrowedHeapBinding(ref, PhaseName), caps :+ cap)
+                (
+                  s,
+                  errs :+ SemanticError.CapturedBorrowedHeapBinding(ref, PhaseName),
+                  caps :+ cap
+                )
               case _ => (s, errs, caps :+ cap)
           else
             // Borrow lambda: outer scope keeps ownership
@@ -2748,7 +2816,7 @@ object OwnershipAnalyzer:
       }
 
     val globals = module.members.collect {
-      case bnd: Bnd if bnd.typeSpec.exists(TypeUtils.isHeapType(_, module.resolvables)) =>
+      case bnd: Bnd if bnd.typeSpec.exists(isOwnedType(_, module.resolvables)) =>
         bnd.name -> BindingInfo(OwnershipState.Global, bnd.typeSpec, bnd.id)
     }.toMap
 

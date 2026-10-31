@@ -1680,13 +1680,13 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
     }
   }
 
-  test("global bindings are auto-cloned when passed to consuming parameter") {
+  test("explicit global copies can enter consuming parameters") {
     val code =
       """
         struct Person { name: String, age: Int };
         let name = "fede";
-        let p1 = Person name 25;
-        let p2 = Person (name) 25;
+        let p1 = Person (^name) 25;
+        let p2 = Person (^(name)) 25;
 
         fn main() =
           println name;
@@ -1701,13 +1701,13 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
       val p1Body = member("p1").value
       assert(
         containsCloneString(module, p1Body),
-        "expected global 'name' to be cloned when passed to Person constructor"
+        "expected explicit Clone call in Person constructor argument"
       )
 
       val p2Body = member("p2").value
       assert(
         containsCloneString(module, p2Body),
-        "expected global 'name' inside TermGroup to be cloned when passed to Person constructor"
+        "expected explicit Clone call for grouped global argument"
       )
     }
   }

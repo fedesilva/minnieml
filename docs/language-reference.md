@@ -1112,7 +1112,8 @@ fn take_ownership(~s: String): Unit = ();;
 - Consuming PAP calls can be nested inside argument expressions. Arguments run once in source
   order, and ownership moves remain visible to later arguments and statements
 - A conditional argument to a consuming parameter transfers ownership on either branch.
-  Borrowed branches are rejected; literal/global branches use the type's clone contract
+  Borrowed and global-backed branches are rejected; global-backed values require explicit `^`
+  copies. Literal branches use the type's clone contract
 
 ---
 

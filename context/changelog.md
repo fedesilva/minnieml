@@ -4,6 +4,12 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-10-30
 
+- Require explicit `^` copies when globals enter consuming arguments, owning fields and returns,
+  move captures, or consuming partial applications. Preserve global origins through aliases,
+  nested fields, conditionals, and proven helpers. Accept direct and aliased static returns
+  while rejecting borrowed-parameter escapes; retain ordinary borrowing and scalar copies.
+  Update ownership documentation and executable examples.
+
 - Add explicit borrowing Clone (`^`) for native values and eligible concrete structs.
   Generate nested copies through registered instances, require owned Clone results, and use
   ordinary callable lowering for capture promotion. Document Clone syntax and ownership.
