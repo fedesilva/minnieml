@@ -166,7 +166,7 @@ object OperatorDefaults:
     if parameterCount == 1 then Associativity.Right else Associativity.Left
 
 object OpMangling:
-  private val opCharNames: Map[Char, String] = Map(
+  private val opCharNames = Map(
     '=' -> "eq",
     '!' -> "bang",
     '#' -> "hash",
