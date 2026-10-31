@@ -81,8 +81,9 @@ case class UnificationVar(
 
 **Level-based generalization**: When unifying `?A` (level 5) with `?B` (level 3),
 result gets level 3 (outermost/lowest). When finishing a let-binding at level L,
-variables with level > L can be generalized to `∀` vars. This avoids needing
-AST structure in SeqTyper.
+variables with level > L can be generalized to `∀` vars. Levels track which
+variables are local to the binding; binding metadata must still identify where
+generalization happens. See Pitfall 3 for let-generated lambdas.
 
 **Global ID encoding**: During merge, `GlobalID = (ModuleID << 32) | LocalID`
 avoids hash lookups for variable remapping.
@@ -173,7 +174,7 @@ During SimpTyper on module A, when encountering `B.foo`:
 - If `B.foo` has type annotation: Use the annotation (bidi works)
 - If no annotation: Create `UnificationVar`, defer to SeqTyper
 
-SeqTyper later unifies A's `?X` (representing B.foo) with B's actual type for `foo`.
+SeqTyper waits for B.foo's scheme, then instantiates it separately for each use in A.
 
 ### 6. polymorphism target
 
@@ -288,39 +289,23 @@ seqType(modules):
     for constraint in module.constraints:
       ctx = ctx.addConstraint(remapIds(moduleId, constraint))
 
-  # 2. Resolve Import constraints
-  #    Note: target module may also have UnificationVars if still being inferred
-  for Import(uvarId, moduleName, memberName, span) in ctx.constraints:
-    targetModule = modules.find(_.name == moduleName)
-    targetType = targetModule.exports.get(memberName)
-    match targetType:
-      case TypeScheme(vars, body):
-        # Polymorphic: emit Instantiate constraint
-        ctx = ctx.addConstraint(Instantiate(uvarId, targetType, span))
-      case UnificationVar(targetId, _):
-        # Target not yet solved: link the variables
-        ctx = ctx.addConstraint(Unify(uvarId, remap(targetId), span))
-      case concrete:
-        # Monomorphic concrete: direct equality
-        ctx = ctx.addConstraint(Equals(uvarId, concrete, span))
+  # 2. Resolve local and imported references to binding identities.
+  #    Keep each use separate; an unsolved target is a dependency, not equality.
+  ctx = resolveBindingDependencies(ctx)
 
-  # 3. Solve constraints (unification with level tracking)
-  substitution = solve(ctx)
+  # 3. Solve bindings in dependency order, respecting lexical binding boundaries.
+  #    Nested lets use this same process before their continuation is solved.
+  for group in ctx.bindingGroupsInDependencyOrder:
+    # Recursive references within this group share monomorphic placeholders.
+    # References to completed bindings instantiate their schemes at each use.
+    ctx = solveBindingRhs(group, ctx)
 
-  # Unification rule: when unifying ?A (level 5) with ?B (level 3),
-  # result variable gets level 3 (promote to outermost scope)
-
-  # 4. Generalize (let-polymorphism using levels)
-  #    Important: iterate over AST bindings, not constraints
-  #    Constraints are flattened; AST structure knows binding levels
-  for module in modules:
-    for binding in module.bindings:
-      bindingType = substitution.apply(binding.typeSpec)
-      freeVars = bindingType.freeUnificationVars.filter(_.level > binding.level)
-      if freeVars.nonEmpty:
-        # These vars are "younger" than the binding, safe to generalize
-        scheme = TypeScheme(freeVars.map(toTypeVar), bindingType)
-        binding.typeSpec = scheme
+    # 4. Generalize the solved group before solving its dependent uses.
+    for binding in group:
+      bindingType = ctx.substitution.apply(binding.typeSpec)
+      freeVars = bindingType.freeUnificationVars.filter(_.level > binding.outerLevel)
+      scheme = TypeScheme(freeVars.map(toTypeVar), bindingType)
+      ctx = ctx.publishScheme(binding.id, scheme)
 
   # 5. Rewrite AST
   for each module:
@@ -349,6 +334,11 @@ solve(ctx):
   return ctx.buildSubstitution()
 ```
 
+SimpTyper must preserve binding boundaries, their outer levels, RHS constraints,
+and per-use binding references alongside the equality constraints. SeqTyper solves
+and generalizes each binding before instantiating its uses. The exact representation
+of this binding metadata and the dependency traversal remains to be designed.
+
 **Unification algorithm**: Union-find based for efficiency. Level promotion on union.
 
 ## Open questions
@@ -373,7 +363,7 @@ are constraints, not record definitions. They require at least the specified fie
 allow additional fields — this is what "open" means. The row variable persists through
 inference, representing the potential for extra fields.
 
-**Records are nominal and closed**: Types defined with `data` (e.g., `data Person { ... }`)
+**Records are nominal and closed**: Types defined with `struct` (e.g., `struct Person { ... }`)
 are nominal record types with a fixed set of fields (EmptyRow). They are not open.
 Records compile to C-like structs with fixed memory layout. The programmer sees exactly
 what fields exist — no hidden extras. The compiler knows exact sizing and field offsets.
@@ -392,11 +382,11 @@ the var might point to another var, a concrete extension, or empty row. Indirect
 through substitution handles this.
 
 **Nominal vs Structural types**:
-- `data Person { name: String, profession: String }` → closed (EmptyRow sentinel)
+- `struct Person { name: String, profession: String }` → closed (EmptyRow sentinel)
 - `{ name: String }` in type annotations → open (fresh row var)
 
 ```mml
-data Person { name: String, profession: String }
+struct Person { name: String, profession: String }
 # Person = typerecord([name, profession], emptyrow)
 
 let f = fn x: { name: String } => x.name
@@ -418,7 +408,7 @@ let g = fn x => (x.name, x.age)
 ```
 
 Future:
-- `Instance(uvar, typeClass, ...)` - for type classes (if added)
+- `Instance(uvar, typeClass, ...)` - for type classes
 - `HasEffect(uvar, effectRow)` - same pattern for effects
 
 ### Q2: error attribution [RESOLVED]
@@ -452,9 +442,7 @@ Parser → RefResolver → ExpressionRewriter → Simplifier → SimpTyper (para
                                                          Codegen (parallel again)
 ```
 
-No value in a "pre-check" TypeChecker. SimpTyper *is* the checker. If it encounters
-a definite error (e.g., `1 + "foo"` where `+` is monomorphic on Int), it can error
-immediately or emit a failing constraint.
+SimpTyper *is* the checker. If it encounters a definite error (e.g., `1 + "foo"` where `+` is monomorphic on Int), it can error immediately or emit a failing constraint.
 
 ### Q5: incremental compilation
 
@@ -486,12 +474,14 @@ Full design depends on multi-module compilation (in progress).
 
 ### Q7: polymorphism scope [RESOLVED]
 
-Solved by **level-based generalization** (see UnificationVar.level above).
+Requires **level-based generalization and binding metadata** (see
+UnificationVar.level above and Pitfall 3).
 
 - Variables track scope depth at creation
 - Unification promotes to outermost (lowest) level
 - After solving let-binding at level L, vars with level > L can generalize
-- No AST structure needed in SeqTyper
+- Binding metadata identifies generalization boundaries and their surrounding levels
+- SeqTyper must respect binding dependencies and generalize before instantiating uses
 
 ### Q8: native functions and polymorphism [RESOLVED]
 
@@ -643,15 +633,14 @@ This is the "Let-Lambda Correspondence" - simpler core, scoping is free.
 let bindings. `let x = e in ...` allows `x` to be polymorphic, but `(λx.body) e`
 treats `x` as monomorphic (runtime function call).
 
-**Why we're safe**: Level-based generalization handles this correctly:
-- Parser creates Lambda, SimpTyper enters new scope (level + 1)
-- Arg is inferred at outer level
-- Param unifies with arg
-- Level logic correctly determines what can generalize
+**Required metadata**: Mark let-generated wrappers with explicit let-binding origin,
+preserved through rewrites. Levels determine which variables can generalize; they
+cannot distinguish a let binding from an ordinary lambda parameter. A generic
+"synthetic" flag is insufficient because other generated wrappers are not lets.
 
-**Future consideration**: If let-bound variables refuse to generalize, we may need
-to flag lambdas as "synthetic" (from let-desugaring) so the type checker knows
-aggressive generalization is safe. For now, level-based approach should suffice.
+For a marked wrapper, infer its RHS at a deeper level, solve and generalize it,
+then instantiate its scheme separately at each use in the continuation. Ordinary
+lambda parameters remain monomorphic. SeqTyper follows this order as described above.
 
 ### Pitfall 4: mutual recursion across modules
 
