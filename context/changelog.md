@@ -2,6 +2,11 @@
 
 Durable product changes belong here. Current task state belongs in task files.
 
+## 2026-10-31
+
+- Infer typed holes from their own annotations, including function returns and value bindings,
+  while rejecting annotations that conflict with the surrounding expected type.
+
 ## 2026-10-30
 
 - Require explicit `^` copies when globals enter consuming arguments, owning fields and returns,

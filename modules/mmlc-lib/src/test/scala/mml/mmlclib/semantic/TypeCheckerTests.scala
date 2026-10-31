@@ -13,6 +13,11 @@ class TypeCheckerTests extends BaseEffFunSuite:
       case List(TypeUnit(_)) => true
       case _ => false
 
+  private def isStringIntMismatch(error: TypeError): Boolean = error match
+    case TypeError.TypeMismatch(_, TypeRef(_, "String", _, _), TypeRef(_, "Int", _, _), _, _) =>
+      true
+    case _ => false
+
   test("should correctly type a multi-argument function application") {
     val code =
       """
@@ -172,12 +177,7 @@ class TypeCheckerTests extends BaseEffFunSuite:
     semState(code).map { result =>
       val typeErrors = result.errors.collect { case SemanticError.TypeCheckingError(err) => err }
       assert(
-        typeErrors.exists {
-          case TypeError
-                .TypeMismatch(_, TypeRef(_, "String", _, _), TypeRef(_, "Int", _, _), _, _) =>
-            true
-          case _ => false
-        },
+        typeErrors.exists(isStringIntMismatch),
         s"Expected TypeMismatch (String vs Int), got: $typeErrors"
       )
     }
@@ -221,6 +221,19 @@ class TypeCheckerTests extends BaseEffFunSuite:
         case other => fail(s"Expected Some(TypeRef(\"Int\")), got $other")
     }
   }
+
+  test("hole ascription infers a function return type"):
+    semNotFailed("fn annotated() = ???: Int;; let checked: Int = annotated ();")
+
+  test("hole ascription supplies a value binding type"):
+    semNotFailed("let value = ???: Int; let checked: Int = value;")
+
+  test("hole ascription must agree with the declared return type"):
+    semState("fn annotated(): String = ???: Int;;").map { result =>
+      val typeErrors = result.errors.collect { case SemanticError.TypeCheckingError(err) => err }
+      assertEquals(typeErrors.size, 1)
+      assert(isStringIntMismatch(typeErrors.head), s"Expected String/Int mismatch, got $typeErrors")
+    }
 
   test("untyped hole error references binding name") {
     val code = "let x = ???;"
@@ -634,12 +647,7 @@ class TypeCheckerTests extends BaseEffFunSuite:
     semState(code).map { result =>
       val typeErrors = result.errors.collect { case SemanticError.TypeCheckingError(err) => err }
       assert(
-        typeErrors.exists {
-          case TypeError
-                .TypeMismatch(_, TypeRef(_, "String", _, _), TypeRef(_, "Int", _, _), _, _) =>
-            true
-          case _ => false
-        },
+        typeErrors.exists(isStringIntMismatch),
         s"Expected TypeMismatch (String vs Int), got: $typeErrors"
       )
     }

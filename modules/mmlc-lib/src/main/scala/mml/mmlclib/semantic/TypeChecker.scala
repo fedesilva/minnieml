@@ -782,7 +782,7 @@ object TypeChecker:
       )
 
     case hole: Hole =>
-      expectedType match
+      hole.typeAsc.orElse(expectedType) match
         case Some(tpe) => hole.copy(typeSpec = tpe.some).pure[Check]
         case None =>
           val error = hole.spanOpt match

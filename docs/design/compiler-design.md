@@ -1126,7 +1126,8 @@ types when possible.
   - typed capture refs are written back into `Lambda.captures`
 - Conditional guards must be `Bool`; both branches must agree on type or trigger
   `ConditionalBranchTypeMismatch`.
-- Holes (`???`) require an expected type; otherwise `UntypedHoleInBinding` is reported.
+- Holes (`???`) use their own type annotation or the surrounding expected type; otherwise
+  `UntypedHoleInBinding` is reported.
 - Type errors use `SemanticError.TypeCheckingError`; protocol-selection errors use
   `SemanticError.ProtocolErrorFound`. Both accumulate in the phase state with source causes.
 
