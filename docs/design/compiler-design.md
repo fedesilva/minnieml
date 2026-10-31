@@ -93,7 +93,10 @@ inventing source names. Visibility remains on the concrete declarations that exp
 
 Instance member types and operator attributes may be omitted in source. `ProtocolInstanceMember`
 retains the written operator attributes beside its binding; the parsed binding has no callable
-metadata yet. `BindingMeta.precedence` is always an integer. Free operators receive their ordinary
+metadata yet. `BindingMeta.kind` distinguishes functions, constructors, destructors, and operators.
+`BindingKind.Operator` requires integer precedence and concrete associativity; its constructor
+defaults to precedence 50 and left associativity. Parsing supplies arity-specific defaults,
+including right associativity for unary operators. Free operators receive their ordinary
 defaults during parsing; instance operators inherit the signature's precedence. `ProtocolChecker`
 verifies each instance
 against its protocol, supplies omitted types and attributes, and moves each body into the module's
@@ -125,7 +128,7 @@ searching a concrete member retains that implementation's scope.
 Bnd(
   name: String,           // mangled name for operators (e.g., "op.plus.2")
   value: Expr,            // contains Lambda with params and body
-  meta: Option[BindingMeta], // origin, arity, precedence, associativity, originalName, inlineHint
+  meta: Option[BindingMeta], // kind, arity, originalName, mangledName, inlineHint
   id: Option[String]         // stable soft-reference ID
 )
 ```
@@ -554,8 +557,8 @@ runs before the rest of the expression continues. It uses the same AST as the re
 ### Member parsing
 
 Top-level module members are parsed independently:
-- `fnKw` -> `Bnd` with `Lambda` body and `BindingMeta(origin=Function)`
-- `opKw` -> `Bnd` with `Lambda` body and `BindingMeta(origin=Operator)`
+- `fnKw` -> `Bnd` with `Lambda` body and `BindingMeta(kind=BindingKind.Function)`
+- `opKw` -> `Bnd` with `Lambda` body and `BindingMeta(kind=BindingKind.Operator(...))`
 - `letKw` -> `Bnd` (no meta for simple value bindings)
 - `typeKw` -> `TypeDef` or `TypeAlias`
 - `structKw` -> `TypeStruct`
@@ -774,7 +777,7 @@ parameterless lambdas each introduce an ordinal scope path for nested allocation
 - Walks all module members looking for `TypeStruct` definitions.
 - For each struct, inserts a `__mk_StructName` `Bnd` immediately after the `TypeStruct` member.
 - The generated `Bnd` contains a `Lambda` with one `FnParam` per field, a `DataConstructor`
-  body, and `BindingMeta` with `origin = Constructor`.
+  body, and `BindingMeta` with `kind = BindingKind.Constructor`.
 
 **AST rewrites**:
 - Inserts new constructor `Bnd` members into the module member list

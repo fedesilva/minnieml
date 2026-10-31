@@ -15,12 +15,10 @@ def injectStandardClones(module: Module): Module =
     params     = List(FnParam(source, Name.synth("value"), typeAsc = variable.some)),
     returnType = variable,
     meta = BindingMeta(
-      origin        = BindingOrigin.Operator,
-      arity         = CallableArity.Unary,
-      precedence    = 95,
-      associativity = Associativity.Right.some,
-      originalName  = "^",
-      mangledName   = operatorName
+      kind         = BindingKind.Operator(95, Associativity.Right),
+      arity        = CallableArity.Unary,
+      originalName = "^",
+      mangledName  = operatorName
     ),
     id = BindingIds.protocolSignature(protocolId, operatorName).some
   )
@@ -58,12 +56,10 @@ def injectStandardClones(module: Module): Module =
       ),
       typeAsc = tpe.some,
       meta = BindingMeta(
-        origin        = BindingOrigin.Function,
-        arity         = CallableArity.Unary,
-        precedence    = Precedence.Function,
-        associativity = None,
-        originalName  = helperName,
-        mangledName   = helperName
+        kind         = BindingKind.Function,
+        arity        = CallableArity.Unary,
+        originalName = helperName,
+        mangledName  = helperName
       ).some,
       id = helperId.some
     )

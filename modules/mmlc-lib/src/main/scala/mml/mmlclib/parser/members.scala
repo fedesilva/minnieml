@@ -162,13 +162,11 @@ private[parser] def fnDefP(info: SourceInfo)(using P[Any]): P[Member] =
           val arity = CallableArity.fromParameterCount(parameters.values.size)
           val meta = Option.when(parameters.complete)(
             BindingMeta(
-              origin        = BindingOrigin.Function,
-              arity         = arity,
-              precedence    = Precedence.Function,
-              associativity = None,
-              originalName  = fnName,
-              mangledName   = fnName,
-              inlineHint    = inl.isDefined
+              kind         = BindingKind.Function,
+              arity        = arity,
+              originalName = fnName,
+              mangledName  = fnName,
+              inlineHint   = inl.isDefined
             )
           )
           val value =
@@ -277,13 +275,11 @@ private[parser] def binOpDefP(info: SourceInfo)(using P[Any]): P[Member] =
           val mangledName = OpMangling.mangleOp(opName, 2)
           val nameN       = Name(name.location, mangledName)
           val meta = BindingMeta(
-            origin        = BindingOrigin.Operator,
-            arity         = CallableArity.Binary,
-            precedence    = opPrec,
-            associativity = Some(opAssoc),
-            originalName  = opName,
-            mangledName   = mangledName,
-            inlineHint    = inl.isDefined
+            kind         = BindingKind.Operator(opPrec, opAssoc),
+            arity        = CallableArity.Binary,
+            originalName = opName,
+            mangledName  = mangledName,
+            inlineHint   = inl.isDefined
           )
           val lambda = Lambda(
             span     = lambdaSpan,
@@ -366,13 +362,11 @@ private[parser] def unaryOpP(info: SourceInfo)(using P[Any]): P[Member] =
           val mangledName = OpMangling.mangleOp(opName, 1)
           val nameN       = Name(name.location, mangledName)
           val meta = BindingMeta(
-            origin        = BindingOrigin.Operator,
-            arity         = CallableArity.Unary,
-            precedence    = opPrec,
-            associativity = Some(opAssoc),
-            originalName  = opName,
-            mangledName   = mangledName,
-            inlineHint    = inl.isDefined
+            kind         = BindingKind.Operator(opPrec, opAssoc),
+            arity        = CallableArity.Unary,
+            originalName = opName,
+            mangledName  = mangledName,
+            inlineHint   = inl.isDefined
           )
           val lambda = Lambda(
             span     = lambdaSpan,

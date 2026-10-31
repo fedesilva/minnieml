@@ -78,12 +78,10 @@ private case class StandardOperator(
 
   def metadata: BindingMeta =
     BindingMeta(
-      origin        = BindingOrigin.Operator,
-      arity         = CallableArity.fromParameterCount(parameterNames.size),
-      precedence    = precedence,
-      associativity = associativity.some,
-      originalName  = name,
-      mangledName   = OpMangling.mangleOp(name, parameterNames.size)
+      kind         = BindingKind.Operator(precedence, associativity),
+      arity        = CallableArity.fromParameterCount(parameterNames.size),
+      originalName = name,
+      mangledName  = OpMangling.mangleOp(name, parameterNames.size)
     )
 
 private case class NumericOperator(

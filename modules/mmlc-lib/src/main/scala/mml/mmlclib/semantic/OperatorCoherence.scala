@@ -23,7 +23,7 @@ object OperatorCoherence:
           val operators = candidates.flatMap(candidate => operator(candidate.id, index))
           val checked = operators.foldLeft(CheckedOperators()) { (current, declaration) =>
             current.firstByArity.get(declaration.meta.arity) match
-              case Some(first) if !sameGrouping(first.meta, declaration.meta) =>
+              case Some(first) if first.grouping != declaration.grouping =>
                 current.copy(errors =
                   current.errors :+
                     ProtocolError.OperatorGroupingConflict(first.node, declaration.node)
@@ -67,7 +67,7 @@ object OperatorCoherence:
       val candidates = operatorCandidates(ref, arity, index)
       for
         first <- candidates.headOption
-        other <- candidates.find(candidate => !sameGrouping(first.meta, candidate.meta))
+        other <- candidates.find(candidate => first.grouping != candidate.grouping)
       yield ProtocolError.OperatorGroupingConflict(first.node, other.node)
     case _ => none
 
@@ -82,17 +82,16 @@ object OperatorCoherence:
       val candidates = operatorCandidates(ref, arity, index)
       for
         first <- candidates.headOption
-        if candidates.forall(candidate => sameGrouping(first.meta, candidate.meta))
-        associativity <- first.meta.associativity
+        if candidates.forall(candidate => first.grouping == candidate.grouping)
       yield
         val ids = candidates.flatMap(_.node.id)
         val resolvedId = candidates match
-          case OperatorDeclaration(binding: Bnd, _) :: Nil => binding.id
+          case OperatorDeclaration(binding: Bnd, _, _) :: Nil => binding.id
           case _ => none
         GroupedOperator(
           ref.copy(candidateIds = ids, resolvedId = resolvedId),
-          first.meta.precedence,
-          associativity
+          first.grouping.precedence,
+          first.grouping.associativity
         )
     case _ => none
 
@@ -107,13 +106,16 @@ object OperatorCoherence:
     for
       node <- index.lookup(id)
       meta <- ProtocolRegistry.metadata(node)
-      if meta.origin == BindingOrigin.Operator
-    yield OperatorDeclaration(node, meta)
+      grouping <- meta.kind match
+        case operator: BindingKind.Operator => operator.some
+        case _ => none
+    yield OperatorDeclaration(node, meta, grouping)
 
-  private def sameGrouping(left: BindingMeta, right: BindingMeta): Boolean =
-    left.precedence == right.precedence && left.associativity == right.associativity
-
-  private case class OperatorDeclaration(node: Resolvable, meta: BindingMeta)
+  private case class OperatorDeclaration(
+    node:     Resolvable,
+    meta:     BindingMeta,
+    grouping: BindingKind.Operator
+  )
 
   private case class CheckedOperators(
     firstByArity: Map[CallableArity, OperatorDeclaration] = Map.empty,

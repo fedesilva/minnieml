@@ -167,10 +167,8 @@ object ClosureMemoryFnGenerator:
           typeSpec = fnType.some,
           typeAsc  = unitTR.some,
           meta = BindingMeta(
-            BindingOrigin.Destructor,
+            BindingKind.Destructor,
             CallableArity.Unary,
-            Precedence.Function,
-            None,
             fnName,
             fnName
           ).some,

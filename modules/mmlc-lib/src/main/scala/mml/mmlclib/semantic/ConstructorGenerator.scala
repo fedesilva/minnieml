@@ -32,12 +32,10 @@ object ConstructorGenerator:
     allocatedParams
       .map { params =>
         val meta = BindingMeta(
-          origin        = BindingOrigin.Constructor,
-          arity         = CallableArity.fromParameterCount(params.size),
-          precedence    = Precedence.Function,
-          associativity = None,
-          originalName  = struct.name,
-          mangledName   = constructorName
+          kind         = BindingKind.Constructor,
+          arity        = CallableArity.fromParameterCount(params.size),
+          originalName = struct.name,
+          mangledName  = constructorName
         )
         val bodyExpr = Expr(
           struct.source,
@@ -86,12 +84,10 @@ object ConstructorGenerator:
     allocatedParams
       .map { params =>
         val meta = BindingMeta(
-          origin        = BindingOrigin.Constructor,
-          arity         = CallableArity.fromParameterCount(params.size),
-          precedence    = Precedence.Function,
-          associativity = None,
-          originalName  = td.name,
-          mangledName   = constructorName
+          kind         = BindingKind.Constructor,
+          arity        = CallableArity.fromParameterCount(params.size),
+          originalName = td.name,
+          mangledName  = constructorName
         )
         val bodyExpr = Expr(
           td.source,

@@ -245,12 +245,13 @@ private case class ParsedProtocolCallable(
   private def metadata(name: Name): BindingMeta =
     val operator = origin == BindingOrigin.Operator
     BindingMeta(
-      origin,
+      if operator then
+        BindingKind.Operator(
+          precedence.getOrElse(OperatorDefaults.precedence),
+          associativity.getOrElse(OperatorDefaults.associativity(parameters.size))
+        )
+      else BindingKind.Function,
       CallableArity.fromParameterCount(parameters.size),
-      if operator then precedence.getOrElse(OperatorDefaults.precedence) else Precedence.Function,
-      Option.when(operator)(
-        associativity.getOrElse(OperatorDefaults.associativity(parameters.size))
-      ),
       name.value,
       if operator then OpMangling.mangleOp(name.value, parameters.size) else name.value
     )

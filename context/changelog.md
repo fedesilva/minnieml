@@ -4,6 +4,10 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-10-31
 
+- Represent operator grouping with mandatory precedence and associativity in `BindingKind.Operator`.
+  Preserve source defaults and protocol inheritance; compare complete grouping values in coherence
+  checks. Document the metadata representation.
+
 - Infer typed holes from their own annotations, including function returns and value bindings,
   while rejecting annotations that conflict with the surrounding expected type.
 

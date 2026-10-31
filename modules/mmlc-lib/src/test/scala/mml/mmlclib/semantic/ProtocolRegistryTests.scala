@@ -576,7 +576,7 @@ class ProtocolRegistryTests extends BaseEffFunSuite:
   test("a local parameter named combine hides an outer protocol signature named combine") {
     val combine = plus.copy(
       nameNode = Name.synth("combine"),
-      meta     = plus.meta.copy(origin = BindingOrigin.Function, originalName = "combine")
+      meta     = plus.meta.copy(kind = BindingKind.Function, originalName = "combine")
     )
     val local    = FnParam(source, Name.synth("combine"), id = "local-combine".some)
     val index    = numberIndex.updated(combine).updated(local)
@@ -598,7 +598,8 @@ class ProtocolRegistryTests extends BaseEffFunSuite:
   }
 
   test("binary lookup keeps both free and protocol operators without choosing precedence") {
-    val freePlus = addInts.copy(meta = plus.meta.copy(precedence = 90).some)
+    val freePlus =
+      addInts.copy(meta = plus.meta.copy(kind = BindingKind.Operator(90, Associativity.Left)).some)
     val index    = numberIndex.updated(freePlus)
     val registry = success(ProtocolRegistry.empty.registerProtocol(numId, index))
     val scope    = ProtocolLookupScope(List(List(plusId, addIntsId)))
@@ -750,10 +751,8 @@ class ProtocolRegistryTests extends BaseEffFunSuite:
       ),
       returnType = typeParameter,
       meta = BindingMeta(
-        BindingOrigin.Operator,
+        BindingKind.Operator(10, Associativity.Left),
         CallableArity.Binary,
-        10,
-        Associativity.Left.some,
         "+",
         "plus"
       ),

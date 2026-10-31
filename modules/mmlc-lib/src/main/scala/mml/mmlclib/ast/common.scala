@@ -1,5 +1,7 @@
 package mml.mmlclib.ast
 
+import cats.syntax.all.*
+
 import scala.Conversion
 
 /* Represents a point in the source code, with a line, column number and the char index.
@@ -191,16 +193,42 @@ object OpMangling:
       else op.map(c => opCharNames.getOrElse(c, c.toString)).mkString("_")
     s"op.$translated.$arity"
 
+/** Callable category; operator grouping is complete at construction. */
+enum BindingKind derives CanEqual:
+
+  case Function
+  case Constructor
+  case Destructor
+  case Operator(
+    precedence:    Int           = OperatorDefaults.precedence,
+    associativity: Associativity = Associativity.Left
+  )
+
 /** Callable identity and concrete grouping attributes. */
 final case class BindingMeta(
-  origin:        BindingOrigin,
-  arity:         CallableArity,
-  precedence:    Int,
-  associativity: Option[Associativity],
-  originalName:  String,
-  mangledName:   String,
-  inlineHint:    Boolean = false
-)
+  kind:         BindingKind,
+  arity:        CallableArity,
+  originalName: String,
+  mangledName:  String,
+  inlineHint:   Boolean = false
+):
+
+  /** Source declaration category used by name lookup and protocol matching. */
+  def origin: BindingOrigin = kind match
+    case BindingKind.Function => BindingOrigin.Function
+    case BindingKind.Constructor => BindingOrigin.Constructor
+    case BindingKind.Destructor => BindingOrigin.Destructor
+    case _: BindingKind.Operator => BindingOrigin.Operator
+
+  /** Operator precedence, or ordinary function application precedence for other callables. */
+  def precedence: Int = kind match
+    case operator: BindingKind.Operator => operator.precedence
+    case _ => Precedence.Function
+
+  /** Grouping direction for operators; other callable categories have no associativity. */
+  def associativity: Option[Associativity] = kind match
+    case operator: BindingKind.Operator => operator.associativity.some
+    case _ => none
 
 /** Marker trait for nodes that represent invalid/error constructs. These nodes allow the compiler
   * to continue processing even when errors are encountered, enabling better LSP support and partial

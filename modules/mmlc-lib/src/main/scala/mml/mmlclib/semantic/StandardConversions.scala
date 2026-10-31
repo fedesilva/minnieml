@@ -16,12 +16,10 @@ def injectStandardConversions(module: Module): Module =
     params     = List(FnParam(source, Name.synth("value"), typeAsc = parameter.some)),
     returnType = TypeRef(source, "String", stdlibTypeId("String")),
     meta = BindingMeta(
-      origin        = BindingOrigin.Function,
-      arity         = CallableArity.Unary,
-      precedence    = Precedence.Function,
-      associativity = None,
-      originalName  = "to_str",
-      mangledName   = "to_str"
+      kind         = BindingKind.Function,
+      arity        = CallableArity.Unary,
+      originalName = "to_str",
+      mangledName  = "to_str"
     ),
     id = BindingIds.protocolSignature(protocolId, "to_str").some
   )

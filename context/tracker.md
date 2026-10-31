@@ -23,9 +23,9 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 ### Centralize, and Unify ast queries
 
 - **Tracker:** [Centralize, and Unify ast queries](tasks/centralize-and-unify-ast-queries.md)
-- **Status:** needs_design
-- **Current focus:** After protocol work: settle a shared AST-query subpackage and unification
-  pattern, starting with the queries used by operator coherence and expression rewriting.
+- **Status:** in_progress
+- **Current focus:** Settle the shared operator-query contracts and approve the bounded extraction.
+  The operator metadata prerequisite is complete.
 
 ### Typed compiler diagnostics
 

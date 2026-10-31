@@ -3,20 +3,21 @@
 ## Metadata
 
 - **Owner:** The Author
-- **Status:** needs_design
+- **Status:** in_progress
 - **Kind:** improvement
 - **Priority:** unassigned
 - **Created:** 2026-10-29
-- **Target Branch:** unassigned
+- **Target Branch:** main
 - **External Reference (optional):** None.
 
 ## Execution Checklist
 
-1. [ ] **needs_design** — Inventory AST queries and settle package boundaries and query contracts.
-   - Initial inventory and extraction proposal are below; next, settle the proposed query contracts.
-2. [ ] **planned** — Approve a bounded extraction and unification plan, starting with operator queries.
-3. [ ] **planned** — Migrate approved query families and their callers; remove duplicate queries.
-4. [ ] **planned** — Verify behavior preservation, update architecture documentation, and review.
+1. [ ] **design** — Inventory AST queries and settle package boundaries and query contracts.
+   - Query extraction contracts remain open; operator metadata representation is approved.
+2. [x] **complete** — Make operator grouping attributes mandatory in binding metadata.
+3. [ ] **planned** — Approve a bounded extraction and unification plan, starting with operator queries.
+4. [ ] **planned** — Migrate approved query families and their callers; remove duplicate queries.
+5. [ ] **planned** — Verify behavior preservation, update architecture documentation, and review.
 
 ## Tags
 
@@ -84,9 +85,21 @@ identities and grouping attributes; ExpressionRewriter constructs the narrowed r
 Preserve candidate order, arity filtering, diagnostic causes, and partial-AST behavior. A single
 protocol signature must remain unresolved until operand types select an implementation.
 
-The exact result types and treatment of incomplete candidate metadata need agreement before
-implementation. Registry associations remain authoritative; the query layer must not copy them
-or depend on phase objects.
+The exact query result types need agreement before extraction. Operator metadata carries
+mandatory precedence and associativity; missing associativity is not a query outcome. Registry
+associations remain authoritative; the query layer must not copy them or depend on phase objects.
+
+### Approved prerequisite: complete operator metadata
+
+`BindingMeta.kind` stores a `BindingKind` whose `Operator` case owns mandatory precedence
+and associativity. Constructor defaults are precedence 50 and left associativity. Parsers
+preserve arity-specific defaults, including right associativity for unary operators; instance
+members inherit the signature's metadata. Other callable kinds carry no grouping attributes.
+Derived metadata accessors support shared classification and presentation. Operator coherence
+consumes the concrete operator case directly.
+
+Scope: migrate metadata producers and consumers, verify the type restriction and existing
+operator behavior, and review. Query extraction remains a separate approval gate.
 
 ### First implementation slice: operator queries
 
@@ -105,20 +118,40 @@ Later query families require their own bounded migration decisions. This first s
 the shared pattern without moving type helpers, registry operations, Clone construction, callable
 analysis, or LSP policy.
 
-Approval: proposed design and initial implementation plan pending approval.
+Approval: complete operator metadata prerequisite approved. Query extraction pending approval.
 
 ## Verification
 
 For each approved migration, preserve existing semantic assertions and add regression coverage
 where unification exposes a gap. Check identity-based lookup, coherent and conflicting operators,
 unresolved candidates, and partial/error ASTs. Run applicable compiler verification and independent
-review under the repository rules. Implementation verification is pending.
+review under the repository rules. Query-extraction verification is pending.
 
 [ProtocolGroupingTests](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/ProtocolGroupingTests.scala)
 already covers declaration order, mixed free/protocol operators, unary/binary selection,
 shadowing, unresolved candidates, and grouping conflicts. Preserve those assertions and add
 focused regression coverage only for uncovered query contracts. Source inspection supports the
-inventory; no compiler checks or runtime reproductions were run for this design pass.
+inventory; implementation verification is recorded separately below.
+
+### Metadata prerequisite verification — 2026-10-31
+
+Host: Darwin arm64, Homebrew Clang 23.1.1; sbt 2.0.10 on GraalVM Java 25.0.4.1.
+
+- `sbtn "scalafmtAll; scalafixAll; testFull"`: passed; 2,497 library tests and 9 CLI tests.
+- `./tests/smoke/run.sh all`: 8/8 passed.
+- Final Cats-style accessor cleanup: `sbtn "scalafmtAll; scalafixAll; test; mmlcPublishLocal"`
+  passed; 2,497 library tests and 9 CLI tests, followed by local installation.
+- `make -C benchmark clean` and `make -C benchmark mml`: passed. These build the
+  benchmark executables; no performance comparison is claimed.
+- `./tests/mem/run.sh all`: 52/52 passed with ASan and LSan (85 seconds).
+- No compiler source warnings. sbt reports multiple discovered main classes.
+- `BindingMetaTests` checks accepted concrete associativity, rejected `None`, and constructor
+  defaults. Existing grouping, parser recovery, and protocol inheritance tests remain passing.
+- `git diff --check`: passed. No ABI changes; additional Linux ABI-container verification is
+  not applicable to this metadata-only representation change.
+- Independent primary review and separate QA, test-quality, readability, and code-documentation
+  checks completed with no actionable findings. Three documentation candidates were independently
+  rejected as unchanged pre-existing issues. Review was read-only; execution evidence is above.
 
 ## Risks / Notes
 
@@ -134,15 +167,17 @@ cyclic partial AST reaches that path before proposing a repair.
 
 ## Signoff
 
-- Workstream signoff: design approval pending.
+- Workstream signoff: metadata prerequisite approved and complete.
 - Tracked item completion: pending.
-- Commit authorization: not granted for implementation.
+- Commit authorization: granted for the completed metadata prerequisite; extraction not authorized.
 
 ## Task Working Memory
 
-The initial inventory and proposed operator extraction are in the Plan section. The first
-boundary is module-wide coherence checking versus reusable grouping facts consumed by
-ExpressionRewriter. Package placement, result contracts, and implementation approval remain open.
+The metadata prerequisite is complete on `main`; required execution checks and independent
+review pass. Its implementation, verification, and Author signoff are included in the
+`Make operator grouping metadata complete` commit.
+`BindingKind.Operator` requires concrete grouping attributes and supplies constructor defaults.
+Operator coherence reads those attributes directly. Existing parser defaults and protocol
+inheritance are preserved. The inventory and proposed query extraction remain in the Plan section.
 
-Next action: review the proposed `semantic.queries.OperatorQueries` boundary and grouping outcomes,
-settle incomplete-candidate behavior, and approve a bounded first implementation slice.
+Next action: settle the remaining query contracts and approve the bounded operator extraction.

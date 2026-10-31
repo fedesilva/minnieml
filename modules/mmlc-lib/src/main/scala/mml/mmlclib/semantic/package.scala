@@ -496,12 +496,10 @@ def injectCommonFunctions(module: Module): Module =
   ): Bnd =
     val arity = CallableArity.fromParameterCount(params.size)
     val meta = BindingMeta(
-      origin        = BindingOrigin.Function,
-      arity         = arity,
-      precedence    = Precedence.Function,
-      associativity = None,
-      originalName  = name,
-      mangledName   = name
+      kind         = BindingKind.Function,
+      arity        = arity,
+      originalName = name,
+      mangledName  = name
     )
     val body = Expr(
       syntheticSource,
@@ -545,12 +543,10 @@ def injectCommonFunctions(module: Module): Module =
       Expr(syntheticSource, List(fnRef, Ref(SourceOrigin.Synth, "a"), Ref(SourceOrigin.Synth, "b")))
     val mangledName = OpMangling.mangleOp(name, 2)
     val meta = BindingMeta(
-      origin        = BindingOrigin.Operator,
-      arity         = CallableArity.Binary,
-      precedence    = prec,
-      associativity = Some(assoc),
-      originalName  = name,
-      mangledName   = mangledName
+      kind         = BindingKind.Operator(prec, assoc),
+      arity        = CallableArity.Binary,
+      originalName = name,
+      mangledName  = mangledName
     )
     val lambda = Lambda(
       source   = SourceOrigin.Synth,
@@ -580,12 +576,10 @@ def injectCommonFunctions(module: Module): Module =
   ): Bnd =
     val arity = CallableArity.fromParameterCount(params.size)
     val meta = BindingMeta(
-      origin        = BindingOrigin.Function,
-      arity         = arity,
-      precedence    = Precedence.Function,
-      associativity = None,
-      originalName  = name,
-      mangledName   = name
+      kind         = BindingKind.Function,
+      arity        = arity,
+      originalName = name,
+      mangledName  = name
     )
     val body = Expr(syntheticSource, List(NativeImpl(syntheticSource, nativeTpl = Some(tpl))))
     val lambda = Lambda(

@@ -116,12 +116,10 @@ object MemoryFunctionGenerator:
 
           // Build the binding
           val meta = BindingMeta(
-            origin        = BindingOrigin.Destructor,
-            arity         = CallableArity.Unary,
-            precedence    = Precedence.Function,
-            associativity = None,
-            originalName  = fnName,
-            mangledName   = fnName
+            kind         = BindingKind.Destructor,
+            arity        = CallableArity.Unary,
+            originalName = fnName,
+            mangledName  = fnName
           )
 
           val binding = Bnd(
