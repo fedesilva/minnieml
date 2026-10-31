@@ -20,6 +20,12 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 
 ## Active Tasks
 
+### Centralize, and Unify ast queries
+
+- **Tracker:** [Centralize, and Unify ast queries](tasks/centralize-and-unify-ast-queries.md)
+- **Status:** needs_design
+- **Current focus:** After protocol work: settle a shared AST-query subpackage and unification
+  pattern, starting with the queries used by operator coherence and expression rewriting.
 
 ### Typed compiler diagnostics
 
@@ -28,12 +34,6 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 - **Current focus:** After protocol work: typed error payloads, shared presentation-side message
   templates and substitutions, and removal of message-based error discrimination.
 
-### Centralize, and Unify ast queries
-
-- **Tracker:** [Centralize, and Unify ast queries](tasks/centralize-and-unify-ast-queries.md)
-- **Status:** needs_design
-- **Current focus:** After protocol work: settle a shared AST-query subpackage and unification
-  pattern, starting with the queries used by operator coherence and expression rewriting.
 
 ### Protocol navigation
 
