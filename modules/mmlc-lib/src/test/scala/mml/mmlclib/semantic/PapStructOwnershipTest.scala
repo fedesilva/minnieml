@@ -39,7 +39,7 @@ class PapStructOwnershipTest extends BaseEffFunSuite:
     "consuming argument" -> "fn drop(~h: Holder): Int = 0;; fn main(): Int = drop global;;",
     "mixed return" -> "fn main(flag: Bool): Holder = if flag then Holder inc; else global; ;;"
   ).foreach { (name, body) =>
-    test(s"a function-bearing global cannot be cloned at a $name") {
+    test(s"a function-bearing global cannot transfer ownership at a $name") {
       semState("""
         struct Holder { f: Int -> Int };
         fn inc(n: Int): Int = n + 1;;
@@ -48,7 +48,7 @@ class PapStructOwnershipTest extends BaseEffFunSuite:
         assert(
           state.errors.exists {
             case error: SemanticError.InvalidExpression =>
-              error.message == "This type cannot be cloned"
+              error.message.contains("global value")
             case _ => false
           },
           state.errors
@@ -133,7 +133,7 @@ class PapStructOwnershipTest extends BaseEffFunSuite:
       assertEquals(structs.size, 1)
       assert(TypeUtils.containsFunction(structs.head, module.resolvables))
       assertEquals(
-        TypeUtils.cloneFnFor(typeReference("Outer", module.resolvables), module.resolvables),
+        cloneNameFor(typeReference("Outer", module.resolvables), module),
         None
       )
     }

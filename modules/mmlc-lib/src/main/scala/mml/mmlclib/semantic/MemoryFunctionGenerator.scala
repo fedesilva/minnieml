@@ -9,8 +9,7 @@ import BindingIds.Allocation
 /** Registers destructors and consuming constructors for structs with owned fields.
   *
   * Native and nested struct fields get ordinary free calls. Function-bearing destructor bodies are
-  * completed after closure dispatch registration by StructDestructorBodyGenerator. Clone helpers
-  * are generated only for structs without function fields, directly or transitively. Native types
+  * completed after closure dispatch registration by StructDestructorBodyGenerator. Native types
   * (String, Buffer, etc.) provide their memory functions in the C runtime.
   */
 object MemoryFunctionGenerator:
@@ -183,127 +182,6 @@ object MemoryFunctionGenerator:
           case None => bnd
       case other => other
 
-  /** Build a `__clone_StructName` function for a user struct.
-    *
-    * Generated pattern:
-    * {{{fn __clone_User(s: User): User = __mk_User (__clone_String s.name) (__clone_String s.role)}}}
-    *
-    * Heap fields are explicitly cloned before passing to the constructor, which consumes its args.
-    */
-  private def mkCloneFunction(
-    struct:      TypeStruct,
-    moduleName:  String,
-    resolvables: ResolvablesIndex
-  ): Allocation[(Bnd, List[SemanticError])] =
-    val structName = struct.name
-    val fnName     = s"__clone_$structName"
-    val paramName  = "s"
-
-    // Type refs
-    val structTypeRef =
-      TypeRef(syntheticSource, structName, struct.id, Nil)
-
-    // Parameter - not consuming since we're cloning (borrowing)
-    val allocation = LocalBindings.local(
-      BindingOwner.binding(moduleName, fnName),
-      paramName,
-      typeAsc   = Some(structTypeRef),
-      consuming = false,
-      purpose   = "clone"
-    )
-
-    allocation
-      .map { local =>
-        val param = local.param
-        // Build the constructor type as a curried function: T1 -> T2 -> ... -> StructType
-        val fieldTypes = struct.fields.map(_.typeSpec).toList
-        val constructorType = fieldTypes.foldRight(structTypeRef: Type) { (fieldType, accType) =>
-          TypeFn(syntheticSource, cats.data.NonEmptyList.one(fieldType), accType)
-        }
-
-        // Constructor reference: __mk_StructName
-        val constructorName = s"__mk_$structName"
-        val constructorRef = Ref(
-          SourceOrigin.Synth,
-          constructorName,
-          resolvedId = BindingIds.declaration(moduleName, constructorName).some,
-          typeSpec   = Some(constructorType)
-        )
-
-        // Build arguments: extract each field, wrapping heap fields with __clone_T
-        val fieldResults = struct.fields.toList.map { field =>
-          val paramRef    = local.ref
-          val fieldRef    = Ref(SourceOrigin.Synth, field.name, qualifier = Some(paramRef))
-          val fieldAccess = Expr(syntheticSource, List(fieldRef), typeSpec = Some(field.typeSpec))
-
-          val cloned =
-            if isHeapField(field, resolvables) then
-              CloneCalls.build(
-                fieldAccess,
-                field.typeSpec,
-                resolvables,
-                "memory-function-generator",
-                moduleName.some
-              )
-            else fieldAccess.asRight[SemanticError]
-          (cloned.getOrElse(fieldAccess), cloned.left.toOption.toList)
-        }
-        val argExprs = fieldResults.map(_._1)
-        val errors   = fieldResults.flatMap(_._2)
-
-        // Build constructor call: __mk_StructName arg1 arg2 ...
-        // Track the result type through each curried application
-        val (constructorCall, _) =
-          argExprs.foldLeft((constructorRef: Callee, constructorType)) {
-            case ((fn, currType), arg) =>
-              val resultType = currType match
-                case TypeFn(_, _, ret) => ret
-                case other => other
-              val app = App(syntheticSource, fn, arg, typeSpec = Some(resultType))
-              (app, resultType)
-          }
-
-        val body = Expr(syntheticSource, List(constructorCall), typeSpec = Some(structTypeRef))
-
-        // Build the function type: StructName -> StructName
-        val fnType =
-          TypeFn(syntheticSource, cats.data.NonEmptyList.one(structTypeRef), structTypeRef)
-
-        // Build the lambda
-        val lambda = Lambda(
-          syntheticSource,
-          List(param),
-          body,
-          Nil,
-          typeSpec = Some(fnType),
-          typeAsc  = Some(structTypeRef)
-        )
-
-        // Build the binding
-        val meta = BindingMeta(
-          origin        = BindingOrigin.Function,
-          arity         = CallableArity.Unary,
-          precedence    = Precedence.Function,
-          associativity = None,
-          originalName  = fnName,
-          mangledName   = fnName
-        )
-
-        val binding = Bnd(
-          source     = SourceOrigin.Synth,
-          nameNode   = Name.synth(fnName),
-          value      = Expr(syntheticSource, List(lambda)),
-          typeSpec   = Some(fnType),
-          typeAsc    = Some(structTypeRef),
-          docComment = None,
-          meta       = Some(meta),
-          id         = BindingIds.declaration(moduleName, fnName).some
-        )
-
-        (binding, errors)
-      }
-      .flatTap { (binding, _) => BindingIds.reserveDeclaration(binding) }
-
   /** Main entry point - generate memory functions for structs with heap fields */
   def rewriteModule(state: CompilerState): CompilerState =
     val module     = state.module
@@ -349,15 +227,8 @@ object MemoryFunctionGenerator:
         idx.updated(bnd)
       }
 
-      // Generate __free_T and __clone_T for user structs only (not native structs)
-      val allocation = structsNeedingMemFns.flatTraverse { struct =>
-        for
-          free <- mkFreeFunction(struct, moduleName, resolvablesWithCtors)
-          clone <-
-            if TypeUtils.containsFunction(struct, resolvablesWithCtors) then
-              List.empty[(Bnd, List[SemanticError])].pure[Allocation]
-            else mkCloneFunction(struct, moduleName, resolvablesWithCtors).map(List(_))
-        yield free :: clone
+      val allocation = structsNeedingMemFns.traverse { struct =>
+        mkFreeFunction(struct, moduleName, resolvablesWithCtors)
       }
       val (supply, generated) = allocation.run(state.bindingIds.include(module)).value
 

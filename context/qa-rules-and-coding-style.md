@@ -115,6 +115,36 @@ sees on the page.
   - The rule against *backward*-looking hedging still stands: "no longer", "was",
     "previously" still rot fast and add no value.
 
+### Negative example: assuming the reader came from a caller
+
+```scala
+/** Lowered bodies are module bindings, but their source declarations are instance members. */
+def loweredMemberIds(module: Module): Set[String] =
+  module.members.collect { case instance: ProtocolInstance => instance.memberIds }.flatten.toSet
+```
+
+The comment fails for two reasons:
+
+- It is not useful as a standalone description of this method. It contrasts lowered bodies
+  with source declarations, but does not explain what the method returns.
+- It assumes the reader arrived from a caller and already knows why that distinction matters.
+  Someone reading this declaration directly has to find its callers to understand the comment.
+
+The method collects the implementation-binding IDs recorded by protocol instances. Callers use
+that set to exclude those bindings from ordinary name lookup, entry-point selection, and duplicate
+processing when checking a module again.
+
+A direct comment would be:
+
+```scala
+/** Returns the binding IDs of protocol instance implementations in this module. */
+```
+
+The reasons for excluding those bindings belong at the respective callers. A method's comment
+should explain its own contract without assuming a particular caller, an implementation plan,
+or knowledge of the change history. Avoid comments that merely restate an obvious name or body;
+when documentation is needed, make it useful at the declaration where the reader finds it.
+
 ### Positive example: explaining a helper type
 
 This comment explains what the type represents and makes the distinction between the source

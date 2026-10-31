@@ -4,8 +4,8 @@ import cats.syntax.all.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.compiler.CompilerState
 
-/** Groups operators by their shared syntax while retaining every possible implementation. */
-object OperatorGrouping:
+/** Enforces operator syntax coherence while retaining every possible implementation. */
+object OperatorCoherence:
 
   /** Visible declarations of the same operator and arity must agree even when unused. For example,
     * two protocols may declare binary + at precedence 70, but one cannot declare it at 80: the
@@ -71,7 +71,7 @@ object OperatorGrouping:
       yield ProtocolError.OperatorGroupingConflict(first.node, other.node)
     case _ => none
 
-  private val phaseName = "mml.mmlclib.semantic.OperatorGrouping"
+  private val phaseName = "mml.mmlclib.semantic.OperatorCoherence"
 
   private def grouped(
     term:  Term,

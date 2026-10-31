@@ -770,6 +770,9 @@ The language draft defines semantics beyond the approved bounded plan.
 
 Incidental findings and their fix status are collected in [Bug notes](bug-notes.md).
 
+[Centralize, and Unify ast queries](centralize-and-unify-ast-queries.md) follows protocol work
+and separates reusable queries from phase implementations, starting with operator coherence.
+
 ## Signoff
 
 - P0–P6, including the Num review repairs: complete and signed off.

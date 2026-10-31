@@ -20,12 +20,26 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 
 ## Active Tasks
 
-### Explicit Clone and global ownership transfers
+### Allow globals at owning boundaries without cloning
 
-- **Tracker:** [Explicit Clone and global ownership transfers](tasks/explicit-clone.md)
-- **Status:** planned
-- **Current focus:** After Protocols: explicit Clone and generated instances (P7), then
-  explicit cloning for global ownership transfers (P8).
+- **Tracker:** [Allow globals at owning boundaries without cloning](tasks/global-owning-boundaries.md)
+- **Status:** design
+- **Current focus:** Preserve global modes through owning boundaries and infer ownership
+  requirements from explicit drops; replace mandatory global cloning with mode-aware acceptance.
+
+### Typed compiler diagnostics
+
+- **Tracker:** [Typed compiler errors and shared diagnostic rendering](tasks/typed-compiler-diagnostics.md)
+- **Status:** design
+- **Current focus:** After protocol work: typed error payloads, shared presentation-side message
+  templates and substitutions, and removal of message-based error discrimination.
+
+### Centralize, and Unify ast queries
+
+- **Tracker:** [Centralize, and Unify ast queries](tasks/centralize-and-unify-ast-queries.md)
+- **Status:** needs_design
+- **Current focus:** After protocol work: settle a shared AST-query subpackage and unification
+  pattern, starting with the queries used by operator coherence and expression rewriting.
 
 ### Protocol navigation
 
@@ -74,3 +88,10 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 - **Status:** design
 - **Current focus:** Settle remaining module and inclusion semantics and prepare a bounded
   plan for Package and nested modules in one source file, followed by source inclusion.
+
+### Struct capture ownership
+
+- **Tracker:** [Struct capture ownership](tasks/struct-capture-ownership.md)
+- **Status:** design
+- **Current focus:** Revisit borrowing construction and explicit all-field move construction,
+  following the lambda capture model.

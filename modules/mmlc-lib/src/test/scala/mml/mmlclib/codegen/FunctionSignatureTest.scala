@@ -891,8 +891,8 @@ class FunctionSignatureTest extends BaseEffFunSuite with ClosureAssertions:
       )
 
       assertEquals(capture.storedValue, cloneCall.group("result"))
-      assertCalls(expandNativeAdapters(llvmIr, cloneCall.matched), "__clone_String", 1)
-      assertCalls(expandNativeAdapters(llvmIr, mainBody), "__clone_String", 1)
+      assertCalls(expandCallsTo(llvmIr, cloneCall.matched, "__clone_String"), "__clone_String", 1)
+      assertCalls(expandCallsTo(llvmIr, mainBody, "__clone_String"), "__clone_String", 1)
       val printCall = uniqueMatch(
         greetBody,
         "call void @(?<entry>[^ (]+)" +

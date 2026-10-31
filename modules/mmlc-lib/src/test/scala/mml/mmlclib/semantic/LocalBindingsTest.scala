@@ -16,7 +16,10 @@ class LocalBindingsTest extends BaseEffFunSuite:
       assertLocalIndex(module)
       val helper = module.members
         .collectFirst {
-          case binding: Bnd if binding.name == "__clone_Label" => binding
+          case binding: Bnd
+              if cloneBindingFor(typeReference("Label", module.resolvables), module)
+                .exists(_.id == binding.id) =>
+            binding
         }
         .getOrElse(fail("Expected generated clone helper"))
       val params =

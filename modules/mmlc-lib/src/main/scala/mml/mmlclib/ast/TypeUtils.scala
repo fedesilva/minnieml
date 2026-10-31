@@ -180,13 +180,3 @@ object TypeUtils:
           }
       }
     loop(tpe, Set.empty)
-
-  /** Get clone function name for a type, or None if its ownership cannot be duplicated. */
-  def cloneFnFor(tpe: Type, index: ResolvablesIndex): Option[String] =
-    declaration(tpe, index).flatMap {
-      case definition: TypeDef =>
-        heapNativeType(definition).map(_ => s"__clone_${definition.name}")
-      case struct: TypeStruct if hasHeapFields(struct, index) && !containsFunction(struct, index) =>
-        s"__clone_${struct.name}".some
-      case _ => none
-    }

@@ -779,9 +779,24 @@ struct User { name: String, age: Int };  // Heap type (String is heap-allocated)
 struct Point { x: Int, y: Int };         // Not a heap type
 ```
 
-The compiler generates `__free_T` for heap structs and `__clone_T` when they contain no
-function fields, directly or transitively. See [Memory management](#7-memory-management)
-for ownership details.
+The compiler generates `__free_T` for heap structs and Clone instances for eligible structs.
+Each field must be scalar or support Clone; function-bearing structs are excluded, including
+through nested fields. Scalar-only structs also receive Clone instances. See
+[Memory management](#7-memory-management) for ownership details.
+
+`^value` borrows its input and returns an independent copy through its Clone instance:
+
+```mml
+let original = User (concat "A" "da") 30;
+let copied = ^original;
+```
+
+The source remains valid. Native String, Buffer, Rng, IntArray, StringArray, and FloatArray
+have declared Clone instances. A native representation or a function named `__clone_T`
+does not grant Clone support. An ownership-tracked Clone result must be owned; returning
+its borrowed input is rejected. Clone can also be selected as a callable, for example
+`let duplicate: String -> String = (^);`.
+
 
 Struct construction owns its fields. Passing a value to a heap-typed struct field is
 an ownership transfer, so the argument must be owned. Borrowed values cannot be
@@ -1097,7 +1112,8 @@ fn take_ownership(~s: String): Unit = ();;
 - Consuming PAP calls can be nested inside argument expressions. Arguments run once in source
   order, and ownership moves remain visible to later arguments and statements
 - A conditional argument to a consuming parameter transfers ownership on either branch.
-  Borrowed branches are rejected; literal/global branches use the type's clone contract
+  Borrowed and global-backed branches are rejected; global-backed values require explicit `^`
+  copies. Literal branches use the type's clone contract
 
 ---
 

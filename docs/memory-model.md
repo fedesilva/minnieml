@@ -78,16 +78,12 @@ Every binding tracked by the ownership analyzer is in one of these states:
 Globals have static lifetime from the ownership model's point of view.
 
 - A global heap value may be borrowed.
-- A global heap value may be used at a consuming boundary.
-- Consuming a global does not invalidate the global.
+- An ownership transfer requires an explicit `^` copy, leaving the global valid.
+- Ordinary scalar copies need no cloning.
 - Local cleanup never frees global-backed storage.
 
-When a global-backed value is stored inside an owned aggregate, the aggregate is still an
-ordinary owned local value, but its global-backed fields are not released by the aggregate's
-destructor.
-
-The compiler's incomplete handling of global-backed fields is described under
-[Global-backed aggregates](#global-backed-aggregates).
+Owning aggregates store independent copies of global-backed fields. Their destructors release
+those copies. See [Global-backed aggregates](#global-backed-aggregates) for provenance rules.
 
 ---
 
@@ -267,8 +263,7 @@ What happens to each argument depends on its state:
 
 - **Owned** -> moved
 - **Literal** -> cloned to create an owned field value (see [Clone operations](#clone-operations))
-- **Global** -> accepted without invalidating the global; see
-  [Global-backed aggregates](#global-backed-aggregates) for implementation limits
+- **Global** -> compile error; use `^` to provide an independent owned copy
 - **Borrowed** -> compile error
 
 ---
@@ -364,17 +359,18 @@ not give the function ownership to transfer to its caller.
 ### Mixed return branches
 
 When a function returns owned storage on one path, its static result branches must also produce
-ownership for the caller. The compiler clones literal/global results through nested branches
-and local scopes; see [Clone operations](#clone-operations) for this implicit duplication boundary.
+ownership for the caller. The compiler promotes literal results through nested branches
+and local scopes; global-backed results require an explicit `^` copy.
+See [Clone operations](#clone-operations) for the remaining literal promotion boundary.
 Functions whose results are entirely static need no caller cleanup, even if they allocate and
-release local temporaries. Calls proven to return literals retain that provenance through
-helpers, aliases, and recursion. An unowned return contract alone does not prove a static result;
+release local temporaries. Calls proven to return literals or globals retain that provenance
+through helpers, aliases, and recursion. An unowned return contract alone does not prove a static result;
 unknown native results and borrowed parameters do not acquire clone permission.
 
 This applies to a named mixed local or an alias as well as a conditional written directly at the
 return. The owned alternative moves without cloning, and the witness selects cloning only for
-the static alternative. Borrowed alternatives remain invalid. A value allocated before a
-conditional is destroyed on paths that return something else.
+the literal alternative. Global-backed and borrowed alternatives remain invalid. A value allocated
+before a conditional is destroyed on paths that return something else.
 
 The compiler records this promise as a `ReturnContract`, separately from local `Mixed`
 ownership. A function with an owning return contract gives the caller an ordinary owned value
@@ -384,16 +380,13 @@ on every path; its local witness is not part of the returned value's representat
 
 ## Generated memory functions
 
-For each struct with heap fields, the compiler generates:
+For each struct with heap fields, the compiler generates a destructor that frees those fields.
+Eligible structs also receive Clone instances: scalar fields are copied and other fields use
+registered Clone members. This includes scalar-only structs. Structs with function fields,
+directly or transitively, do not receive generated Clone instances.
 
-- A destructor that frees each heap field
-- A clone function that deep-copies heap fields, unless the struct contains a function field
-  directly or transitively. Function environments cannot be cloned.
-
-Native types implement their own free/clone in the runtime.
-
-Generated clone functions are compiler-facing helpers. Source-level clone support is described
-under [Clone operations](#clone-operations).
+Native Clone instances explicitly call FFI helpers with allocating result contracts. Native
+layout and helper naming do not imply clone support. See [Clone operations](#clone-operations).
 
 ---
 
@@ -710,12 +703,17 @@ Use-after-move rejection and keeping borrows within their owners' lifetimes rema
 
 ### Clone operations
 
-There is no user-accessible clone syntax or clone protocol. Generated clone functions are
-compiler-facing helpers. The compiler inserts implicit clones at these boundaries:
+`^value` selects the declared Clone instance, borrows its input, and produces an independent
+owned copy. Native instances forward to `clone_String`, `clone_Buffer`, `clone_Rng`,
+`clone_IntArray`, `clone_StringArray`, and `clone_FloatArray`; each helper explicitly names
+its `__clone_*` C symbol. Generated struct instances and internal duplication use the same
+protocol member lookup. Ownership-tracked instances cannot simply return their borrowed input.
 
-- Literal and some global values passed to consuming parameters or owning struct fields.
+The compiler still inserts implicit clones at these boundaries:
+
+- Literal values passed to consuming parameters or owning struct fields.
 - Heap literals captured by move closures, including the literal alternative of a mixed capture.
-- Literal/global return alternatives when the function promises an owned result, including named
+- Literal return alternatives when the function promises an owned result, including named
   mixed locals and aliases.
 
 These insertions provide owned storage but conceal duplication in the source. They are
@@ -723,10 +721,13 @@ implementation exceptions to the model's source-visible clone operation.
 
 ### Global-backed aggregates
 
-Global-origin ownership is only partially represented, and aggregate destruction does not
-fully distinguish global-backed fields. Some consuming boundaries clone global values into
-owned storage. This limits the model's ability to retain static backing without duplication;
-it does not permit freeing global-backed storage during local cleanup.
+Global-backed values remain borrowed through local aliases, nested field projections,
+conditional results, and statically proven helper returns. Consuming arguments, owning fields,
+owning returns, move-capture payloads, and consuming partial-application payloads reject global
+alternatives and require an explicit `^` copy. Ordinary borrowing and scalar copies remain valid.
+A closure may reference a global directly without transferring it into its environment.
+Unknown helper results remain conservative borrows; an unowned return contract alone does not
+establish global provenance. Cloning establishes independent ownership for the result.
 
 ---
 

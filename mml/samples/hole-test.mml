@@ -1,1 +1,18 @@
+
+// Ok, can't infer.
 let a = ???;
+
+fn agujero_negro(i: Int) =
+  // can't infer.
+  ???;
+;
+
+fn tunel(): Int =
+  // Ok, we can tell the type
+  ???;
+;
+
+fn annotated() =
+  // This should not fail?
+  ???: Int;
+;
