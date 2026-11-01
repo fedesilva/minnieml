@@ -1,6 +1,7 @@
 package mml.mmlclib.semantic
 
 import mml.mmlclib.api.FrontEndApi
+import mml.mmlclib.ast.queries.DeclarationQueries
 import mml.mmlclib.ast.{Bnd, Visibility}
 import mml.mmlclib.codegen.{CompilationMode, EntryPoint}
 import mml.mmlclib.compiler.{CompilerConfig, PreCodegenValidator}
@@ -34,7 +35,7 @@ class PreCodegenValidatorSuite extends BaseEffFunSuite:
     """
 
     semStateNotFailed(source).map { state =>
-      val memberIds = ProtocolRegistry.loweredMemberIds(state.module)
+      val memberIds = DeclarationQueries.loweredMemberIds(state.module)
       val sourceMain = state.module.members
         .collectFirst {
           case binding: Bnd if binding.name == "main" && binding.visibility == Visibility.Public =>

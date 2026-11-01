@@ -3,6 +3,7 @@ package mml.mmlclib.semantic
 import cats.data.State
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.DeclarationQueries
 import mml.mmlclib.compiler.CompilerState
 
 import BindingIds.Allocation
@@ -70,7 +71,7 @@ object IdAssigner:
           id <- identity
           members <- instance.members.traverse { member =>
             val binding    = member.binding
-            val sourceName = ProtocolRegistry.sourceName(binding)
+            val sourceName = DeclarationQueries.sourceName(binding)
             val name = member.operatorParameterCount
               .fold(sourceName)(OpMangling.mangleOp(sourceName, _))
             val owner = BindingOwner(s"$id::$name")

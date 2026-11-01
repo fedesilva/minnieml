@@ -18,7 +18,7 @@
 4. [x] **complete** — Extract operator queries and migrate coherence checking and rewriting.
 5. [x] **complete** — Verify operator behavior preservation, update architecture documentation, and review.
 6. [x] **complete** — [Consume grouping outcomes directly in ExpressionRewriter](#follow-up-consume-grouping-outcomes-directly).
-7. [ ] **design** — Separate declaration metadata, source names, and instance-member IDs from registry operations.
+7. [x] **complete** — [Extract declaration queries and move OperatorQueries to ast.queries](#step-7-declaration-queries-and-operator-package-move).
 8. [ ] **design** — Review protocol visibility, candidate, and concrete-implementation queries; retain authoritative association lookup in the registry.
 9. [ ] **design** — Review type canonicalization, declarations, native representation, and destruction requirements for shared domain boundaries.
 10. [ ] **design** — Separate Clone target selection from call construction, preserving unavailable-target behavior.
@@ -51,8 +51,8 @@ queries use one implementation, with their inputs, results, and failure contract
   compiler and editor code. Distinguish queries from traversals, analyses, and code construction.
 - Start with operator queries: separate reusable lookup and coherence facts from module traversal
   and diagnostic accumulation. Keep the coherence phase and expression rewriter using shared rules.
-- Settle the subpackage location and domain boundaries. `semantic.queries.OperatorQueries` is a
-  candidate for the first extraction; broader placement depends on the inventory.
+- Use `ast.queries` for shared queries over AST nodes and indexes. Step 7 moves the existing
+  operator queries there; broader migrations retain their separate scope decisions.
 - Use explicit AST, index, and registry inputs. Queries return facts or typed lookup failures;
   phase execution, `CompilerState` updates, and replacement-code generation stay with their owners.
 - Examine other query/construction boundaries, including selection of a Clone target versus
@@ -69,8 +69,8 @@ an exhaustive audit of private helpers or evidence that similarly named queries 
 
 | Family | Current home and consumers | Proposed treatment |
 | --- | --- | --- |
-| Operator classification, candidates, precedence, and associativity | [OperatorQueries](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/queries/OperatorQueries.scala); consumed by OperatorCoherence and ExpressionRewriter | Shared query extraction implemented; preserve the division between facts, diagnostics, and AST construction. |
-| Declaration metadata, source names, and instance-member IDs | [ProtocolRegistry companion](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/ProtocolRegistry.scala); used by registration, coherence, ID assignment, diagnostics, and entry-point selection | Separate AST facts from registry operations in a subsequent slice. |
+| Operator classification, candidates, precedence, and associativity | [OperatorQueries](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/queries/OperatorQueries.scala); consumed by OperatorCoherence and ExpressionRewriter | Shared query extraction implemented; preserve the division between facts, diagnostics, and AST construction. |
+| Declaration metadata, source names, and instance-member IDs | [DeclarationQueries](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/queries/DeclarationQueries.scala); used by registration, coherence, ID assignment, diagnostics, and entry-point selection | AST facts extracted; registry operations retain their owner. |
 | Protocol visibility, candidates, and concrete implementations | ProtocolRegistry instance methods | Keep association lookup with the registry; reuse its typed failures and authoritative state. |
 | Type canonicalization, declarations, native representation, and destruction requirements | [TypeUtils](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/TypeUtils.scala); used across parsing, semantics, and codegen | Already shared. Consider domain separation later without routing AST helpers through semantic phases. |
 | Clone target selection and call construction | [CloneCalls](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/CloneCalls.scala); used by struct generation and ownership analysis | Split selection from construction later; preserve the deliberate treatment of missing or rejected instances as unavailable targets. |
@@ -87,11 +87,13 @@ complete applicable verification and review before signoff. Where an existing sh
 is retained, record the rationale and supporting evidence rather than forcing a relocation.
 Listing these families does not authorize their implementation.
 
-### Approved operator-query package and contracts
+### Shared query package and operator contracts
 
-Start with `semantic.queries.OperatorQueries` for queries requiring semantic context.
-Keep existing AST-only helpers beneath `ast` until a separate migration establishes their
-destination. Organize query modules by domain, with explicit node, index, and registry inputs.
+The approved destination is `ast.queries`. Its queries depend on AST nodes and indexes, not
+semantic phases, CompilerState, or registry state. `OperatorQueries` uses DeclarationQueries
+for metadata inspection. Other AST helpers retain their existing locations until their inventory
+steps establish a destination.
+Organize query modules by domain, with explicit inputs.
 Queries return facts or typed lookup failures. Phase execution, diagnostic accumulation,
 CompilerState updates, and AST construction remain with callers.
 
@@ -117,6 +119,60 @@ consumes the concrete operator case directly.
 
 Scope: migrate metadata producers and consumers, verify the type restriction and existing
 operator behavior, and review. The operator-query extraction is approved as a separate bounded slice.
+
+### Step 7: declaration queries and operator package move
+
+Package decision and bounded implementation plan: approved. Implementation, verification,
+independent review, and scoped signoff: complete.
+
+Use one `ast.queries` package for this slice. AST facts serve semantic processing, diagnostics,
+and codegen; their callers do not determine their package. Registry associations remain owned
+by `ProtocolRegistry`. No second query package or forwarding compatibility layer is needed.
+
+1. Add `ast.queries.DeclarationQueries` and extract these three existing operations from the
+   `ProtocolRegistry` companion, preserving signatures and behavior:
+   - `metadata(Resolvable): Option[BindingMeta]`: return a binding's optional metadata or a
+     protocol signature's metadata; return None for other nodes.
+   - `sourceName(Resolvable): String`: return metadata.originalName when available, otherwise
+     node.name. This is source spelling, not resolved identity or registry validation.
+   - `loweredMemberIds(Module): Set[String]`: collect memberIds from the module's direct
+     protocol-instance members, deduplicated as a set. Do not recursively traverse, consult
+     the index, or filter by registration success. These IDs describe recorded AST facts.
+2. Move `OperatorQueries` from `semantic.queries` to `ast.queries`, replacing its sole
+   semantic dependency, `ProtocolRegistry.metadata`, with `DeclarationQueries.metadata`.
+   Preserve candidate order, identities, arity filtering, reference deduplication, missing-node
+   recovery, same-name preconditions, and Absent/Coherent/Conflict results.
+3. Migrate every production and test caller. Declaration-query consumers include
+   ProtocolRegistry, ProtocolLookupScope, ProtocolChecker, IdAssigner, OperatorCoherence,
+   ProtocolError, codegen EntryPoint, and PreCodegenValidatorSuite. Operator-query consumers
+   include OperatorCoherence, ExpressionRewriter, and ProtocolGroupingTests. Remove the old
+   helper definitions and old package imports after migration.
+4. Update the operator-query description and source-tree overview in
+   [compiler-design.md](../../docs/design/compiler-design.md), plus this task's current inventory
+   links, to match the implemented locations. Document the AST-only dependency boundary and
+   preserve caller ownership of diagnostics, AST construction, and entry-point policy.
+5. Verify behavior and complete compiler handoff review, then stop for scoped signoff.
+
+Excluded: registry association/candidate APIs, resolveDeclaration, typeKey, TypeUtils, Clone,
+destruction, callable analysis, and LSP extraction. Those retain their existing owners and
+separate inventory decisions. No language, diagnostic, ABI, or ownership changes are intended.
+
+Verification and acceptance:
+
+- Inspect existing declaration, grouping, protocol, and entry-point coverage. Preserve its
+  assertions; add focused semantic regressions only for uncovered contracts, especially source
+  name fallback and exclusion of instance implementations from executable entry selection.
+  Do not add tests that merely repeat the extracted match expressions.
+- Confirm no imports of semantic code remain in ast.queries, no old helper callers remain,
+  and no executable source or test imports semantic.queries. Keep historical evidence intact.
+- Run `sbtn "scalafmtAll; scalafixAll; testFull"`, then `./tests/smoke/run.sh all`.
+  After smoke success, run `sbtn mmlcPublishLocal`, `make -C benchmark clean`, and
+  `make -C benchmark mml`, sequentially. Record results and compiler warnings accurately.
+- Run local post-chores, including QA enforcement and independent code review, for the compiler
+  handoff. No ABI or ownership/lambda behavior changes are planned; Linux ABI verification and
+  the full memory harness apply only if implementation actually touches those boundaries.
+- Check documentation links and `git diff --check`; reconcile step 7 evidence and working memory.
+  Steps 8–13 remain open. Implementation approval does not authorize a commit or push.
 
 ### First implementation slice: operator queries
 
@@ -226,6 +282,30 @@ Host: Darwin arm64; sbt 2.0.10 on GraalVM Java 25.0.4.1.
 - `git diff --check`: passed. Independent primary review and four fresh dedicated checks
   (QA, test quality, readability, and code documentation) completed with no actionable findings.
 
+### Declaration-query extraction verification — 2026-11-01
+
+Host: Darwin arm64, Homebrew Clang 23.1.1; sbt 2.0.10 on GraalVM Java 25.0.4.1.
+
+- `sbtn "scalafmtAll; scalafixAll; testFull"`: passed; 2,499 library tests and 9 CLI tests.
+  The initial sandboxed launcher could not write the sbt boot lock; the retry with cache access
+  passed. No compiler source warnings; sbt reports multiple discovered main classes.
+- `./tests/smoke/run.sh all`: 8/8 passed.
+- `sbtn "scalafmtAll; mmlcPublishLocal"`: passed; final formatting changed import layout only.
+- `make -C benchmark clean` and `make -C benchmark mml`: passed (executable builds only,
+  with no performance comparison).
+- Existing tests retain their assertions. ProtocolCheckerTests exercises source-name fallback
+  for raw instance bindings; ProtocolRegistryTests covers parameter shadowing and mixed operator
+  metadata. ProtocolGroupingTests covers recovery, ordered candidates, deduplication, and conflicts.
+  PreCodegenValidatorSuite and EntryPointTests cover instance-member exclusion and source main
+  selection, including native executable behavior. No additional test was needed for the extraction.
+- No imports from semantic or compiler remain in ast.queries, and no source/test callers use the
+  extracted ProtocolRegistry helpers or the old semantic.queries package.
+- `git diff --check` and current task/tracker local-link checks pass. No ABI or ownership/lambda
+  behavior changes; additional Linux ABI-container checks and the full memory harness do not apply.
+- Parent QA compliance pass and independent primary review complete. Four separate fresh checks
+  (QA, test quality, readability, and code documentation) completed with no actionable findings.
+  No candidate findings required independent claim verification. Review was read-only.
+
 ## Risks / Notes
 
 Follow-up after [Implement protocols](protocols.md). Protocol registration owns its associations;
@@ -242,9 +322,11 @@ cyclic partial AST reaches that path before proposing a repair.
 
 - Workstream signoff: metadata prerequisite, operator-query extraction, and direct grouping-outcome
   integration approved and complete.
-- Tracked item completion: pending; query families in steps 7–13 remain open.
-- Implementation approval: steps 1–6 complete; remaining families need bounded plan approval.
-- Operator work committed through `626489d2`; remaining implementation commits need authorization.
+- Step 7: implementation, verification, independent review, and scoped signoff complete.
+- Tracked item completion: pending; query families in steps 8–13 remain open.
+- Implementation approval: steps 1–7 complete. Steps 8–13 need their own bounded plans.
+- Local commit authorization: step 7 source, tests, architecture documentation, and bookkeeping.
+  Later implementation commits require separate authorization.
 
 ## Task Working Memory
 
@@ -259,8 +341,13 @@ references and use-site diagnostics. The rewriter consumes grouping outcomes dir
 unary and binary results for selection and conflict diagnostics. Required execution checks and
 independent review pass; step 6 is signed off.
 
-Direct grouping integration is committed in `626489d2`. The remaining inventory families are
-tracked in steps 7–13 and need bounded plans, implementation where agreed, verification, and signoff.
+Direct grouping integration is committed in `626489d2`. Steps 1–7 are complete and signed off.
+Steps 8–13 need bounded plans, implementation where agreed, verification, and signoff.
 
-Next action: settle the declaration-metadata query boundary in step 7, including source names
-and instance-member IDs, and prepare its bounded migration plan.
+Step 7 implements DeclarationQueries and OperatorQueries in `ast.queries`. Semantic, diagnostic,
+codegen, and test callers use the shared AST queries. Registry operations retain their owner.
+The approved extraction preserves the helper contracts; compiler verification passes as recorded
+above. Independent review passes with no actionable findings; scoped signoff is granted.
+
+Next action: review the protocol visibility, candidate, and concrete-implementation query boundary
+in step 8, retaining authoritative association lookup in the registry, and prepare its bounded plan.

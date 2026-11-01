@@ -3,6 +3,7 @@ package mml.mmlclib.semantic
 import cats.data.NonEmptyList
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.DeclarationQueries
 import mml.mmlclib.compiler.CompilerState
 import mml.mmlclib.errors.{DiagnosticId, DiagnosticStore}
 
@@ -25,7 +26,7 @@ object ProtocolChecker:
     val registered = protocols.foldLeft(initial)(registerProtocol)
 
     // Lowered bodies are read through their IDs when this phase receives an already lowered module.
-    val memberIds = ProtocolRegistry.loweredMemberIds(module)
+    val memberIds = DeclarationQueries.loweredMemberIds(module)
     val declarations = module.members.filterNot {
       case binding: Bnd => binding.id.exists(memberIds.contains)
       case _ => false
@@ -210,7 +211,7 @@ object ProtocolChecker:
     member:   ProtocolInstanceMember,
     protocol: Protocol
   ): Option[ProtocolSignature] =
-    val named = protocol.signatures.filter(_.name == ProtocolRegistry.sourceName(member.binding))
+    val named = protocol.signatures.filter(_.name == DeclarationQueries.sourceName(member.binding))
     named.find(signature => memberName(signature) == memberName(member)).orElse {
       // A unique same-name signature lets checkMember report a shape mismatch.
       named match
@@ -311,7 +312,7 @@ object ProtocolChecker:
     val terms = lambda.body.terms.map {
       case native: NativeImpl if native.nativeTpl.isEmpty =>
         native.copy(
-          nativeSymbol = native.nativeSymbol.orElse(ProtocolRegistry.sourceName(binding).some)
+          nativeSymbol = native.nativeSymbol.orElse(DeclarationQueries.sourceName(binding).some)
         )
       case term => term
     }
@@ -422,7 +423,7 @@ object ProtocolChecker:
     )
 
   private def memberName(member: ProtocolInstanceMember): MemberName =
-    MemberName(ProtocolRegistry.sourceName(member.binding), member.operatorParameterCount)
+    MemberName(DeclarationQueries.sourceName(member.binding), member.operatorParameterCount)
 
   private val unitTypeId = stdlibTypeId("Unit")
 

@@ -3,10 +3,10 @@ package mml.mmlclib.semantic
 import cats.data.{EitherT, NonEmptyList as NEL, State}
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.OperatorQueries
+import mml.mmlclib.ast.queries.OperatorQueries.Grouping
 import mml.mmlclib.compiler.CompilerState
 import mml.mmlclib.errors.{DiagnosticId, DiagnosticStore}
-import mml.mmlclib.semantic.queries.OperatorQueries
-import mml.mmlclib.semantic.queries.OperatorQueries.Grouping
 
 /** ExpressionRewriter handles expression transformations, including function applications and
   * operator precedence. It treats function application as an implicit high-precedence operator

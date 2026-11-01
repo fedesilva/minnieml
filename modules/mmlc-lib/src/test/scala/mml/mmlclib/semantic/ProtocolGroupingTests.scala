@@ -1,9 +1,9 @@
 package mml.mmlclib.semantic
 
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.OperatorQueries
 import mml.mmlclib.compiler.{CompilerConfig, CompilerState}
 import mml.mmlclib.parser.SourceInfo
-import mml.mmlclib.semantic.queries.OperatorQueries
 import mml.mmlclib.test.BaseEffFunSuite
 import mml.mmlclib.test.ast.{termApplication, termLambda, termReference, unwrappedTerm as unwrapped}
 

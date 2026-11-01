@@ -4,6 +4,11 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-11-01
 
+- Centralize declaration metadata, source names, and recorded instance implementation IDs in
+  `ast.queries.DeclarationQueries`, and place operator queries in the same package. Preserve
+  lookup, grouping, recovery, and entry-point behavior; document the boundary between AST facts
+  and registry associations.
+
 - Reuse operator grouping outcomes within each expression-rewriting decision for selection and
   conflict diagnostics. Remove redundant query adapters while preserving precedence, candidate
   identities, bare operator values, and diagnostic causes.

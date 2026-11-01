@@ -1,6 +1,7 @@
 package mml.mmlclib.semantic
 
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.DeclarationQueries
 
 /** Protocol declaration, instance, and selection errors retain their source for every consumer. */
 enum ProtocolError:
@@ -108,7 +109,7 @@ enum ProtocolError:
       s"Protocol registry error: ${registryMessage(reason)}"
 
     case OperatorGroupingConflict(_, other) =>
-      s"Operator '${ProtocolRegistry.sourceName(other)}' has conflicting precedence or " +
+      s"Operator '${DeclarationQueries.sourceName(other)}' has conflicting precedence or " +
         "associativity for the same arity"
 
     case MissingInstance(ref, protocol, concreteType) =>

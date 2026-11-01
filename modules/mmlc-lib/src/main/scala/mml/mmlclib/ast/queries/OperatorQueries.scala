@@ -1,9 +1,8 @@
-package mml.mmlclib.semantic.queries
+package mml.mmlclib.ast.queries
 
 import cats.data.NonEmptyList
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
-import mml.mmlclib.semantic.ProtocolRegistry
 
 /** Operator facts shared by declaration checking and expression grouping. */
 object OperatorQueries:
@@ -24,7 +23,7 @@ object OperatorQueries:
     ids.flatMap { id =>
       for
         node <- index.lookup(id)
-        meta <- ProtocolRegistry.metadata(node)
+        meta <- DeclarationQueries.metadata(node)
         grouping <- meta.kind match
           case operator: BindingKind.Operator => operator.some
           case _ => none

@@ -2,6 +2,7 @@ package mml.mmlclib.semantic
 
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.DeclarationQueries
 import mml.mmlclib.errors.DiagnosticId
 
 /** Stores identities, associations, and declaration-failure causes. Lookups read current nodes from
@@ -229,7 +230,7 @@ final case class ProtocolRegistry private (
   ): Either[ProtocolLookupError, List[ProtocolCandidate]] =
 
     def matchesArity(node: Resolvable): Boolean =
-      val meta = ProtocolRegistry.metadata(node)
+      val meta = DeclarationQueries.metadata(node)
       operatorArity match
         case Some(arity) => meta.exists(m => m.origin == BindingOrigin.Operator && m.arity == arity)
         case None => !meta.exists(_.origin == BindingOrigin.Operator)
@@ -254,8 +255,8 @@ final case class ProtocolRegistry private (
   ): Either[ProtocolLookupError, List[ProtocolCandidate]] =
 
     def matchesName(node: Resolvable): Boolean = node match
-      case binding: Bnd => binding.name == name || ProtocolRegistry.sourceName(binding) == name
-      case _ => ProtocolRegistry.sourceName(node) == name
+      case binding: Bnd => binding.name == name || DeclarationQueries.sourceName(binding) == name
+      case _ => DeclarationQueries.sourceName(node) == name
 
     def candidate(id: String, node: Resolvable): Either[ProtocolLookupError, ProtocolCandidate] =
       node match
@@ -338,20 +339,6 @@ object ProtocolRegistry:
 
   val empty: ProtocolRegistry =
     ProtocolRegistry(Map.empty, Map.empty, Map.empty, Map.empty, Map.empty, Map.empty, Map.empty)
-
-  /** Returns the binding IDs of protocol instance implementations in this module. */
-  def loweredMemberIds(module: Module): Set[String] =
-    module.members.collect { case instance: ProtocolInstance => instance.memberIds }.flatten.toSet
-
-  /** Source names and callable attributes are shared by lexical lookup and operator grouping. */
-  def sourceName(node: Resolvable): String =
-    metadata(node).map(_.originalName).getOrElse(node.name)
-
-  /** Functions and operators expose the same attributes whether executable or required. */
-  def metadata(node: Resolvable): Option[BindingMeta] = node match
-    case binding:   Bnd => binding.meta
-    case signature: ProtocolSignature => signature.meta.some
-    case _ => None
 
   /** Resolve aliases through declaration IDs; never use source spelling or native layout as
     * identity. Grouping such as (Int) does not change the key, and the built-in Unit declaration
@@ -482,7 +469,7 @@ object ProtocolLookupScope:
   /** Instance bodies are indexed executable bindings, but source names expose their signatures. */
   def module(module: Module): ProtocolLookupScope =
 
-    val instanceBindings = ProtocolRegistry.loweredMemberIds(module)
+    val instanceBindings = DeclarationQueries.loweredMemberIds(module)
     val visible = module.members.flatMap {
       case binding:  Bnd if !binding.id.exists(instanceBindings.contains) => binding.id.toList
       case protocol: Protocol => protocol.signatures.flatMap(_.id)
