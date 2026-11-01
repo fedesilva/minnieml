@@ -3,7 +3,7 @@
 ## Metadata
 
 - **Owner:** The Author
-- **Status:** complete
+- **Status:** in_progress
 - **Kind:** improvement
 - **Priority:** unassigned
 - **Created:** 2026-10-29
@@ -18,6 +18,13 @@
 4. [x] **complete** — Extract operator queries and migrate coherence checking and rewriting.
 5. [x] **complete** — Verify operator behavior preservation, update architecture documentation, and review.
 6. [x] **complete** — [Consume grouping outcomes directly in ExpressionRewriter](#follow-up-consume-grouping-outcomes-directly).
+7. [ ] **design** — Separate declaration metadata, source names, and instance-member IDs from registry operations.
+8. [ ] **design** — Review protocol visibility, candidate, and concrete-implementation queries; retain authoritative association lookup in the registry.
+9. [ ] **design** — Review type canonicalization, declarations, native representation, and destruction requirements for shared domain boundaries.
+10. [ ] **design** — Separate Clone target selection from call construction, preserving unavailable-target behavior.
+11. [ ] **design** — Review destruction-target and memory-function queries, retaining or refining their existing shared boundaries.
+12. [ ] **design** — Separate callable structural queries from value-flow analysis for origins, application structure, and parameter ownership.
+13. [ ] **design** — Identify reusable cursor, definition, reference, and source-span queries while preserving LSP policy and recovery.
 
 ## Tags
 
@@ -70,6 +77,15 @@ an exhaustive audit of private helpers or evidence that similarly named queries 
 | Destruction targets and memory-function lookup | [DestructionTargets](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/DestructionTargets.scala) and [MemoryFunctions](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/MemoryFunctions.scala); used by ownership, destructor generation, and codegen | Retain these focused shared boundaries initially. |
 | Callable origins, application structure, and parameter ownership | [CallableValues](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/CallableValues.scala) and [CallStages](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/CallStages.scala) | Distinguish structural queries from value-flow analysis before migration; retain the analysis owner. |
 | Cursor lookup, definitions, references, and source spans | [AstLookup](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/lsp/AstLookup.scala); used by LSP features | Keep editor policy in LSP; compare recovery behavior before extracting reusable semantic facts. |
+
+### Remaining query families
+
+Checklist steps 7–13 follow the inventory order. Each family needs a bounded decision about
+its shared queries, owner, inputs, results, and failure/recovery contract before implementation.
+For each family, approve the plan, implement any agreed extraction or caller migration, and
+complete applicable verification and review before signoff. Where an existing shared boundary
+is retained, record the rationale and supporting evidence rather than forcing a relocation.
+Listing these families does not authorize their implementation.
 
 ### Approved operator-query package and contracts
 
@@ -226,8 +242,9 @@ cyclic partial AST reaches that path before proposing a repair.
 
 - Workstream signoff: metadata prerequisite, operator-query extraction, and direct grouping-outcome
   integration approved and complete.
-- Tracked item completion: approved 2026-11-01; all six checklist items complete.
-- Commit authorization: granted for task closure; push not authorized.
+- Tracked item completion: pending; query families in steps 7–13 remain open.
+- Implementation approval: steps 1–6 complete; remaining families need bounded plan approval.
+- Operator work committed through `626489d2`; remaining implementation commits need authorization.
 
 ## Task Working Memory
 
@@ -242,6 +259,8 @@ references and use-site diagnostics. The rewriter consumes grouping outcomes dir
 unary and binary results for selection and conflict diagnostics. Required execution checks and
 independent review pass; step 6 is signed off.
 
-All planned work is complete. Later query families remain subject to separate bounded plans.
-The direct grouping integration and closure records are included in the
-`Reuse operator grouping outcomes in expression rewriting` commit.
+Direct grouping integration is committed in `626489d2`. The remaining inventory families are
+tracked in steps 7–13 and need bounded plans, implementation where agreed, verification, and signoff.
+
+Next action: settle the declaration-metadata query boundary in step 7, including source names
+and instance-member IDs, and prepare its bounded migration plan.

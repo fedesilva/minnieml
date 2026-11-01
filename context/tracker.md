@@ -20,6 +20,13 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 
 ## Active Tasks
 
+### Centralize, and Unify ast queries
+
+- **Tracker:** [Centralize, and Unify ast queries](tasks/centralize-and-unify-ast-queries.md)
+- **Status:** in_progress
+- **Current focus:** Plan the declaration-metadata query boundary in step 7. Operator work is
+  complete; steps 7–13 cover the remaining inventory families.
+
 ### Typed compiler diagnostics
 
 - **Tracker:** [Typed compiler errors and shared diagnostic rendering](tasks/typed-compiler-diagnostics.md)
