@@ -20,13 +20,6 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 
 ## Active Tasks
 
-### Centralize, and Unify ast queries
-
-- **Tracker:** [Centralize, and Unify ast queries](tasks/centralize-and-unify-ast-queries.md)
-- **Status:** in_progress
-- **Current focus:** Approve step 6: consume grouping outcomes directly in ExpressionRewriter.
-  Operator-query extraction is complete.
-
 ### Typed compiler diagnostics
 
 - **Tracker:** [Typed compiler errors and shared diagnostic rendering](tasks/typed-compiler-diagnostics.md)

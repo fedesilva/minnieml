@@ -899,6 +899,8 @@ same conflict accumulation, preserving declaration order. Queries neither constr
 emit diagnostics. Missing index entries and non-operator metadata are ignored during recovery.
 
 The expression rewriter consumes these facts for prefix, postfix, and binary syntax.
+Each rewriting decision analyzes each relevant arity once and reuses the result for selection
+and conflict diagnostics. Narrowed references and application nodes are built by the rewriter.
 It narrows candidates by arity while retaining all matching signatures. For example, unary and
 binary `-` group differently, but two protocols' binary `+` signatures must describe the same tree.
 A single ordinary binding can be selected immediately; signatures await type checking.

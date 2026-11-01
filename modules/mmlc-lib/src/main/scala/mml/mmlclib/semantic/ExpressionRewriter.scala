@@ -98,48 +98,19 @@ object ExpressionRewriter:
 
   private val MinPrecedence: Int = 1
 
-  private case class GroupedOperator(ref: Ref, precedence: Int, associativity: Associativity)
-
   /** Narrow syntax candidates without selecting a protocol implementation. */
-  private def groupedOperator(
-    term:  Term,
-    arity: CallableArity,
-    index: ResolvablesIndex
-  ): Option[GroupedOperator] = term match
-    case ref: Ref =>
-      OperatorQueries.grouping(ref, arity, index) match
-        case Grouping.Coherent(candidates, attributes) =>
-          val declarations = candidates.toList.map(_.node)
-          val resolvedId = declarations match
-            case (binding: Bnd) :: Nil => binding.id
-            case _ => none
-          GroupedOperator(
-            ref.copy(candidateIds = declarations.flatMap(_.id), resolvedId = resolvedId),
-            attributes.precedence,
-            attributes.associativity
-          ).some
-        case _ => none
-    case _ => none
-
-  private def binaryOperator(term: Term, index: ResolvablesIndex): Option[GroupedOperator] =
-    groupedOperator(term, CallableArity.Binary, index)
-
-  private def prefixOperator(term: Term, index: ResolvablesIndex): Option[GroupedOperator] =
-    groupedOperator(term, CallableArity.Unary, index).filter(_.associativity == Associativity.Right)
-
-  private def postfixOperator(term: Term, index: ResolvablesIndex): Option[GroupedOperator] =
-    groupedOperator(term, CallableArity.Unary, index).filter(_.associativity == Associativity.Left)
-
-  private def operatorConflict(
-    term:  Term,
-    arity: CallableArity,
-    index: ResolvablesIndex
-  ): Option[ProtocolError.OperatorGroupingConflict] =
-    OperatorQueries.grouping(term, arity, index) match
-      case Grouping.Conflict(disagreements) =>
-        val first = disagreements.head
-        ProtocolError.OperatorGroupingConflict(first.first, first.other).some
+  private def narrowedOperator(ref: Ref, grouping: Grouping.Coherent): Ref =
+    val declarations = grouping.candidates.toList.map(_.node)
+    val resolvedId = declarations match
+      case (binding: Bnd) :: Nil => binding.id
       case _ => none
+    ref.copy(candidateIds = declarations.flatMap(_.id), resolvedId = resolvedId)
+
+  /** Reject grouping with the first conflicting declaration pair for diagnostic cause matching. */
+  private def rejectConflict[A](conflict: Grouping.Conflict): Rewrite[A] =
+    val first = conflict.disagreements.head
+    val error = ProtocolError.OperatorGroupingConflict(first.first, first.other)
+    NEL.one(SemanticError.ProtocolErrorFound(error, phaseName)).rejected
 
   /** Rewrite an expression using precedence climbing for both operators and function application
     */
@@ -235,31 +206,24 @@ object ExpressionRewriter:
         }
 
       case (head :: rest) =>
-        val prefix = prefixOperator(head, resolvables).filter(_ => rest.nonEmpty)
-        val conflict = Option
-          .when(rest.nonEmpty)(
-            operatorConflict(head, CallableArity.Unary, resolvables)
-          )
-          .flatten
-        (prefix, conflict) match
-          case (Some(grouped), _) =>
-            // Prefix unary operator (like +, -, etc.)
-            val nextMinPrec =
-              if grouped.associativity == Associativity.Left then grouped.precedence + 1
-              else grouped.precedence
-
+        val unary = OperatorQueries.grouping(head, CallableArity.Unary, resolvables)
+        (head, unary) match
+          case (ref: Ref, grouped: Grouping.Coherent)
+              if rest.nonEmpty && grouped.attributes.associativity == Associativity.Right =>
             rewritePrecedenceExpr(
               rest,
-              nextMinPrec,
+              grouped.attributes.precedence,
               source,
               resolvables
             ).map { case (operand, remaining) =>
-              (Expr(source, List(App(source, grouped.ref, operand))), remaining)
+              val op = narrowedOperator(ref, grouped)
+              (Expr(source, List(App(source, op, operand))), remaining)
             }
-          case (None, Some(error)) =>
-            NEL.one(SemanticError.ProtocolErrorFound(error, phaseName)).rejected
 
-          case (None, None) =>
+          case (_, conflict: Grouping.Conflict) if rest.nonEmpty =>
+            rejectConflict(conflict)
+
+          case _ =>
             // Not a prefix operator - check for ref, atom, or error
             head match
               case callable @ (_: Ref | _: Lambda) =>
@@ -295,47 +259,35 @@ object ExpressionRewriter:
   ): Rewrite[(Expr, List[Term])] =
     terms match
       case head :: rest =>
-        // Check for binary operator with sufficient precedence
-        val binary = binaryOperator(head, resolvables).filter { grouped =>
-          grouped.precedence >= minPrec &&
-          (postfixOperator(head, resolvables).isEmpty ||
-            rest.headOption.exists(canStartOperand(_, resolvables)))
-        }
-        binary match
-          case Some(grouped) =>
-            val nextMinPrec =
-              if grouped.associativity == Associativity.Left then grouped.precedence + 1
-              else grouped.precedence
+        val binary = OperatorQueries.grouping(head, CallableArity.Binary, resolvables)
+        val unary  = OperatorQueries.grouping(head, CallableArity.Unary, resolvables)
+        val hasPostfix = unary match
+          case grouped: Grouping.Coherent =>
+            grouped.attributes.associativity == Associativity.Left
+          case _ => false
 
-            rewritePrecedenceExpr(
-              rest,
-              nextMinPrec,
-              source,
-              resolvables
-            ).flatMap { case (rhs, remaining) =>
-              // Transform operator expression to function application
-              val opApp    = App(source, App(source, grouped.ref, lhs), rhs)
-              val combined = Expr(source, List(opApp))
-              rewriteOps(
-                combined,
-                remaining,
-                minPrec,
-                source,
-                resolvables
-              )
+        (head, binary, unary) match
+          case (ref: Ref, grouped: Grouping.Coherent, _)
+              if grouped.attributes.precedence >= minPrec &&
+                (!hasPostfix || rest.headOption.exists(canStartOperand(_, resolvables))) =>
+            val attributes = grouped.attributes
+            val nextMinPrec =
+              if attributes.associativity == Associativity.Left then attributes.precedence + 1
+              else attributes.precedence
+
+            rewritePrecedenceExpr(rest, nextMinPrec, source, resolvables).flatMap {
+              case (rhs, remaining) =>
+                val opApp = App(source, App(source, narrowedOperator(ref, grouped), lhs), rhs)
+                rewriteOps(Expr(source, List(opApp)), remaining, minPrec, source, resolvables)
             }
-          case None =>
-            // Check for postfix operator with sufficient precedence
-            postfixOperator(head, resolvables)
-              .filter(_.precedence >= minPrec) match
-              case Some(grouped) =>
-                // Transform postfix operator to function application
-                val opApp    = App(source, grouped.ref, lhs)
-                val combined = Expr(source, List(opApp))
-                rewriteOps(combined, rest, minPrec, source, resolvables)
-              case None =>
-                // Neither binary nor postfix op with sufficient precedence
-                rewriteOpsRemainder(head, lhs, terms, resolvables)
+
+          case (ref: Ref, _, grouped: Grouping.Coherent)
+              if hasPostfix && grouped.attributes.precedence >= minPrec =>
+            val opApp = App(source, narrowedOperator(ref, grouped), lhs)
+            rewriteOps(Expr(source, List(opApp)), rest, minPrec, source, resolvables)
+
+          case _ =>
+            rewriteOpsRemainder(head, lhs, terms, binary, unary, resolvables)
       case Nil =>
         // No more operations
         (lhs, terms).accepted
@@ -344,13 +296,19 @@ object ExpressionRewriter:
     * prefix syntax can begin an operand, so 1 ! -2 keeps the binary interpretation of !.
     */
   private def canStartOperand(term: Term, index: ResolvablesIndex): Boolean =
-    !OperatorQueries.isOperator(term, index) || prefixOperator(term, index).nonEmpty
+    !OperatorQueries.isOperator(term, index) ||
+      (OperatorQueries.grouping(term, CallableArity.Unary, index) match
+        case grouped: Grouping.Coherent =>
+          grouped.attributes.associativity == Associativity.Right
+        case _ => false)
 
   /** Handle remaining cases in rewriteOps when no binary/postfix op matched */
   private def rewriteOpsRemainder(
     head:        Term,
     lhs:         Expr,
     terms:       List[Term],
+    binary:      Grouping,
+    unary:       Grouping,
     resolvables: ResolvablesIndex
   ): Rewrite[(Expr, List[Term])] =
     head match
@@ -375,13 +333,11 @@ object ExpressionRewriter:
             )
           )
           .rejected
-      case ref: Ref =>
-        val conflict = operatorConflict(ref, CallableArity.Binary, resolvables)
-          .orElse(operatorConflict(ref, CallableArity.Unary, resolvables))
-        conflict match
-          case Some(error) =>
-            NEL.one(SemanticError.ProtocolErrorFound(error, phaseName)).rejected
-          case None => (lhs, terms).accepted
+      case _: Ref =>
+        (binary, unary) match
+          case (conflict: Grouping.Conflict, _) => rejectConflict(conflict)
+          case (_, conflict: Grouping.Conflict) => rejectConflict(conflict)
+          case _ => (lhs, terms).accepted
       case _ =>
         // No more operations with sufficient precedence
         (lhs, terms).accepted

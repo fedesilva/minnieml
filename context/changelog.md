@@ -2,6 +2,12 @@
 
 Durable product changes belong here. Current task state belongs in task files.
 
+## 2026-11-01
+
+- Reuse operator grouping outcomes within each expression-rewriting decision for selection and
+  conflict diagnostics. Remove redundant query adapters while preserving precedence, candidate
+  identities, bare operator values, and diagnostic causes.
+
 ## 2026-10-31
 
 - Share operator candidate and grouping queries between coherence checking and expression rewriting.

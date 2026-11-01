@@ -3,7 +3,7 @@
 ## Metadata
 
 - **Owner:** The Author
-- **Status:** in_progress
+- **Status:** complete
 - **Kind:** improvement
 - **Priority:** unassigned
 - **Created:** 2026-10-29
@@ -17,7 +17,7 @@
 3. [x] **complete** — Approve the bounded operator-query extraction plan.
 4. [x] **complete** — Extract operator queries and migrate coherence checking and rewriting.
 5. [x] **complete** — Verify operator behavior preservation, update architecture documentation, and review.
-6. [ ] **planned** — [Consume grouping outcomes directly in ExpressionRewriter](#follow-up-consume-grouping-outcomes-directly).
+6. [x] **complete** — [Consume grouping outcomes directly in ExpressionRewriter](#follow-up-consume-grouping-outcomes-directly).
 
 ## Tags
 
@@ -123,10 +123,8 @@ Approval: metadata prerequisite complete; bounded operator-query extraction appr
 
 ### Follow-up: consume grouping outcomes directly
 
-`ExpressionRewriter` uses separate adapters for successful grouping and conflict lookup. Both
-call `OperatorQueries.grouping`, so the same term and arity can be analyzed repeatedly during
-one rewriting decision. Consume the three-way result directly before migrating another query
-family.
+Consume the three-way grouping result directly before migrating another query family. Reuse
+each arity result throughout one rewriting decision for operator selection and diagnostics.
 
 - Analyze each relevant arity once per rewriting decision and reuse its `Absent`, `Coherent`,
   or `Conflict` result for operator selection and diagnostics.
@@ -140,7 +138,8 @@ family.
 Verification: retain grouping and diagnostic regression assertions, add focused coverage only
 for uncovered decision paths, and complete the required compiler checks and independent review.
 
-Dependency: operator-query extraction complete and signed off. Implementation approval is pending.
+Dependency: operator-query extraction complete and signed off. Implementation approved;
+verification, independent review, and scoped signoff complete.
 
 ## Verification
 
@@ -197,6 +196,20 @@ Host: Darwin arm64, Homebrew Clang 23.1.1; sbt 2.0.10 on GraalVM Java 25.0.4.1.
   extraction executable code is unchanged from the tested version. Separate edits to
   `ast/common.scala` and `mml/samples/hole-test.mml` are outside this extraction's verification scope.
 
+### Direct grouping-outcome verification — 2026-10-31
+
+Host: Darwin arm64; sbt 2.0.10 on GraalVM Java 25.0.4.1.
+
+- `sbtn "scalafmtAll; scalafixAll; testFull"`: passed; 2,499 library tests and 9 CLI tests.
+- `./tests/smoke/run.sh all`: 8/8 passed.
+- `sbtn "scalafmtAll; mmlcPublishLocal"`: passed after comment-only clarification.
+- `make -C benchmark clean` and `make -C benchmark mml`: passed (executable builds only).
+- Existing grouping and diagnostic regressions retain their assertions; no tests were changed.
+- No compiler source warnings. No ABI or ownership/lambda behavior changes; additional Linux
+  ABI checks and the full memory harness are not applicable.
+- `git diff --check`: passed. Independent primary review and four fresh dedicated checks
+  (QA, test quality, readability, and code documentation) completed with no actionable findings.
+
 ## Risks / Notes
 
 Follow-up after [Implement protocols](protocols.md). Protocol registration owns its associations;
@@ -211,10 +224,10 @@ cyclic partial AST reaches that path before proposing a repair.
 
 ## Signoff
 
-- Workstream signoff: metadata prerequisite and operator-query extraction approved and complete.
-- Tracked item completion: pending.
-- Commit authorization: granted for operator-query extraction; no implementation or commit
-  authorization for the direct grouping-outcome follow-up.
+- Workstream signoff: metadata prerequisite, operator-query extraction, and direct grouping-outcome
+  integration approved and complete.
+- Tracked item completion: approved 2026-11-01; all six checklist items complete.
+- Commit authorization: granted for task closure; push not authorized.
 
 ## Task Working Memory
 
@@ -225,7 +238,10 @@ architecture documentation, and completion records are included in the
 
 `OperatorQueries` owns candidate inspection and shared conflict accumulation. `OperatorCoherence`
 owns visible-declaration enumeration and module diagnostics; `ExpressionRewriter` owns narrowed
-references and use-site diagnostics. The rewriter retains separate success/conflict adapters.
+references and use-site diagnostics. The rewriter consumes grouping outcomes directly and reuses
+unary and binary results for selection and conflict diagnostics. Required execution checks and
+independent review pass; step 6 is signed off.
 
-Next action: approve step 6, direct grouping-outcome integration, before selecting another query
-family. Later query families remain subject to separate bounded plans.
+All planned work is complete. Later query families remain subject to separate bounded plans.
+The direct grouping integration and closure records are included in the
+`Reuse operator grouping outcomes in expression rewriting` commit.
