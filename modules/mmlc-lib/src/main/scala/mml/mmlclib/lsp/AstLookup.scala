@@ -730,6 +730,7 @@ object AstLookup:
       case TypeGroup(_, types) if types.size == 1 => unwrapTypeGroup(types.head)
       case other => other
 
+  // TODO:QA: Yet another alias resolution pass. sigh. must find why and unify
   private def resolveAliasChain(typeSpec: Type, module: Module): Type = typeSpec match
     case tr @ TypeRef(_, name, resolvedId, _) =>
       val resolved = resolvedId
