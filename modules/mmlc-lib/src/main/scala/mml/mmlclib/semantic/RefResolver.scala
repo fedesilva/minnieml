@@ -3,6 +3,7 @@ package mml.mmlclib.semantic
 import cats.data.State
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.ValueScope
 import mml.mmlclib.compiler.CompilerState
 import mml.mmlclib.errors.{DiagnosticId, DiagnosticStore}
 
@@ -10,7 +11,7 @@ object RefResolver:
 
   /** Resolve all references and retain each failed occurrence alongside its diagnostic roots. */
   def rewriteModule(state: CompilerState): CompilerState =
-    val scope = ProtocolLookupScope.module(state.module)
+    val scope = ValueScope.module(state.module)
     val (diagnostics, members) = state.module.members
       .traverse { member =>
         resolveMember(member, Context(member, state.module, state.protocols, scope))
@@ -28,7 +29,7 @@ object RefResolver:
     member:    Member,
     module:    Module,
     protocols: ProtocolRegistry,
-    scope:     ProtocolLookupScope
+    scope:     ValueScope
   ):
 
     def within(params: List[FnParam]): Context = copy(scope = scope.within(params))

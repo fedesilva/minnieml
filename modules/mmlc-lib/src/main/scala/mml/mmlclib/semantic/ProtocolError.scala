@@ -1,7 +1,7 @@
 package mml.mmlclib.semantic
 
 import mml.mmlclib.ast.*
-import mml.mmlclib.ast.queries.DeclarationQueries
+import mml.mmlclib.ast.queries.DeclarationQueries.sourceName
 
 /** Protocol declaration, instance, and selection errors retain their source for every consumer. */
 enum ProtocolError:
@@ -74,17 +74,17 @@ enum ProtocolError:
         s"is missing member '${signature.meta.originalName}'"
 
     case UnexpectedMember(binding, protocol) =>
-      s"Protocol '${protocol.name}' has no signature for instance member '${memberName(binding)}'"
+      s"Protocol '${protocol.name}' has no signature for instance member '${sourceName(binding)}'"
 
     case DuplicateMember(binding, _) =>
-      s"Duplicate protocol instance member '${memberName(binding)}'"
+      s"Duplicate protocol instance member '${sourceName(binding)}'"
 
     case MemberShapeMismatch(binding, signature) =>
       val kind =
         if signature.meta.origin == BindingOrigin.Operator then "an operator" else "a function"
       val count = signature.params.size
       val noun  = if count == 1 then "parameter" else "parameters"
-      s"Instance member '${memberName(binding)}' must be $kind with $count $noun, " +
+      s"Instance member '${sourceName(binding)}' must be $kind with $count $noun, " +
         s"as required by protocol signature '${signature.meta.originalName}'"
 
     case SignatureTypeMismatch(_, expected, actual) =>
@@ -95,21 +95,21 @@ enum ProtocolError:
       s"Parameter '${param.name}' must be $ownership to match its protocol signature"
 
     case PrecedenceMismatch(binding, expected, actual) =>
-      s"Instance operator '${memberName(binding)}' must use protocol signature precedence " +
+      s"Instance operator '${sourceName(binding)}' must use protocol signature precedence " +
         s"$expected, got $actual"
 
     case AssociativityMismatch(binding, expected, actual) =>
-      s"Instance operator '${memberName(binding)}' must use protocol signature associativity " +
+      s"Instance operator '${sourceName(binding)}' must use protocol signature associativity " +
         s"${associativityName(expected)}, got ${associativityName(actual)}"
 
     case InvalidInstanceMember(binding, detail) =>
-      s"Invalid protocol instance member '${memberName(binding)}': $detail"
+      s"Invalid protocol instance member '${sourceName(binding)}': $detail"
 
     case RegistryFailure(_, reason) =>
       s"Protocol registry error: ${registryMessage(reason)}"
 
     case OperatorGroupingConflict(_, other) =>
-      s"Operator '${DeclarationQueries.sourceName(other)}' has conflicting precedence or " +
+      s"Operator '${sourceName(other)}' has conflicting precedence or " +
         "associativity for the same arity"
 
     case MissingInstance(ref, protocol, concreteType) =>
@@ -134,9 +134,6 @@ enum ProtocolError:
       alternatives
         .map(alternative => s"  ${alternative.description}")
         .mkString("\nAlternatives:\n", "\n", "")
-
-  private def memberName(binding: Bnd): String =
-    binding.meta.fold(binding.name)(_.originalName)
 
   private def associativityName(associativity: Associativity): String = associativity match
     case Associativity.Left => "left"

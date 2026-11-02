@@ -3,6 +3,7 @@ package mml.mmlclib.semantic
 import cats.data.NonEmptyList
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.{OperatorQueries, ValueScope}
 import mml.mmlclib.errors.DiagnosticId
 import mml.mmlclib.test.BaseEffFunSuite
 
@@ -149,7 +150,7 @@ class ProtocolRegistryTests extends BaseEffFunSuite:
   test("a rejected signature name reports its known declaration roots") {
     val causes   = Vector(DiagnosticId(8))
     val registry = success(ProtocolRegistry.empty.rejectProtocol(numId, causes, numberIndex))
-    val scope    = ProtocolLookupScope(List(List(plusId)))
+    val scope    = ValueScope(List(List(plusId)))
 
     val result = registry.visibleCandidates("+", scope, numberIndex)
 
@@ -161,7 +162,7 @@ class ProtocolRegistryTests extends BaseEffFunSuite:
   }
 
   test("an unregistered signature without rejection evidence remains a registry error") {
-    val scope = ProtocolLookupScope(List(List(plusId)))
+    val scope = ValueScope(List(List(plusId)))
 
     val result = ProtocolRegistry.empty.visibleCandidates("+", scope, numberIndex)
 
@@ -533,9 +534,9 @@ class ProtocolRegistryTests extends BaseEffFunSuite:
     val index    = numberIndex.updated(vector).updated(vectorPlus)
     val numbers  = success(ProtocolRegistry.empty.registerProtocol(numId, index))
     val registry = success(numbers.registerProtocol("vector-protocol", index))
-    val scope    = ProtocolLookupScope(List(List(plusId, "vector-plus")))
+    val scope    = ValueScope(List(List(plusId, "vector-plus")))
 
-    val result = registry.candidates("+", CallableArity.Binary.some, scope, index)
+    val result = registry.visibleCandidates("+", scope, index)
 
     assertEquals(
       result,
@@ -558,9 +559,9 @@ class ProtocolRegistryTests extends BaseEffFunSuite:
     val index    = numberIndex.updated(vector).updated(vectorPlus)
     val numbers  = success(ProtocolRegistry.empty.registerProtocol(numId, index))
     val registry = success(numbers.registerProtocol("vector-protocol", index))
-    val scope    = ProtocolLookupScope(List(List("vector-plus", plusId)))
+    val scope    = ValueScope(List(List("vector-plus", plusId)))
 
-    val result = registry.candidates("+", CallableArity.Binary.some, scope, index)
+    val result = registry.visibleCandidates("+", scope, index)
 
     assertEquals(
       result,
@@ -581,30 +582,30 @@ class ProtocolRegistryTests extends BaseEffFunSuite:
     val local    = FnParam(source, Name.synth("combine"), id = "local-combine".some)
     val index    = numberIndex.updated(combine).updated(local)
     val registry = success(ProtocolRegistry.empty.registerProtocol(numId, index))
-    val scope    = ProtocolLookupScope(List(List("local-combine"), List(plusId)))
+    val scope    = ValueScope(List(List("local-combine"), List(plusId)))
 
-    val result = registry.candidates("combine", None, scope, index)
+    val result = registry.visibleCandidates("combine", scope, index)
 
     assertEquals(result, Right(List(ProtocolCandidate.Declaration("local-combine"))))
   }
 
   test("an absent source name has no candidates") {
     val registry = success(ProtocolRegistry.empty.registerProtocol(numId, numberIndex))
-    val scope    = ProtocolLookupScope(List(List(plusId)))
+    val scope    = ValueScope(List(List(plusId)))
 
-    val result = registry.candidates("absent", None, scope, numberIndex)
+    val result = registry.visibleCandidates("absent", scope, numberIndex)
 
     assertEquals(result, Right(Nil))
   }
 
-  test("binary lookup keeps both free and protocol operators without choosing precedence") {
+  test("visible lookup leaves free and protocol operator conflicts for grouping") {
     val freePlus =
       addInts.copy(meta = plus.meta.copy(kind = BindingKind.Operator(90, Associativity.Left)).some)
     val index    = numberIndex.updated(freePlus)
     val registry = success(ProtocolRegistry.empty.registerProtocol(numId, index))
-    val scope    = ProtocolLookupScope(List(List(plusId, addIntsId)))
+    val scope    = ValueScope(List(List(plusId, addIntsId)))
 
-    val result = registry.candidates("+", CallableArity.Binary.some, scope, index)
+    val result = registry.visibleCandidates("+", scope, index)
 
     assertEquals(
       result,
@@ -615,27 +616,15 @@ class ProtocolRegistryTests extends BaseEffFunSuite:
         )
       )
     )
-  }
 
-  test("unary lookup excludes a binary operator with the same spelling") {
-    val unaryPlus =
-      addInts.copy(id = "unary-plus".some, meta = plus.meta.copy(arity = CallableArity.Unary).some)
-    val index    = numberIndex.updated(unaryPlus)
-    val registry = success(ProtocolRegistry.empty.registerProtocol(numId, index))
-    val scope    = ProtocolLookupScope(List(List(plusId, "unary-plus")))
+    val ref = Ref(source, "+", candidateIds = success(result).map(_.id))
 
-    val result = registry.candidates("+", CallableArity.Unary.some, scope, index)
-
-    assertEquals(result, Right(List(ProtocolCandidate.Declaration("unary-plus"))))
-  }
-
-  test("ordinary value lookup does not return an operator") {
-    val registry = success(ProtocolRegistry.empty.registerProtocol(numId, numberIndex))
-    val scope    = ProtocolLookupScope(List(List(plusId)))
-
-    val result = registry.candidates("+", None, scope, numberIndex)
-
-    assertEquals(result, Right(Nil))
+    assertEquals(
+      OperatorQueries.grouping(ref, CallableArity.Binary, index),
+      OperatorQueries.Grouping.Conflict(
+        NonEmptyList.one(OperatorQueries.Disagreement(plus, freePlus))
+      )
+    )
   }
 
   test("visible lookup retains unary and binary candidates before grouping") {
@@ -643,7 +632,7 @@ class ProtocolRegistryTests extends BaseEffFunSuite:
       addInts.copy(id = "unary-plus".some, meta = plus.meta.copy(arity = CallableArity.Unary).some)
     val index    = numberIndex.updated(unaryPlus)
     val registry = success(ProtocolRegistry.empty.registerProtocol(numId, index))
-    val scope    = ProtocolLookupScope(List(List(plusId, "unary-plus")))
+    val scope    = ValueScope(List(List(plusId, "unary-plus")))
 
     val result = registry.visibleCandidates("+", scope, index)
 
@@ -656,39 +645,77 @@ class ProtocolRegistryTests extends BaseEffFunSuite:
         )
       )
     )
-    assertEquals(result.map(_.map(_.id)), Right(List(plusId, "unary-plus")))
+
+    val ref = Ref(source, "+", candidateIds = success(result).map(_.id))
+
+    OperatorQueries.grouping(ref, CallableArity.Unary, index) match
+      case OperatorQueries.Grouping.Coherent(candidates, _) =>
+        assertEquals(candidates.toList.flatMap(_.node.id), List("unary-plus"))
+      case other => fail(s"Expected coherent unary grouping, got $other")
   }
 
   test("operator arity filtering cannot uncover a declaration hidden by a local name") {
     val local    = FnParam(source, Name.synth("+"), id = "local-plus".some)
     val index    = numberIndex.updated(local)
     val registry = success(ProtocolRegistry.empty.registerProtocol(numId, index))
-    val outer    = ProtocolLookupScope(List(List(plusId)))
+    val outer    = ValueScope(List(List(plusId)))
     val scope    = outer.within(List(local))
 
+    val result = registry.visibleCandidates("+", scope, index)
+    val ref    = Ref(source, "+", candidateIds = success(result).map(_.id))
+
+    assertEquals(result, Right(List(ProtocolCandidate.Declaration("local-plus"))))
     assertEquals(
-      registry.visibleCandidates("+", scope, index),
-      Right(List(ProtocolCandidate.Declaration("local-plus")))
+      OperatorQueries.grouping(ref, CallableArity.Binary, index),
+      OperatorQueries.Grouping.Absent
     )
-    assertEquals(registry.candidates("+", CallableArity.Binary.some, scope, index), Right(Nil))
   }
 
   test("listing the same visible signature twice does not duplicate its candidate") {
     val registry = success(ProtocolRegistry.empty.registerProtocol(numId, numberIndex))
-    val scope    = ProtocolLookupScope(List(List(plusId, plusId)))
+    val scope    = ValueScope(List(List(plusId, plusId)))
 
-    val result = registry.candidates("+", CallableArity.Binary.some, scope, numberIndex)
+    val result = registry.visibleCandidates("+", scope, numberIndex)
 
     assertEquals(result, Right(List(ProtocolCandidate.Signature(numId, plusId))))
   }
 
-  test("a visible ID missing from the index is reported") {
+  test("a name match does not bypass a missing ID in the same scope level") {
     val registry = success(ProtocolRegistry.empty.registerProtocol(numId, numberIndex))
-    val scope    = ProtocolLookupScope(List(List("missing-node")))
+    val scope    = ValueScope(List(List(plusId, "missing-node")))
 
-    val result = registry.candidates("+", CallableArity.Binary.some, scope, numberIndex)
+    val result = registry.visibleCandidates("+", scope, numberIndex)
 
     assertEquals(result, Left(ProtocolLookupError.MissingNode("missing-node")))
+  }
+
+  test("a mismatched indexed identity prevents lookup from continuing to an outer name") {
+    val registry = success(ProtocolRegistry.empty.registerProtocol(numId, numberIndex))
+    val wrongIndex = numberIndex.copy(
+      resolvables = numberIndex.resolvables.updated(addIntsId, addInts.copy(id = "other-id".some))
+    )
+    val scope = ValueScope(List(List(addIntsId), List(plusId)))
+
+    val result = registry.visibleCandidates("+", scope, wrongIndex)
+
+    assertEquals(result, Left(ProtocolLookupError.WrongNode(addIntsId, "matching stable identity")))
+  }
+
+  test("a nearer name keeps malformed outer scope IDs hidden") {
+    val local    = FnParam(source, Name.synth("+"), id = "local-plus".some)
+    val registry = success(ProtocolRegistry.empty.registerProtocol(numId, numberIndex))
+    val wrongIndex = numberIndex
+      .copy(
+        resolvables = numberIndex.resolvables.updated(addIntsId, addInts.copy(id = "other-id".some))
+      )
+      .updated(local)
+
+    List(addIntsId, "missing-node").foreach { outerId =>
+      val scope  = ValueScope(List(List(outerId))).within(List(local))
+      val result = registry.visibleCandidates("+", scope, wrongIndex)
+
+      assertEquals(result, Right(List(ProtocolCandidate.Declaration("local-plus"))))
+    }
   }
 
   test("Unit syntax and the built-in Unit declaration have the same identity") {

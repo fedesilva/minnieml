@@ -1,6 +1,7 @@
 package mml.mmlclib.semantic
 
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.DeclarationQueries
 import mml.mmlclib.compiler.CompilerState
 
 object DuplicateNameChecker:
@@ -60,7 +61,7 @@ object DuplicateNameChecker:
       case bnd: Bnd if bnd.meta.isDefined =>
         extractLambdaParams(bnd) match
           case Some(params) if hasDuplicateParams(params) =>
-            val displayName = bnd.meta.map(_.originalName).getOrElse(bnd.name)
+            val displayName = DeclarationQueries.sourceName(bnd)
             val duplicateParamNames =
               params.groupBy(_.name).filter(_._2.size > 1).keys.mkString(", ")
             errors += SemanticError.DuplicateName(
@@ -79,13 +80,10 @@ object DuplicateNameChecker:
     }
 
     // Also check for functions that conflict with operators (by original name)
-    val operatorOriginalNames = decls
-      .collect {
-        case bnd: Bnd if bnd.meta.exists(_.origin == BindingOrigin.Operator) =>
-          bnd.meta.map(_.originalName)
-      }
-      .flatten
-      .toSet
+    val operatorOriginalNames = decls.collect {
+      case bnd: Bnd if bnd.meta.exists(_.origin == BindingOrigin.Operator) =>
+        DeclarationQueries.sourceName(bnd)
+    }.toSet
 
     decls.collect {
       case bnd: Bnd
@@ -93,12 +91,8 @@ object DuplicateNameChecker:
             operatorOriginalNames.contains(bnd.name) =>
         val allWithSameName = decls
           .filter {
-            case d: (Decl & Resolvable) =>
-              d.name == bnd.name ||
-              (d match {
-                case b: Bnd => b.meta.exists(_.originalName == bnd.name)
-                case _ => false
-              })
+            case binding:     Bnd => DeclarationQueries.matchesName(binding, bnd.name)
+            case declaration: (Decl & Resolvable) => declaration.name == bnd.name
             case _ => false
           }
           .collect { case d: (Decl & Resolvable) => d }

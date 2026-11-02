@@ -1,6 +1,6 @@
 package mml.mmlclib.semantic
 
-import mml.mmlclib.ast.queries.{DeclarationQueries, OperatorQueries}
+import mml.mmlclib.ast.queries.{DeclarationQueries, OperatorQueries, ValueScope}
 import mml.mmlclib.compiler.CompilerState
 
 /** Enforces operator syntax coherence while retaining every possible implementation. */
@@ -12,7 +12,7 @@ object OperatorCoherence:
     */
   def checkModule(state: CompilerState): CompilerState =
     val index = state.module.resolvables
-    val scope = ProtocolLookupScope.module(state.module)
+    val scope = ValueScope.module(state.module)
     val names =
       scope.levels.flatten.flatMap(index.lookup).map(DeclarationQueries.sourceName).distinct
     val errors = names.flatMap { name =>

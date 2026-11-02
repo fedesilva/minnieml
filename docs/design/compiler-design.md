@@ -119,8 +119,20 @@ valid Int arithmetic. Rejected signatures retain their declaration-error causes 
 recovery. An unmarked missing association remains an internal registry error.
 
 `ast.queries.DeclarationQueries` reads callable metadata, source names, and instance member IDs
-from AST nodes. These facts are shared by semantic processing, diagnostics, and codegen. Recorded
-member IDs do not establish registration or validity; registry associations remain authoritative.
+from AST nodes. Shared name matching accepts both internal and source names for bindings; other
+resolvable nodes use their source names. Its module-binding lookup preserves member order without
+applying lexical shadowing or registry validation. These facts are shared by semantic processing,
+diagnostics, and codegen. Recorded member IDs do not establish registration or validity; registry
+associations remain authoritative.
+
+`ast.queries.ValueScope` stores value-declaration IDs in lexical levels, innermost first. Module
+levels contain ordinary bindings and protocol signatures, excluding recorded instance
+implementations;
+nested levels add assigned parameter IDs. Scope construction omits declarations without IDs.
+ProtocolRegistry.visibleCandidates validates every indexed ID in each visited level, then stops at
+the nearest matching name. It preserves candidate order and declaration-failure causes. Operator
+arity selection belongs to OperatorQueries after lexical lookup, so a local name hides an outer
+operator regardless of arity. Registry associations remain the authority for concrete implementations.
 
 Entry-point validation and emission share a lookup that excludes lowered instance member IDs:
 a protocol member named `main` does not supply the executable's entry point. Editor reference
@@ -2090,7 +2102,8 @@ flowchart TD
 - **semantic/**: Phase implementations (`ParsingErrorChecker`, `DuplicateNameChecker`, `IdAssigner`, `TypeResolver`, `ConstructorGenerator`, `ProtocolChecker`, `RefResolver`, `OperatorCoherence`, `ExpressionRewriter`, `Simplifier`, `TypeChecker`, `MemoryFunctionGenerator`, `ResolvablesIndexer`, `TailRecursionDetector`, `OwnershipAnalyzer`) plus stdlib injection in `package.scala`
 - **ast/queries/**: Shared facts over AST nodes and indexes, independent of semantic phases and
   registry state. `DeclarationQueries` supplies callable metadata, source names, and recorded
-  instance implementation IDs; `OperatorQueries` supplies operator candidates and grouping outcomes.
+  instance implementation IDs; `ValueScope` constructs lexical value levels; `OperatorQueries`
+  supplies operator candidates and grouping outcomes.
 - **codegen/**: `LlvmIrEmitter.scala`, `LlvmToolchain.scala`, `emitter/*`
 - **api/**: `ParserApi.scala`, `SemanticApi.scala`, `FrontEndApi.scala`, `CompilerApi.scala`, `CodeGenApi.scala`, `NativeEmitterApi.scala`
 - **lsp/**: LSP server, diagnostics, document manager

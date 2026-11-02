@@ -1,7 +1,7 @@
 package mml.mmlclib.semantic
 
 import mml.mmlclib.ast.*
-import mml.mmlclib.semantic.lookupNames
+import mml.mmlclib.ast.queries.DeclarationQueries.lookupNames
 import mml.mmlclib.test.BaseEffFunSuite
 import mml.mmlclib.test.ast.*
 import mml.mmlclib.util.*
@@ -58,8 +58,6 @@ class AppRewritingTests extends BaseEffFunSuite:
     }
   }
 
-  // We need to FOCUS on this test but I will ignore it for now
-  // Until we have the fixes in place, and then it might still fail because of expectations.
   test("grouped function applications should work correctly") {
     semNotFailed(
       """

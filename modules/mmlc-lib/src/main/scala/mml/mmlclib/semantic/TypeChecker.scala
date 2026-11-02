@@ -3,6 +3,7 @@ package mml.mmlclib.semantic
 import cats.data.{NonEmptyList, State}
 import cats.implicits.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.DeclarationQueries
 import mml.mmlclib.compiler.CompilerState
 import mml.mmlclib.errors.{CompilationError, DiagnosticId, DiagnosticRelation, DiagnosticStore}
 
@@ -49,7 +50,7 @@ object TypeChecker:
               Map.empty,
               current.causes,
               current.availability,
-              bindingDisplayName(binding)
+              DeclarationQueries.sourceName(binding)
             )
             checkBinding(binding, context, parameterFailures).map(current.withChecked)
           case _ => current.pure[Check]
@@ -184,9 +185,6 @@ object TypeChecker:
     inferred: Map[String, Type],
     errors:   Vector[TypeError]
   )
-
-  private def bindingDisplayName(bnd: Bnd): String =
-    bnd.meta.map(_.originalName).getOrElse(bnd.name)
 
   private def normalizeBindingName(name: String): String =
     if name == statementParamName then "statement" else name
@@ -1129,7 +1127,7 @@ object TypeChecker:
             .filterNot(failedType(_, context))
             .filter(ProtocolSelection.matchesUses(_, uses, index))
             .map { tpe =>
-              ProtocolAlternative(owners.get(id), bindingDisplayName(binding), tpe)
+              ProtocolAlternative(owners.get(id), DeclarationQueries.sourceName(binding), tpe)
             }
         }
       }

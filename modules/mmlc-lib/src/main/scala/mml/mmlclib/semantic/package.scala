@@ -1121,12 +1121,6 @@ def injectCommonFunctions(module: Module): Module =
     )
   )
 
-def lookupNames(name: String, module: Module): Seq[Member] =
-  // For operators, we need to match by originalName from meta
-  module.members.collect {
-    case bnd: Bnd if bnd.name == name || bnd.meta.exists(_.originalName == name) => bnd
-  }
-
 object IsAtom:
   def unapply(term: Term): Option[Term] = term match
     case _: Ref => None

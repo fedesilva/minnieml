@@ -2,7 +2,7 @@ package mml.mmlclib.semantic
 
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
-import mml.mmlclib.ast.queries.DeclarationQueries
+import mml.mmlclib.ast.queries.{DeclarationQueries, ValueScope}
 import mml.mmlclib.errors.DiagnosticId
 
 /** Stores identities, associations, and declaration-failure causes. Lookups read current nodes from
@@ -216,47 +216,15 @@ final case class ProtocolRegistry private (
         }
     yield ProtocolSignatureCandidates(declaration, required, implementations)
 
-  /** Select the nearest lexical name, then filter operator arity without selecting an instance.
-    * None requests an ordinary function/value name; Some requests an operator of that arity. For
-    * candidates("-", Some(CallableArity.Unary), scope, index), retain unary - declarations and
-    * discard binary ones. Two matching protocol declarations both remain candidates, even if their
-    * precedence differs; precedence coherence is checked by a later compiler phase.
-    */
-  def candidates(
-    name:          String,
-    operatorArity: Option[CallableArity],
-    scope:         ProtocolLookupScope,
-    index:         ResolvablesIndex
-  ): Either[ProtocolLookupError, List[ProtocolCandidate]] =
-
-    def matchesArity(node: Resolvable): Boolean =
-      val meta = DeclarationQueries.metadata(node)
-      operatorArity match
-        case Some(arity) => meta.exists(m => m.origin == BindingOrigin.Operator && m.arity == arity)
-        case None => !meta.exists(_.origin == BindingOrigin.Operator)
-
-    lookupCandidates(name, scope, index, matchesArity)
-
-  /** Retain every candidate for the nearest lexical name. Expression grouping selects operator
-    * arity later, so a source reference can initially contain both unary and binary signatures.
+  /** Retain the nearest lexical name before operator arity or concrete instance selection. Every ID
+    * in a visited level must resolve to its matching stable identity. Rejected signatures
+    * contribute their declaration causes only when no usable candidate remains at that level.
     */
   def visibleCandidates(
     name:  String,
-    scope: ProtocolLookupScope,
+    scope: ValueScope,
     index: ResolvablesIndex
   ): Either[ProtocolLookupError, List[ProtocolCandidate]] =
-    lookupCandidates(name, scope, index, _ => true)
-
-  private def lookupCandidates(
-    name:    String,
-    scope:   ProtocolLookupScope,
-    index:   ResolvablesIndex,
-    accepts: Resolvable => Boolean
-  ): Either[ProtocolLookupError, List[ProtocolCandidate]] =
-
-    def matchesName(node: Resolvable): Boolean = node match
-      case binding: Bnd => binding.name == name || DeclarationQueries.sourceName(binding) == name
-      case _ => DeclarationQueries.sourceName(node) == name
 
     def candidate(id: String, node: Resolvable): Either[ProtocolLookupError, ProtocolCandidate] =
       node match
@@ -272,12 +240,11 @@ final case class ProtocolRegistry private (
         case Nil => List.empty[ProtocolCandidate].asRight
         case ids :: outer =>
           ids.distinct.traverse(id => indexed(id, index).map(id -> _)).flatMap { nodes =>
-            val named = nodes.filter((_, node) => matchesName(node))
+            val named = nodes.filter((_, node) => DeclarationQueries.matchesName(node, name))
             if named.isEmpty then search(outer)
             else
-              val matching         = named.filter((_, node) => accepts(node))
-              val (failed, usable) = matching.partition((id, _) => failedSignatures.contains(id))
-              if usable.nonEmpty || failed.isEmpty then usable.traverse(candidate)
+              val (failed, usable) = named.partition((id, _) => failedSignatures.contains(id))
+              if usable.nonEmpty then usable.traverse(candidate)
               else
                 val causes = failed.flatMap((id, _) => failedSignatures(id)).distinct.toVector
                 RejectedDeclaration(causes).asLeft
@@ -453,27 +420,3 @@ enum ProtocolCandidate derives CanEqual:
   def id: String = this match
     case Declaration(bindingId) => bindingId
     case Signature(_, signatureId) => signatureId
-
-/** Lexical levels run from innermost to outermost; each level contains visible definition IDs. For
-  * List(List(localCombineId), List(semigroupCombineId, otherCombineId)), a local parameter named
-  * combine hides both outer signatures. Without that local name, both signatures survive. Callers
-  * supply visible signature or binding IDs, not the IDs of their containing protocols.
-  */
-case class ProtocolLookupScope(levels: List[List[String]]):
-
-  def within(params: List[FnParam]): ProtocolLookupScope =
-    copy(levels = params.flatMap(_.id) :: levels)
-
-object ProtocolLookupScope:
-
-  /** Instance bodies are indexed executable bindings, but source names expose their signatures. */
-  def module(module: Module): ProtocolLookupScope =
-
-    val instanceBindings = DeclarationQueries.loweredMemberIds(module)
-    val visible = module.members.flatMap {
-      case binding:  Bnd if !binding.id.exists(instanceBindings.contains) => binding.id.toList
-      case protocol: Protocol => protocol.signatures.flatMap(_.id)
-      case _ => Nil
-    }
-
-    ProtocolLookupScope(List(visible))

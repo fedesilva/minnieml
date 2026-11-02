@@ -24,8 +24,8 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 
 - **Tracker:** [Centralize, and Unify ast queries](tasks/centralize-and-unify-ast-queries.md)
 - **Status:** in_progress
-- **Current focus:** Plan the protocol visibility, candidate, and concrete-implementation query boundary
-  in step 8. Declaration and operator queries are complete in `ast.queries`.
+- **Current focus:** Plan the type-query boundaries in step 9. Shared scope construction,
+  declaration name matching, and registry lookup cleanup are complete.
 
 ### Typed compiler diagnostics
 

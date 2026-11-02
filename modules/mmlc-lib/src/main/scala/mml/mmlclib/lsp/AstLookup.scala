@@ -1,6 +1,7 @@
 package mml.mmlclib.lsp
 
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.DeclarationQueries
 import mml.mmlclib.compiler.CompilerState
 
 /** Result of looking up a position in the AST. */
@@ -195,7 +196,7 @@ object AstLookup:
         if containsPosition(bnd.value, line, col) then findInExpr(bnd.value, line, col)
         else if bnd.source == SourceOrigin.Synth then None
         else
-          val name = bnd.meta.fold(bnd.name)(_.originalName)
+          val name = DeclarationQueries.sourceName(bnd)
           Some(LookupResult(bnd.typeSpec, Some(name), bnd.spanOpt))
 
       case td: TypeDef =>
@@ -1403,7 +1404,7 @@ object AstLookup:
           else if isFunction then SymbolKind.Function
           else SymbolKind.Variable
         bnd.spanOpt.map(span =>
-          val name = bnd.meta.fold(bnd.name)(_.originalName)
+          val name = DeclarationQueries.sourceName(bnd)
           SymbolInformation(name, kind, Location(uri, Range.fromSrcSpan(span)))
         )
     }.flatten

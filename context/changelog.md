@@ -4,6 +4,11 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-11-01
 
+- Share value-scope construction and declaration name matching through `ast.queries`. Reuse source
+  names across semantic diagnostics and editor lookup, and remove redundant registry lookup and
+  arity-filtering code. Preserve candidate order, shadowing, strict index validation, and rejection
+  causes; exercise operator selection through the production grouping path.
+
 - Centralize declaration metadata, source names, and recorded instance implementation IDs in
   `ast.queries.DeclarationQueries`, and place operator queries in the same package. Preserve
   lookup, grouping, recovery, and entry-point behavior; document the boundary between AST facts
