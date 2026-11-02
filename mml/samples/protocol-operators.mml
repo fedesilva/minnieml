@@ -19,7 +19,7 @@ instance Combine Bool =
   op <+>(left, right) = left or right;;
 ;
 
-pub fn main(): Int =
+pub fn main() =
   println (to_str (20 <+> 22));
   println (to_str (1.5 <+> 2.5));
   if false <+> true then println "true";
@@ -35,12 +35,12 @@ pub fn main(): Int =
 
   // Applying one argument creates an ordinary partial application.
   let add_ten: Int -> Int = (<+>) 10;
-  println (to_str (add_ten 5));
+  println (to_str (add_ten 5) );
 
   // Num supplies the same + and * spellings for Int and Float.
   println (to_str (2 + 3 * 4));
   println (to_str (2.0 + 3.0 * 4.0));
-  0;
+
 ;
 
 // Expected output:

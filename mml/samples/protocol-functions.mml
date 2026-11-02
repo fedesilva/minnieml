@@ -22,7 +22,7 @@ instance Render Bool =
   ;
 ;
 
-pub fn main(): Int =
+pub fn main() =
   // The later argument supplies the type, even though the label comes first.
   render "answer: " 42;
   render "ready: " true;
@@ -36,7 +36,6 @@ pub fn main(): Int =
   // The remaining function type selects Render Int before the partial is stored.
   let render_again: Int -> Unit = render "partial: ";
   render_again 15;
-  0;
 ;
 
 // Expected output:
