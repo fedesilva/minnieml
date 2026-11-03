@@ -27,6 +27,12 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 - **Current focus:** Plan the type-query boundaries in step 9. Shared scope construction,
   declaration name matching, and registry lookup cleanup are complete.
 
+### Bug notes
+
+- **Tracker:** [Bug notes](tasks/bug-notes.md)
+- **Status:** in_progress
+- **Current focus:** Collect confirmed bugs and fix status; split into focused tasks later.
+- 
 ### Typed compiler diagnostics
 
 - **Tracker:** [Typed compiler errors and shared diagnostic rendering](tasks/typed-compiler-diagnostics.md)
@@ -78,11 +84,6 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 - **Current focus:** Deferred discussion after Protocols: unary/binary selection, annotation
   burden, rewriter changes, and whether to keep both operator application and placeholders.
 
-### Bug notes
-
-- **Tracker:** [Bug notes](tasks/bug-notes.md)
-- **Status:** in_progress
-- **Current focus:** Collect confirmed bugs and fix status; split into focused tasks later.
 
 ### Module naming
 
