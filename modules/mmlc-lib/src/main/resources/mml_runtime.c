@@ -220,45 +220,41 @@ void mml_sys_flush()
 
 
 
-FORCE_INLINE void buffer_write(Buffer b, String s)
+// Buffered I/O mutates the pending output; each append stays within the fixed allocation.
+FORCE_INLINE static void buffer_write_bytes(Buffer b, const char *data, size_t length)
 {
-    if (!b || !s.data)
+    if (!b || !data)
         return;
 
-    // Auto-flush if this write would overflow
-    if (b->length + s.length >= b->capacity)
-        flush(b);
+    while (length > 0)
+    {
+        if (b->length == b->capacity)
+            flush(b);
 
-    memcpy(b->data + b->length, s.data, s.length);
-    b->length += s.length;
+        size_t available = b->capacity - b->length;
+        size_t chunk = length < available ? length : available;
+        memcpy(b->data + b->length, data, chunk);
+        b->length += chunk;
+        data += chunk;
+        length -= chunk;
+    }
+}
+
+FORCE_INLINE void buffer_write(Buffer b, String s)
+{
+    buffer_write_bytes(b, s.data, s.length);
 }
 
 FORCE_INLINE void buffer_writeln(Buffer b, String s)
 {
-    if (!b)
-        return;
-
-    // Auto-flush if this write would overflow (string + newline)
-    if (b->length + s.length + 1 >= b->capacity)
-        flush(b);
-
-    if (s.data)
-    {
-        memcpy(b->data + b->length, s.data, s.length);
-        b->length += s.length;
-    }
-    b->data[b->length++] = '\n';
+    buffer_write(b, s);
+    buffer_write_bytes(b, "\n", 1);
 }
 
 FORCE_INLINE void buffer_write_byte(Buffer b, int32_t value)
 {
-    if (!b)
-        return;
-
-    if (b->length + 1 >= b->capacity)
-        flush(b);
-
-    b->data[b->length++] = (char)((unsigned char)value);
+    char byte = (char)((unsigned char)value);
+    buffer_write_bytes(b, &byte, 1);
 }
 
 FORCE_INLINE static size_t format_int32(char *buffer, size_t size, int32_t value)
@@ -353,11 +349,7 @@ FORCE_INLINE void buffer_write_int(Buffer b, int32_t value)
     if (len == 0)
         return;
 
-    if (b->length + len >= b->capacity)
-        flush(b);
-
-    memcpy(b->data + b->length, buf, len);
-    b->length += len;
+    buffer_write_bytes(b, buf, len);
 }
 
 FORCE_INLINE void buffer_writeln_int(Buffer b, int32_t value)
@@ -370,12 +362,8 @@ FORCE_INLINE void buffer_writeln_int(Buffer b, int32_t value)
     if (len == 0)
         return;
 
-    if (b->length + len + 1 >= b->capacity)
-        flush(b);
-
-    memcpy(b->data + b->length, buf, len);
-    b->length += len;
-    b->data[b->length++] = '\n';
+    buffer_write_bytes(b, buf, len);
+    buffer_write_bytes(b, "\n", 1);
 }
 
 FORCE_INLINE void buffer_write_float(Buffer b, float value)
@@ -386,10 +374,7 @@ FORCE_INLINE void buffer_write_float(Buffer b, float value)
     int len = snprintf(buf, sizeof(buf), "%g", (double)value);
     if (len <= 0)
         return;
-    if (b->length + len >= b->capacity)
-        flush(b);
-    memcpy(b->data + b->length, buf, len);
-    b->length += len;
+    buffer_write_bytes(b, buf, len);
 }
 
 FORCE_INLINE void buffer_writeln_float(Buffer b, float value)
@@ -400,11 +385,8 @@ FORCE_INLINE void buffer_writeln_float(Buffer b, float value)
     int len = snprintf(buf, sizeof(buf), "%g", (double)value);
     if (len <= 0)
         return;
-    if (b->length + len + 1 >= b->capacity)
-        flush(b);
-    memcpy(b->data + b->length, buf, len);
-    b->length += len;
-    b->data[b->length++] = '\n';
+    buffer_write_bytes(b, buf, len);
+    buffer_write_bytes(b, "\n", 1);
 }
 
 // --- Read a line from stdin ---

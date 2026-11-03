@@ -27,6 +27,40 @@ class RuntimeTests extends BaseEffFunSuite:
         .map(_.fold(error => fail(error.message), identity))
     yield (triple, target)
 
+  private def runSanitizedRuntime(driver: String): IO[Unit] =
+    withDirectory { directory =>
+      for
+        pair <- targetAt(directory, CompilerConfig.default)
+        (_, target) = pair
+        runtime <- Resource
+          .fromAutoCloseable(
+            IO.blocking(getClass.getClassLoader.getResourceAsStream("mml_runtime.c"))
+          )
+          .use(stream => IO.blocking(new String(stream.readAllBytes(), UTF_8)))
+        path <- IO.blocking(
+          Files.writeString(directory.resolve("runtime-test.c"), runtime + driver)
+        )
+        _ <- commandNotFailed(
+          List(
+            target.executable.toString,
+            "-std=c17",
+            "-O2",
+            "-fsanitize=address,undefined",
+            "-fno-sanitize-recover=all",
+            path.toString,
+            "-o",
+            directory.resolve("runtime-test").toString
+          ),
+          directory
+        )
+        _ <- programExits(
+          List(directory.resolve("runtime-test").toString),
+          directory,
+          expectedCode = 0
+        )
+      yield ()
+    }
+
   private def runSanitizedProgram(
     source:         String,
     name:           String,
@@ -56,6 +90,103 @@ class RuntimeTests extends BaseEffFunSuite:
         )
       yield ()
     }
+
+  test("buffered writers preserve exact bytes across capacity boundaries") {
+    val driver = """
+      #include <assert.h>
+
+      static String text(char *s) { return (String){checked_length(strlen(s)), s}; }
+
+      static void check_capacity(int32_t capacity) {
+        int fd = open("buffer-output", O_RDWR | O_CREAT | O_TRUNC, 0600);
+        assert(fd >= 0);
+        Buffer output = mkBufferWithFdAndSize(fd, capacity);
+
+        buffer_write(output, text("abcd"));
+        buffer_write(output, text(""));
+        buffer_write(output, (String){0, NULL});
+        buffer_write(output, text("e"));
+        buffer_write(output, text("fghijklmnop"));
+        buffer_writeln(output, text("qrst"));
+        buffer_writeln(output, text(""));
+        buffer_writeln(output, (String){0, NULL});
+
+        buffer_write_int(output, INT32_MIN);
+        buffer_write_byte(output, ',');
+        buffer_writeln_int(output, INT32_MAX);
+        buffer_write_int(output, 0);
+        buffer_writeln_int(output, -1);
+        buffer_write_float(output, 1.25f);
+        buffer_write_byte(output, ',');
+        buffer_writeln_float(output, -2.5f);
+
+        buffer_write(output, (String){3, "x\0y"});
+        buffer_write_byte(output, 0);
+        buffer_write_byte(output, -1);
+        buffer_write_byte(output, 321);
+        buffer_writeln(output, text("tail"));
+        flush(output);
+        __free_Buffer(output);
+
+        const char expected[] =
+          "abcdefghijklmnopqrst\n\n\n-2147483648,2147483647\n0-1\n"
+          "1.25,-2.5\nx\0y\0\xff" "Atail\n";
+        char actual[sizeof(expected)];
+        assert(lseek(fd, 0, SEEK_SET) == 0);
+        assert(read(fd, actual, sizeof(actual)) == (ssize_t)(sizeof(expected) - 1));
+        assert(memcmp(actual, expected, sizeof(expected) - 1) == 0);
+        assert(close(fd) == 0);
+        assert(unlink("buffer-output") == 0);
+      }
+
+      int main(void) {
+        buffer_write(NULL, text("ignored"));
+        buffer_writeln(NULL, text("ignored"));
+        buffer_write_byte(NULL, 65);
+        buffer_write_int(NULL, INT32_MIN);
+        buffer_writeln_int(NULL, INT32_MAX);
+        buffer_write_float(NULL, 1.25f);
+        buffer_writeln_float(NULL, -2.5f);
+
+        // Each I/O fixture owns its descriptor and advances through an ordered byte stream.
+        const int32_t capacities[] = {1, 4, 5, 11, 12, 32};
+        for (size_t i = 0; i < sizeof(capacities) / sizeof(capacities[0]); ++i)
+          check_capacity(capacities[i]);
+        return 0;
+      }
+    """
+    runSanitizedRuntime(driver)
+  }
+
+  test("compiled buffered writes preserve order with tiny buffers") {
+    val source = """
+      pub fn main(): Int =
+        let output = mkBufferWithSize 1;
+        buffer_write output "ABCDE";
+        buffer_writeln output "FGH";
+        buffer_write_int output (-2147483648);
+        buffer_write_byte output 44;
+        buffer_writeln_int output 2147483647;
+        buffer_write_float output 1.25;
+        buffer_write_byte output 44;
+        buffer_writeln_float output (-2.5);
+        buffer_write_byte output 321;
+        buffer_writeln output "";
+        flush output;
+        let other = mkBufferWithSize 4;
+        buffer_write other "ab";
+        buffer_write other "cdefgh";
+        buffer_writeln other "";
+        flush other;
+        0;
+      ;
+    """
+    runSanitizedProgram(
+      source,
+      "BufferedWriteCapacity",
+      List("ABCDEFGH", "-2147483648,2147483647", "1.25,-2.5", "A", "abcdefgh")
+    )
+  }
 
   test("grouped and locally bound lambda arguments execute with the same result") {
     val source = """
@@ -377,38 +508,5 @@ class RuntimeTests extends BaseEffFunSuite:
         return 0;
       }
     """
-    withDirectory { directory =>
-      for
-        pair <- targetAt(directory, CompilerConfig.default)
-        (_, target) = pair
-        runtime <- Resource
-          .fromAutoCloseable(
-            IO.blocking(
-              getClass.getClassLoader.getResourceAsStream("mml_runtime.c")
-            )
-          )
-          .use(stream => IO.blocking(new String(stream.readAllBytes(), UTF_8)))
-        path <- IO.blocking(
-          Files.writeString(directory.resolve("runtime-test.c"), runtime + driver)
-        )
-        _ <- commandNotFailed(
-          List(
-            target.executable.toString,
-            "-std=c17",
-            "-O2",
-            "-fsanitize=address,undefined",
-            "-fno-sanitize-recover=all",
-            path.toString,
-            "-o",
-            directory.resolve("runtime-test").toString
-          ),
-          directory
-        )
-        _ <- programExits(
-          List(directory.resolve("runtime-test").toString),
-          directory,
-          expectedCode = 0
-        )
-      yield ()
-    }
+    runSanitizedRuntime(driver)
   }

@@ -187,13 +187,12 @@ These are short notes for later triage, not approved repair plans.
   Full-pipeline tests retain the primary conflict, unaffected unary uses, and independent errors;
   see [protocol review repairs](protocols-review-repairs.md).
 
-- **B28 — Open, P1: oversized buffered writes exceed the allocation.**
-  [buffer_write](../../modules/mmlc-lib/src/main/resources/mml_runtime.c) flushes when a write
-  exceeds the remaining capacity, then copies the entire payload into the same allocation.
-  Flushing cannot accommodate a payload larger than the buffer itself. A capacity of four and
-  the five-byte string `abcde` produce an ASan heap-buffer-overflow in `memcpy`.
-  Numeric and newline writes also fail with capacity one; exact-fit string writes and repeated
-  single-byte writes pass. Size-aware writes must handle payloads larger than the total capacity.
+- **B28 — Corrected and verified: oversized buffered writes exceed the allocation.**
+  A flush cannot accommodate a payload larger than the buffer itself. The shared byte writer in
+  [the runtime](../../modules/mmlc-lib/src/main/resources/mml_runtime.c) bounds every copy by
+  remaining capacity, including numeric, newline, and byte writes. C and compiled-MML
+  sanitizer regressions, full verification, and independent review pass. The signed-off repair is
+  [B28 — Bound writes to buffer capacity](buffer-write-capacity.md).
 
 - **B29 — Open, P1: dropping an unfilled StringArray frees uninitialized pointers.**
   [ar_str_new](../../modules/mmlc-lib/src/main/resources/mml_runtime.c) allocates slots with
@@ -329,5 +328,5 @@ tasks; B23 needs bounded parser reproduction. B14/B20/B21/B22/B24–B27 pass foc
 verification: 366 focused cases, 2,277 library/9 CLI tests, eight smoke fixtures, benchmark compilation,
 and all 52 memory fixtures. The [repair task](protocols-review-repairs.md) is complete and signed off.
 Keep broad design choices in their discussion subtasks.
-B28–B33 are independently confirmed and open for runtime/tooling triage. Reproductions and
+B29–B33 are independently confirmed and open for runtime/tooling triage. Reproductions and
 controls are embedded above.

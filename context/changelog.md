@@ -4,6 +4,10 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-11-03
 
+- Bound buffered output to its fixed allocation, splitting oversized string and numeric payloads
+  across flushes. Share capacity handling with newline and byte writes, preserving output order
+  even with one-byte buffers.
+
 - Centralize type, destruction-target, application, and source-span queries in `ast.queries`.
   Separate registry-backed Clone selection from call construction, and share application traversal
   between semantic analysis and code generation while retaining availability and ownership policy.
