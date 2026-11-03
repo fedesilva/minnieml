@@ -1,6 +1,7 @@
 package mml.mmlclib.semantic
 
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.TypeQueries
 import mml.mmlclib.errors.DiagnosticId
 
 /** Result failures known so far, and whether any result dependency has unattributed evidence.
@@ -174,7 +175,7 @@ final case class DiagnosticCauses private (
           ref.resolvedId match
             case Some(id) if seen.contains(id) =>
               // Nominal/structural recursion can terminate here; an alias-only cycle is unresolved.
-              if TypeUtils.canonical(ref, index).isEmpty then CauseEvidence.unknown
+              if TypeQueries.canonical(ref, index).isEmpty then CauseEvidence.unknown
               else CauseEvidence.empty
 
             case Some(id) =>

@@ -22,7 +22,7 @@ object ValueScope:
 
     val instanceBindings = DeclarationQueries.loweredMemberIds(module)
     val visible = module.members.flatMap {
-      case binding:  Bnd if !binding.id.exists(instanceBindings.contains) =>            binding.id.toList
+      case binding:  Bnd if !binding.id.exists(instanceBindings.contains) => binding.id.toList
       case protocol: Protocol => protocol.signatures.flatMap(_.id)
       case _ => Nil
     }

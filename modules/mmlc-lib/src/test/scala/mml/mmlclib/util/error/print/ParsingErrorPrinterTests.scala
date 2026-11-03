@@ -2,6 +2,7 @@ package mml.mmlclib.util.error.print
 
 import cats.syntax.option.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.TypeQueries
 import mml.mmlclib.compiler.{Compilation, CompilerConfig}
 import mml.mmlclib.errors.DiagnosticRelation
 import mml.mmlclib.parser.SourceInfo
@@ -141,7 +142,9 @@ class ParsingErrorPrinterTests extends BaseEffFunSuite:
       assertEquals(literal.value, originalLiteral.value)
       assertEquals(literal.source, originalLiteral.source)
       assert(
-        literal.typeSpec.exists(tpe => TypeUtils.canonical(tpe, state.module.resolvables).nonEmpty)
+        literal.typeSpec.exists(tpe =>
+          TypeQueries.canonical(tpe, state.module.resolvables).nonEmpty
+        )
       )
       assertEquals(application.source, originalApplication.source)
       assertEquals(error.source, originalError.source)

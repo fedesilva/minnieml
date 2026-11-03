@@ -12,16 +12,19 @@
 
 ## Execution Checklist
 
-1. [ ] **planned** — Compare existing walker/rebuilder contracts and specify the short-list behavior.
-2. [ ] **planned** — Consolidate callers and verify application order, callee identity, and resulting types.
+1. [ ] **planned** — Compare reconstruction contracts against the shared walker and specify short-list behavior.
+2. [ ] **planned** — Consolidate reconstruction callers and verify application order, callee identity, and resulting types.
 
 ## Problem
 
 ### D9: consolidate application-spine walkers
 
-`CallableValues.application` and `Applications.collectArgsAndFunction` duplicate
-traversal; the two rebuilders disagree for short lists, although no current caller
-reaches that difference. Consolidate the walkers and define one rebuilding contract.
+The shared walkers now live in
+[ApplicationQueries](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/queries/ApplicationQueries.scala),
+with semantic and codegen callers migrated under
+[AST query centralization](centralize-and-unify-ast-queries.md#step-12-callable-structure-and-analysis).
+The remaining reconstruction helpers disagree for short lists, although no current caller reaches
+that difference. Define one rebuilding contract before consolidating those helpers.
 
 ## Outcome
 
@@ -40,8 +43,10 @@ Approval: task definition and deferral authorized; implementation plan pending.
 
 ## Verification
 
-The evidence above comes from source inspection and the lambda branch review. No repair or
-verification for this task is complete. Run the applicable repository checks when implementing it.
+The reconstruction concern comes from source inspection and the lambda branch review. Shared
+walker verification belongs to the linked AST-query task. Reconstruction contracts are unchanged
+and have no implementation or verification claim here; run the applicable checks when selecting
+that remaining work.
 
 ## Signoff
 
@@ -51,4 +56,6 @@ verification for this task is complete. Run the applicable repository checks whe
 
 ## Task Working Memory
 
-Deferred at LOW priority. Next action: prepare the bounded plan when this task is selected.
+Deferred at LOW priority. Shared application walkers are implemented under AST query
+centralization; this task remains open for reconstruction and short-list behavior. Next action:
+prepare that bounded plan when the task is selected. No rebuilding change or closure is authorized.

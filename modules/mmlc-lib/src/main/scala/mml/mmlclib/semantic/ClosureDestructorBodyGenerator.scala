@@ -2,6 +2,7 @@ package mml.mmlclib.semantic
 
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.DestructionTargets
 import mml.mmlclib.compiler.CompilerState
 
 /** Completes closure environment destructor bodies after ownership analysis. */

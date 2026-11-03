@@ -2,6 +2,7 @@ package mml.mmlclib.semantic
 
 import cats.effect.IO
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.ApplicationQueries
 import mml.mmlclib.compiler.CompilerState
 import mml.mmlclib.test.BaseEffFunSuite
 
@@ -76,7 +77,7 @@ class PartialApplicationElaboratorTests extends BaseEffFunSuite:
       val application = function.body.terms match
         case (app: App) :: Nil => app
         case other => fail(s"Expected the expanded function call, got $other")
-      val (callee, arguments) = CallableValues.application(application)
+      val (callee, arguments) = ApplicationQueries.application(application)
       assertEquals(callee, original)
       assertEquals(arguments.size, 2)
       assertEquals(
@@ -319,7 +320,7 @@ class PartialApplicationElaboratorTests extends BaseEffFunSuite:
           .collect(body) {
             case app: App if app.arg.terms.exists {
                   case call: App =>
-                    val (callee, _) = CallableValues.application(call)
+                    val (callee, _) = ApplicationQueries.application(call)
                     callee match
                       case ref: Ref => ref.resolvedId == factoryId
                       case _ => false
@@ -352,7 +353,7 @@ class PartialApplicationElaboratorTests extends BaseEffFunSuite:
         assertEquals(residual.meta.map(_.borrowedCaptures), Some(Set.empty[String]), name)
         residual.body.terms match
           case List(call: App) =>
-            val (callee, arguments) = CallableValues.application(call)
+            val (callee, arguments) = ApplicationQueries.application(call)
             callee match
               case ref: Ref => assertEquals(ref.resolvedId, local.id, name)
               case other => fail(s"Expected captured callee, found $other")
@@ -434,7 +435,7 @@ class PartialApplicationElaboratorTests extends BaseEffFunSuite:
     val matches = TermTraversal.collect(term) { case lambda: Lambda => lambda }.filter { lambda =>
       lambda.body.terms match
         case (app: App) :: Nil =>
-          CallableValues.application(app)._1 match
+          ApplicationQueries.application(app)._1 match
             case ref: Ref => ref.resolvedId == target.id
             case _ => false
         case _ => false

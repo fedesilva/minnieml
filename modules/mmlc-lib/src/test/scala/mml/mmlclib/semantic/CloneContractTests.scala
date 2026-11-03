@@ -1,9 +1,49 @@
 package mml.mmlclib.semantic
 
+import cats.syntax.option.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.errors.DiagnosticId
 import mml.mmlclib.test.BaseEffFunSuite
 
 class CloneContractTests extends BaseEffFunSuite:
+
+  test("Clone selection follows alias identity and reads the current indexed member"):
+    semStateNotFailed("type Text = String;").map { state =>
+      val index  = state.module.resolvables
+      val text   = typeReference("Text", index)
+      val member = protocolImplementation(state, "Clone", "String", "^")
+      assertEquals(CloneTargets.forType(text, index, state.protocols), member.some)
+
+      val replacement = member.copy(value = Expr(SourceOrigin.Synth, Nil))
+      assertEquals(
+        CloneTargets.forType(text, index.updated(replacement), state.protocols),
+        replacement.some
+      )
+    }
+
+  test("unavailable Clone targets keep operand diagnostics in call construction"):
+    semStateNotFailed("let value = 1;").map { state =>
+      val index      = state.module.resolvables
+      val stringType = typeReference("String", index)
+      val member     = protocolImplementation(state, "Clone", "String", "^")
+      val instance = state.protocols
+        .instance(CloneTargets.protocolId, stringType, index)
+        .fold(error => fail(s"Expected String Clone instance: $error"), identity)
+      val rejected = state.protocols
+        .rejectInstance(instance, Vector(DiagnosticId(1)))
+        .fold(error => fail(s"Expected registered Clone instance: $error"), identity)
+      val missingMember = index.copy(resolvables = index.resolvables -- member.id)
+
+      assertEquals(CloneTargets.forType(stringType, index, ProtocolRegistry.empty), None)
+      assertEquals(CloneTargets.forType(stringType, missingMember, state.protocols), None)
+      assertEquals(CloneTargets.forType(stringType, index, rejected), None)
+
+      val operand = Expr(SourceOrigin.Synth, Nil, typeSpec = stringType.some)
+      assertEquals(
+        CloneCalls.build(operand, stringType, index, "clone-test", rejected),
+        Left(SemanticError.InvalidExpression(operand, "This type cannot be cloned", "clone-test"))
+      )
+    }
 
   test("a conventionally named native helper does not grant Clone support"):
     semState("""

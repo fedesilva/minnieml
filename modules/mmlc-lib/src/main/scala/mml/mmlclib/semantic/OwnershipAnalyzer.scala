@@ -3,6 +3,13 @@ package mml.mmlclib.semantic
 import cats.data.State
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.{
+  ApplicationQueries,
+  DestructionTargets,
+  NativeTypeQueries,
+  TypeMemoryQueries,
+  TypeQueries
+}
 import mml.mmlclib.compiler.CompilerState
 import mml.mmlclib.errors.{DiagnosticId, DiagnosticRecord, DiagnosticRelation, DiagnosticStore}
 
@@ -423,7 +430,7 @@ object OwnershipAnalyzer:
 
   /** Check if a type is owned (heap type or capturing closure). */
   private def isOwnedType(t: Type, resolvables: ResolvablesIndex): Boolean =
-    TypeUtils.requiresDestruction(t, resolvables)
+    TypeMemoryQueries.requiresDestruction(t, resolvables)
 
   /** Result ownership follows the final invocation, including returned callable values. */
   private def appAllocates(app: App, scope: OwnershipScope): Option[Type] =
@@ -482,7 +489,7 @@ object OwnershipAnalyzer:
     )
     val argExpr  = Expr(span, List(argRef), typeSpec = tpe.some)
     val unitType = unitTypeRef(span).some
-    TypeUtils.canonical(tpe, resolvables) match
+    TypeQueries.canonical(tpe, resolvables) match
       case Some(_: TypeFn) =>
         destructorTargetOverride
           .orElse(DestructionTargets.named("__free_closure", resolvables))
@@ -1397,7 +1404,7 @@ object OwnershipAnalyzer:
 
     def storageIndependent(value: Term, current: OwnershipScope): Boolean =
       val native = value.typeSpec
-        .flatMap(TypeUtils.canonical(_, current.resolvables))
+        .flatMap(TypeQueries.canonical(_, current.resolvables))
         .flatMap {
           case ref: TypeRef =>
             ref.resolvedId
@@ -1410,7 +1417,7 @@ object OwnershipAnalyzer:
         }
       native.exists {
         case primitive: NativePrimitive =>
-          !TypeUtils.isPointerNativeType(primitive) &&
+          !NativeTypeQueries.isPointerNativeType(primitive) &&
           primitive.memEffect.isEmpty && primitive.freeFn.isEmpty
         case _ => false
       }
@@ -1457,7 +1464,7 @@ object OwnershipAnalyzer:
         then Set.empty
         else
           val aliases = current.callableValues.resultReferences(value).flatMap(references).toSet
-          value.typeSpec.flatMap(TypeUtils.canonical(_, current.resolvables)) match
+          value.typeSpec.flatMap(TypeQueries.canonical(_, current.resolvables)) match
             case Some(_: TypeFn) =>
               current.callableValues.provenLambdas(value) match
                 case Some(origins) if origins.forall(_.captures.isEmpty) => Set.empty
@@ -1506,7 +1513,7 @@ object OwnershipAnalyzer:
             }
 
           case _ =>
-            val (callee, arguments) = CallableValues.application(app)
+            val (callee, arguments) = ApplicationQueries.application(app)
             val retained = retains(callee, binding, current) || arguments.exists { argument =>
               !storageIndependent(argument, current) &&
               retains(argument, binding, current)
@@ -1776,7 +1783,7 @@ object OwnershipAnalyzer:
     scope:        OwnershipScope
   ): List[OwnershipDiagnostic] =
     val isFunctionValue = value.typeSpec
-      .flatMap(TypeUtils.canonical(_, scope.resolvables))
+      .flatMap(TypeQueries.canonical(_, scope.resolvables))
       .exists(_.isInstanceOf[TypeFn])
     val borrowsEnvironment = scope.callableValues.lambdas(value).exists { lambda =>
       lambda.captures.nonEmpty && !lambda.isMove
@@ -1973,7 +1980,7 @@ object OwnershipAnalyzer:
         StagedExpression(Expr(app.source, List(callee), typeSpec = app.typeSpec), Nil)
           .pure[Allocation]
 
-    val (base, _) = CallableValues.application(app)
+    val (base, _) = ApplicationQueries.application(app)
     val (ids, lowered) =
       lower(preparedStages.toList, base, 0).run(argumentScope.bindingIds).value
     val aliases = bindings.map { binding =>
@@ -2015,7 +2022,7 @@ object OwnershipAnalyzer:
     )
 
   private def analyzeSingleStage(app: App, scope: OwnershipScope): TermResult[Term] =
-    val (baseFn, _) = CallableValues.application(app)
+    val (baseFn, _) = ApplicationQueries.application(app)
     val arguments   = scope.callableValues.stages(app).flatMap(describeArguments(_, scope))
     val isConstructor = baseFn match
       case ref: Ref =>
@@ -2507,7 +2514,7 @@ object OwnershipAnalyzer:
                 else
                   val cloneId =
                     ref.typeSpec
-                      .flatMap(CloneCalls.target(_, s.resolvables, s.protocols))
+                      .flatMap(CloneTargets.forType(_, s.resolvables, s.protocols))
                       .flatMap(_.id)
 
                   cloneId match
@@ -2531,7 +2538,7 @@ object OwnershipAnalyzer:
                       )
 
               case Some(OwnershipState.Owned) =>
-                val ownedCap = ref.typeSpec.flatMap(TypeUtils.canonical(_, s.resolvables)) match
+                val ownedCap = ref.typeSpec.flatMap(TypeQueries.canonical(_, s.resolvables)) match
                   case Some(_: TypeFn) =>
                     s.getInfo(ref.name)
                       .flatMap(_.destructorTargetId)
@@ -2556,7 +2563,7 @@ object OwnershipAnalyzer:
               case Some(OwnershipState.Literal) =>
                 val cloneId =
                   ref.typeSpec
-                    .flatMap(CloneCalls.target(_, s.resolvables, s.protocols))
+                    .flatMap(CloneTargets.forType(_, s.resolvables, s.protocols))
                     .flatMap(_.id)
                 cloneId match
                   case Some(id) => (s, errs, caps :+ Capture.CapturedLiteral(ref, id))
@@ -2798,7 +2805,7 @@ object OwnershipAnalyzer:
     val callableValues = CallableValues.fromModule(module)
     val returningOwned = ReturnOwnershipAnalysis.discover(module, callableValues)
     val cloneErrors =
-      state.protocols.memberBindingIds(CloneCalls.signatureId).toList.flatMap { id =>
+      state.protocols.memberBindingIds(CloneTargets.signatureId).toList.flatMap { id =>
         module.resolvables.lookup(id).collect { case binding: Bnd => binding }.toList.flatMap {
           binding =>
             binding.value.terms.collect {

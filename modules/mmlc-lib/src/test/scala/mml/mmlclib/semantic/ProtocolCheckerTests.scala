@@ -1,6 +1,7 @@
 package mml.mmlclib.semantic
 
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.TypeQueries
 import mml.mmlclib.compiler.{CompilerConfig, CompilerState}
 import mml.mmlclib.errors.DiagnosticRelation
 import mml.mmlclib.lsp.{AstLookup, DiagnosticSeverity, Diagnostics, Range, SemanticTokens}
@@ -1223,6 +1224,6 @@ class ProtocolCheckerTests extends BaseEffFunSuite:
     case other => fail(s"Expected one native implementation, got $other")
 
   private def functionType(tpe: Option[Type], index: ResolvablesIndex): TypeFn =
-    tpe.flatMap(TypeUtils.canonical(_, index)) match
+    tpe.flatMap(TypeQueries.canonical(_, index)) match
       case Some(function: TypeFn) => function
       case other => fail(s"Expected a concrete callable type, got $other")

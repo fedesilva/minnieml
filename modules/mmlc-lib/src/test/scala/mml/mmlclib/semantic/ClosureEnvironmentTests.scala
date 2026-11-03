@@ -2,6 +2,7 @@ package mml.mmlclib.semantic
 
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.DestructionTargets
 import mml.mmlclib.codegen.emitter.{CallableTargetAnalysis, ClosureEnvironmentLayout}
 import mml.mmlclib.compiler.{CompilerConfig, CompilerState}
 import mml.mmlclib.parser.SourceInfo

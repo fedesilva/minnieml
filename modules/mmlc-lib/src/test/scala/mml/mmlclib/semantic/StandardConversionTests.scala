@@ -4,6 +4,7 @@ import cats.effect.{IO, Resource}
 import cats.syntax.all.*
 import mml.mmlclib.api.CompilerApi
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.TypeQueries
 import mml.mmlclib.codegen.CompilationMode
 import mml.mmlclib.test.BaseEffFunSuite
 
@@ -47,7 +48,7 @@ class StandardConversionTests extends BaseEffFunSuite:
 
         val index = checked.module.resolvables
         val function = implementation.typeSpec
-          .flatMap(TypeUtils.canonical(_, index))
+          .flatMap(TypeQueries.canonical(_, index))
           .collect { case function: TypeFn => function }
           .getOrElse(fail("Expected a concrete callable type"))
         assertEquals(function.paramTypes.size, 1)

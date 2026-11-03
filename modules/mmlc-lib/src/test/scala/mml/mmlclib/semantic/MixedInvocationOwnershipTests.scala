@@ -1,6 +1,7 @@
 package mml.mmlclib.semantic
 
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.DestructionTargets
 import mml.mmlclib.test.BaseEffFunSuite
 
 class MixedInvocationOwnershipTests extends BaseEffFunSuite:

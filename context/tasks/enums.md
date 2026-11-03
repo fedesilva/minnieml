@@ -60,7 +60,7 @@ Source inspection only; these findings identify integration points, not an imple
   injects `==` and `!=` with `Int -> Int -> Bool` signatures. Enum equality therefore
   depends on protocol instance resolution, not reuse through implicit integer conversion.
 - **Ownership already distinguishes resource-bearing types.** `isHeapType` in
-  [TypeUtils.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/TypeUtils.scala)
+  [TypeMemoryQueries.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/queries/TypeMemoryQueries.scala)
   checks native allocation effects and recursively checks struct fields. Enum integration
   must preserve scalar copying and avoid introducing cleanup obligations.
 

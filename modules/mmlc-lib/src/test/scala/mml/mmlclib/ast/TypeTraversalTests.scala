@@ -2,6 +2,7 @@ package mml.mmlclib.ast
 
 import cats.data.{NonEmptyList, State}
 import cats.syntax.all.*
+import mml.mmlclib.ast.queries.TypeFailureQueries
 import mml.mmlclib.errors.DiagnosticId
 import mml.mmlclib.test.BaseEffFunSuite
 
@@ -157,4 +158,4 @@ class TypeTraversalTests extends BaseEffFunSuite:
       Nil
     )
     assertEquals(rewritten, refinement)
-    assert(TypeUtils.containsInvalidType(refinement, Set.empty[String]))
+    assert(TypeFailureQueries.containsInvalidType(refinement, Set.empty[String]))

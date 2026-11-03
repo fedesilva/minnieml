@@ -3,6 +3,7 @@ package mml.mmlclib.parser
 import cats.syntax.all.*
 import fastparse.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.TypeFailureQueries
 
 import MmlWhitespace.*
 
@@ -183,7 +184,7 @@ private[parser] def fnDefP(info: SourceInfo)(using P[Any]): P[Member] =
             else
               body.copy(typeAsc =
                 typeAsc.filter(
-                  TypeUtils.containsInvalidType(_, ResolvablesIndex())
+                  TypeFailureQueries.containsInvalidType(_, ResolvablesIndex())
                 )
               )
           Bnd(

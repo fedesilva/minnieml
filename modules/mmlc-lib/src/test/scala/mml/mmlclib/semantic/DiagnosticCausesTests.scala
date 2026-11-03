@@ -2,6 +2,7 @@ package mml.mmlclib.semantic
 
 import cats.data.NonEmptyList
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.TypeQueries
 import mml.mmlclib.errors.DiagnosticId
 import mml.mmlclib.test.BaseEffFunSuite
 
@@ -349,7 +350,7 @@ class DiagnosticCausesTests extends BaseEffFunSuite:
     val input     = module(List(first, second))
     val context   = DiagnosticCauses.fromModule(input)
 
-    assertEquals(TypeUtils.canonical(cycle, input.resolvables), None)
+    assertEquals(TypeQueries.canonical(cycle, input.resolvables), None)
     assertEquals(context.knownRootsOfType(composite), firstRoots)
     assertEquals(context.provenRootsOfType(composite), Vector.empty)
   }

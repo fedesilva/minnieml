@@ -30,8 +30,10 @@ item needs its own plan. A cleanup campaign can work through several approved gr
 
 - **Status:** complete
 - **Implementation and verification:** [Unify type-property alias resolution](type-property-alias-resolution.md).
-- **Source:** [TypeUtils.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/TypeUtils.scala)
-  and [MemoryFunctions.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/MemoryFunctions.scala).
+- **Source:** [TypeQueries.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/queries/TypeQueries.scala),
+  [NativeTypeQueries.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/queries/NativeTypeQueries.scala),
+  [TypeMemoryQueries.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/queries/TypeMemoryQueries.scala),
+  and [MemoryFunctions.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/queries/MemoryFunctions.scala).
 - **Problem:** Reducing resolved types to short names permits stdlib-first or first-match lookup
   to select a different declaration. Name-based recursive guards can also conflate declarations.
 - **Repair:** Property queries and callers preserve typed AST inputs and resolved IDs. Shared

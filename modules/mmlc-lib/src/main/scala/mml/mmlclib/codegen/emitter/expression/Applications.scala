@@ -21,19 +21,6 @@ import mml.mmlclib.codegen.emitter.{
 
 import scala.util.matching.Regex
 
-/** Collects all arguments from nested App nodes (handles curried applications).
-  *
-  * For example, `mult 2 2` is represented as App(App(Ref(mult), 2), 2).
-  */
-def collectArgsAndFunction(
-  app:  App,
-  args: List[Expr] = List.empty
-): (Ref | Lambda, List[Expr]) =
-  app.fn match
-    case ref:       Ref => (ref, app.arg :: args)
-    case nestedApp: App => collectArgsAndFunction(nestedApp, app.arg :: args)
-    case lambda:    Lambda => (lambda, app.arg :: args)
-
 /** Compiles an immediate lambda application (from let-expression desugaring).
   *
   * `let x = E; body` desugars to `App(Lambda([x], body), E)`. Emitting the binding and continuation

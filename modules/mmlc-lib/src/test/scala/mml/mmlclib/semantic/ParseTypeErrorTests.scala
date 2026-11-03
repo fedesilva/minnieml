@@ -3,6 +3,7 @@ package mml.mmlclib.semantic
 import cats.data.NonEmptyList
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.TypeFailureQueries
 import mml.mmlclib.compiler.{
   CodegenStage,
   CompilerConfig,
@@ -376,10 +377,10 @@ class ParseTypeErrorTests extends BaseEffFunSuite:
     failures.foreach { failure =>
       containers.foreach { contain =>
         val tpe = contain(failure)
-        assert(TypeUtils.containsInvalidType(tpe, ResolvablesIndex()), tpe)
+        assert(TypeFailureQueries.containsInvalidType(tpe, ResolvablesIndex()), tpe)
         assert(!ValueAvailability.empty.isAvailable(LiteralInt(source, 1, tpe.some)), tpe)
         val valid = contain(TypeUnit(source))
-        assert(!TypeUtils.containsInvalidType(valid, ResolvablesIndex()), valid)
+        assert(!TypeFailureQueries.containsInvalidType(valid, ResolvablesIndex()), valid)
         assert(ValueAvailability.empty.isAvailable(LiteralInt(source, 1, valid.some)), valid)
       }
     }
@@ -404,8 +405,8 @@ class ParseTypeErrorTests extends BaseEffFunSuite:
       Module(source, "Recursive", Visibility.Protected, List(recursive), resolvables = index)
     val value              = LiteralInt(source, 1, self.some)
     val failedAvailability = ValueAvailability.fromModule(module)
-    assert(TypeUtils.containsInvalidType(self, index))
-    assert(TypeUtils.containsInvalidType(self, TypeUtils.invalidTypeIds(index)))
+    assert(TypeFailureQueries.containsInvalidType(self, index))
+    assert(TypeFailureQueries.containsInvalidType(self, TypeFailureQueries.invalidTypeIds(index)))
     assert(!failedAvailability.isAvailable(value))
 
     val valid = recursive.copy(fields = recursive.fields.map { field =>
@@ -414,8 +415,10 @@ class ParseTypeErrorTests extends BaseEffFunSuite:
     val validIndex        = ResolvablesIndex().updatedType(valid)
     val validModule       = module.copy(members = List(valid), resolvables = validIndex)
     val validAvailability = ValueAvailability.fromModule(validModule, failedAvailability)
-    assert(!TypeUtils.containsInvalidType(self, validIndex))
-    assert(!TypeUtils.containsInvalidType(self, TypeUtils.invalidTypeIds(validIndex)))
+    assert(!TypeFailureQueries.containsInvalidType(self, validIndex))
+    assert(
+      !TypeFailureQueries.containsInvalidType(self, TypeFailureQueries.invalidTypeIds(validIndex))
+    )
     assert(validAvailability.isAvailable(value))
     assert(!ValueAvailability.fromModule(module, validAvailability).isAvailable(value))
 
@@ -436,8 +439,10 @@ class ParseTypeErrorTests extends BaseEffFunSuite:
     val aliases    = List(firstAlias, secondAlias)
     val aliasIndex = ResolvablesIndex().updatedAllTypes(aliases)
     val cyclic     = module.copy(members = aliases, resolvables = aliasIndex)
-    assert(!TypeUtils.containsInvalidType(first, aliasIndex))
-    assert(!TypeUtils.containsInvalidType(first, TypeUtils.invalidTypeIds(aliasIndex)))
+    assert(!TypeFailureQueries.containsInvalidType(first, aliasIndex))
+    assert(
+      !TypeFailureQueries.containsInvalidType(first, TypeFailureQueries.invalidTypeIds(aliasIndex))
+    )
     assert(!ValueAvailability.fromModule(cyclic).isAvailable(value.copy(typeSpec = first.some)))
   }
 
@@ -466,14 +471,16 @@ class ParseTypeErrorTests extends BaseEffFunSuite:
     )
     val declarations = List(failedAlias, validAlias, failedDefinition)
     val index        = ResolvablesIndex().updatedAllTypes(declarations)
-    val failures     = TypeUtils.invalidTypeIds(index)
+    val failures     = TypeFailureQueries.invalidTypeIds(index)
     assertEquals(failures, failedAlias.id.toSet ++ failedDefinition.id.toSet)
     declarations.foreach { declaration =>
       val reference = TypeRef(source, declaration.name, declaration.id)
       assertEquals(
-        TypeUtils.containsInvalidType(reference, failures),
-        TypeUtils.containsInvalidType(reference, index)
+        TypeFailureQueries.containsInvalidType(reference, failures),
+        TypeFailureQueries.containsInvalidType(reference, index)
       )
     }
-    assert(!TypeUtils.containsInvalidType(TypeRef(source, "Missing", "missing".some), failures))
+    assert(
+      !TypeFailureQueries.containsInvalidType(TypeRef(source, "Missing", "missing".some), failures)
+    )
   }

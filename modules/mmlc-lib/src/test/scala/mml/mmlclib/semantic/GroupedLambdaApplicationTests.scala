@@ -2,6 +2,7 @@ package mml.mmlclib.semantic
 
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.TypeQueries
 import mml.mmlclib.test.BaseEffFunSuite
 
 class GroupedLambdaApplicationTests extends BaseEffFunSuite:
@@ -30,8 +31,8 @@ class GroupedLambdaApplicationTests extends BaseEffFunSuite:
       case other => fail(s"Expected one source parameter at $position, found $other")
 
   private def sameType(module: Module, actual: Option[Type], expected: Option[Type]): Unit =
-    val actualType   = actual.flatMap(TypeUtils.canonical(_, module.resolvables))
-    val expectedType = expected.flatMap(TypeUtils.canonical(_, module.resolvables))
+    val actualType   = actual.flatMap(TypeQueries.canonical(_, module.resolvables))
+    val expectedType = expected.flatMap(TypeQueries.canonical(_, module.resolvables))
     assert(expectedType.isDefined, "Expected a resolved type")
     assertEquals(actualType, expectedType)
 
@@ -95,7 +96,7 @@ class GroupedLambdaApplicationTests extends BaseEffFunSuite:
         val residual = sourceParameter(result, source, "y: Int")
         List(supplied, residual).foreach(parameterUses(module, result, _))
         assertEquals(suppliedIntegers(module, supplied), List(1L))
-        result.typeSpec.flatMap(TypeUtils.canonical(_, module.resolvables)) match
+        result.typeSpec.flatMap(TypeQueries.canonical(_, module.resolvables)) match
           case Some(callable: TypeFn) =>
             assertEquals(callable.paramTypes.size, 1)
             sameType(module, callable.paramTypes.head.some, residual.typeSpec)
@@ -144,7 +145,7 @@ class GroupedLambdaApplicationTests extends BaseEffFunSuite:
         val mismatch = mismatches.head
         val second   = sourceParameter(binding(state.module), source, "y: Int")
         sameType(state.module, mismatch.expected.some, second.typeAsc)
-        assertEquals(TypeUtils.getTypeName(mismatch.actual), "Bool".some)
+        assertEquals(TypeQueries.getTypeName(mismatch.actual), "Bool".some)
         val argument = mismatch.node match
           case expression: Expr => expression
           case other => fail(s"Expected an argument expression, found $other")

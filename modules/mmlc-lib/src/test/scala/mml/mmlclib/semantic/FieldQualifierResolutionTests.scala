@@ -3,6 +3,7 @@ package mml.mmlclib.semantic
 import cats.effect.IO
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.TypeQueries
 import mml.mmlclib.compiler.{CompilerConfig, CompilerState}
 import mml.mmlclib.parser.SourceInfo
 import mml.mmlclib.test.BaseEffFunSuite
@@ -116,8 +117,8 @@ class FieldQualifierResolutionTests extends BaseEffFunSuite:
           case SemanticError.TypeCheckingError(error: TypeError.TypeMismatch) => error
         }
         assertEquals(mismatches.size, 1, result.errors)
-        assertEquals(TypeUtils.getTypeName(mismatches.head.expected), expected.some)
-        assertEquals(TypeUtils.getTypeName(mismatches.head.actual), actual.some)
+        assertEquals(TypeQueries.getTypeName(mismatches.head.expected), expected.some)
+        assertEquals(TypeQueries.getTypeName(mismatches.head.actual), actual.some)
       }
     }
   }
@@ -228,9 +229,9 @@ class FieldQualifierResolutionTests extends BaseEffFunSuite:
         assert(refs.nonEmpty)
         refs.foreach(ref => assertEquals(ref.typeSpec, box.typeSpec))
         val expected = lambda(binding(module, "identity")).body.typeSpec
-          .flatMap(TypeUtils.canonical(_, module.resolvables))
+          .flatMap(TypeQueries.canonical(_, module.resolvables))
         val actual = lambda(reader).body.typeSpec
-          .flatMap(TypeUtils.canonical(_, module.resolvables))
+          .flatMap(TypeQueries.canonical(_, module.resolvables))
         assert(expected.nonEmpty)
         assertEquals(actual, expected)
       }

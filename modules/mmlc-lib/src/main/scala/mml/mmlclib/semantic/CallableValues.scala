@@ -2,6 +2,7 @@ package mml.mmlclib.semantic
 
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.{ApplicationQueries, TypeQueries}
 
 /** Resolved value flow preserves callable ownership through bindings, returns, and arguments. */
 final case class CallableValues private (
@@ -160,14 +161,9 @@ final case class CallableValues private (
                 val constructorField = for
                   fieldId <- fields.headOption
                   marker <- origin.lambda.body.terms.collectFirst { case dc: DataConstructor => dc }
-                  tpe <- marker.typeSpec.flatMap(TypeUtils.canonical(_, index))
-                  struct <- tpe match
-                    case ref: TypeRef =>
-                      ref.resolvedId.flatMap(index.lookupType).collect { case struct: TypeStruct =>
-                        struct
-                      }
-                    case struct: TypeStruct => struct.some
-                    case _ => none
+                  struct <- marker.typeSpec
+                    .flatMap(TypeQueries.declaration(_, index))
+                    .collect { case struct: TypeStruct => struct }
                   position <- struct.fields.zipWithIndex.collectFirst {
                     case (field, position) if field.id.contains(fieldId) => position
                   }
@@ -338,32 +334,12 @@ final case class CallableValues private (
 object CallableValues:
   val empty: CallableValues =
     CallableValues(Map.empty, Map.empty, ResolvablesIndex(), ValueAvailability.empty)
-  def applications(term: Term): List[App] = term match
-    case app: App =>
-      val (callee, args) = application(app)
-      app :: (applications(callee) ++ args.flatMap(applications))
-    case other => TermTraversal.children(other).flatMap(applications)
-
-  def application(app: App): (Ref | Lambda, List[Expr]) =
-    val (callee, nodes) = applicationNodes(app)
-    (callee, nodes.map(_.arg))
-
-  /** Retain original application nodes in argument order, from innermost to outermost, including
-    * each invocation's source, annotations, and result type.
-    */
-  def applicationNodes(app: App): (Ref | Lambda, List[App]) =
-    @scala.annotation.tailrec
-    def collect(current: App, outer: List[App]): (Ref | Lambda, List[App]) = current.fn match
-      case inner: App => collect(inner, current :: outer)
-      case root:  (Ref | Lambda) => (root, current :: outer)
-
-    collect(app, Nil)
 
   def fromModule(module: Module): CallableValues =
     val recovery = ValueAvailability.fromModule(module)
     val members  = module.members.collect { case binding: Bnd => binding }
     val applications = members.flatMap { binding =>
-      CallableValues.applications(binding.value)
+      ApplicationQueries.applications(binding.value)
     }
     val initial = members.flatMap(binding => binding.id.map(_ -> binding.value)) ++
       members.flatMap { member =>

@@ -1,6 +1,7 @@
 package mml.mmlclib.semantic
 
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.{DestructionTargets, TypeMemoryQueries}
 import mml.mmlclib.test.BaseEffFunSuite
 
 class FieldQualifierOwnershipTests extends BaseEffFunSuite:
@@ -45,7 +46,7 @@ class FieldQualifierOwnershipTests extends BaseEffFunSuite:
       .getOrElse(fail("Expected example function body"))
 
   private def destructorCalls(module: Module, typeName: String): List[Ref] =
-    val target = TypeUtils
+    val target = TypeMemoryQueries
       .freeFnFor(typeReference(typeName, module.resolvables), module.resolvables)
       .flatMap(DestructionTargets.named(_, module.resolvables))
       .getOrElse(fail(s"Expected destructor for $typeName"))

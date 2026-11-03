@@ -2,7 +2,7 @@ package mml.mmlclib.codegen.emitter
 
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
-import mml.mmlclib.codegen.emitter.expression.collectArgsAndFunction
+import mml.mmlclib.ast.queries.ApplicationQueries
 
 /** Records uses of one local function binding to decide whether to emit a plain LLVM entry. Calls
   * through aliases count toward the original binding. At least one fully applied direct call makes
@@ -148,7 +148,7 @@ object LocalCallableAnalysis:
           visit(result.owns, scope, visit(result.value, scope, analysis))
 
         case app: App =>
-          val (callee, args) = collectArgsAndFunction(app)
+          val (callee, args) = ApplicationQueries.application(app)
           callee match
             // Let desugaring uses an immediate unary lambda. Its body stays in the caller's scope.
             case lambda: Lambda if lambda.params.size == 1 && args.size == 1 =>

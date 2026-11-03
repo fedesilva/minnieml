@@ -2,7 +2,7 @@ package mml.mmlclib.codegen.emitter
 
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
-import mml.mmlclib.codegen.emitter.expression.collectArgsAndFunction
+import mml.mmlclib.ast.queries.{ApplicationQueries, TypeQueries}
 
 /** An emitted entry has a stable identity even when its closure environment varies at runtime. */
 case class CallableDefinition(
@@ -74,7 +74,7 @@ case class CallableTargetAnalysis(
     case cond: Cond =>
       merge(evaluate(cond.ifTrue, scope, seen), evaluate(cond.ifFalse, scope, seen))
     case app: App =>
-      val (callee, args) = collectArgsAndFunction(app)
+      val (callee, args) = ApplicationQueries.application(app)
       val arguments      = args.map(evaluate(_, scope, seen))
       callee match
         case lambda: Lambda =>
@@ -94,15 +94,8 @@ case class CallableTargetAnalysis(
                   val constructor = definition.binding
                     .filter(_.meta.exists(_.origin == BindingOrigin.Constructor))
                     .flatMap(_.typeSpec.flatMap(resolveToTypeFn(_, index)))
-                    .flatMap(signature => TypeUtils.canonical(signature.returnType, index))
-                    .flatMap {
-                      case struct: TypeStruct => struct.some
-                      case ref:    TypeRef =>
-                        ref.resolvedId.flatMap(index.lookupType).collect {
-                          case struct: TypeStruct => struct
-                        }
-                      case _ => none
-                    }
+                    .flatMap(signature => TypeQueries.declaration(signature.returnType, index))
+                    .collect { case struct: TypeStruct => struct }
                   constructor match
                     case Some(struct) =>
                       Value.Aggregate(

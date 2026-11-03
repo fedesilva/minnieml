@@ -26,7 +26,7 @@ case; missing an ID can lose tail-call preservation.
 
 ### D10: reuse canonical type resolution
 
-Reuse `TypeUtils.canonical` in `DestructionValidator`; the local copy already differs
+Reuse `TypeQueries.canonical` in `DestructionValidator`; the local copy already differs
 for unresolved references.
 
 ## Outcome

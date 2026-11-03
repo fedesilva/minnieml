@@ -3,6 +3,12 @@ package mml.mmlclib.semantic
 import cats.data.{NonEmptyList, State}
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.{
+  ApplicationQueries,
+  NativeTypeQueries,
+  TypeMemoryQueries,
+  TypeQueries
+}
 import mml.mmlclib.compiler.CompilerState
 
 import BindingIds.Allocation
@@ -102,7 +108,7 @@ object PartialApplicationElaborator:
         .map(_.ref)
         .filter { ref =>
           values.recovery.isAvailable(ref) &&
-          ref.typeSpec.exists(TypeUtils.requiresDestruction(_, index))
+          ref.typeSpec.exists(TypeMemoryQueries.requiresDestruction(_, index))
         }
         .flatMap(_.resolvedId)
         .toSet
@@ -255,7 +261,7 @@ object PartialApplicationElaborator:
           prepared.bindings
         )
       case _ =>
-        val (callee, args) = CallableValues.application(app)
+        val (callee, args) = ApplicationQueries.application(app)
         val preparedCallee = callee match
           case ref:    Ref => rewriteRef(ref, owner, index, values)
           case lambda: Lambda =>
@@ -263,7 +269,7 @@ object PartialApplicationElaborator:
         for
           rewrittenArgs <- args.traverse(prepareExpr(_, owner, index, values))
           function <- preparedCallee
-          result <- callee.typeSpec.flatMap(TypeUtils.canonical(_, index)).collect {
+          result <- callee.typeSpec.flatMap(TypeQueries.canonical(_, index)).collect {
             case signature: TypeFn => signature
           } match
             // Fresh qualifier bindings need indexed callable origins before PAP capture analysis.
@@ -308,7 +314,7 @@ object PartialApplicationElaborator:
       if binding.value.terms match
         case (lambda: Lambda) :: Nil => lambda.params.nonEmpty
         case _ => false
-      callable <- ref.typeSpec.flatMap(TypeUtils.canonical(_, index)).collect {
+      callable <- ref.typeSpec.flatMap(TypeQueries.canonical(_, index)).collect {
         case signature: TypeFn => signature
       }
     yield callable
@@ -328,7 +334,7 @@ object PartialApplicationElaborator:
 
       case Some(qualifier) =>
         val prepared = qualifier.value.typeSpec
-          .filter(TypeUtils.requiresDestruction(_, index))
+          .filter(TypeMemoryQueries.requiresDestruction(_, index))
           .fold(qualifier.pure[Allocation])(prepareArgument(qualifier, _, owner, index))
         prepared.map { result =>
           PreparedValue(ref.copy(qualifier = result.value.some), result.bindings)
@@ -343,7 +349,7 @@ object PartialApplicationElaborator:
       .fold(signature.returnType)(remaining => signature.copy(paramTypes = remaining))
 
   private def rebuild(app: App, callee: Ref | Lambda, args: List[Expr]): App =
-    val originals = CallableValues.applicationNodes(app)._2
+    val originals = ApplicationQueries.applicationNodes(app)._2
     originals.zip(args).foldLeft[Callee](callee) { case (fn, (original, arg)) =>
       original.copy(fn = fn, arg = arg)
     } match
@@ -380,7 +386,7 @@ object PartialApplicationElaborator:
       case _ =>
         fresh(owner, tpe, source = arg.value.source).map { local =>
           val value: Term =
-            if TypeUtils.resolveNativeType(tpe, index).exists {
+            if NativeTypeQueries.resolveNativeType(tpe, index).exists {
                 case NativePrimitive(_, "void", _, _) => true
                 case _ => false
               }
@@ -406,7 +412,10 @@ object PartialApplicationElaborator:
     val supplied =
       args.zip(signature.paramTypes.toList).zipWithIndex.traverse { case ((arg, tpe), position) =>
         val consumes =
-          params.lift(position).exists(_.consuming) && TypeUtils.requiresDestruction(tpe, index)
+          params.lift(position).exists(_.consuming) && TypeMemoryQueries.requiresDestruction(
+            tpe,
+            index
+          )
         prepareArgument(arg, tpe, owner, index, forceBinding = consumes)
       }
     for
@@ -417,7 +426,7 @@ object PartialApplicationElaborator:
         Expr(term.source, List(local.ref), typeSpec = local.param.typeSpec)
       }
       val originals = term match
-        case app: App => CallableValues.applicationNodes(app)._2
+        case app: App => ApplicationQueries.applicationNodes(app)._2
         case _ => Nil
       val fullApp = allArgs.zipWithIndex.foldLeft[Callee](callee) { case (fn, (arg, position)) =>
         val resultType = appliedType(signature, position + 1).some
@@ -426,7 +435,7 @@ object PartialApplicationElaborator:
           case None => App(term.source, fn, arg, typeSpec = resultType)
       }
       val payloads = supplied.zip(signature.paramTypes.toList).zipWithIndex.collect {
-        case ((prepared, tpe), position) if TypeUtils.requiresDestruction(tpe, index) =>
+        case ((prepared, tpe), position) if TypeMemoryQueries.requiresDestruction(tpe, index) =>
           (prepared.value, params.lift(position).exists(_.consuming))
       }
       val consumesCallee = values.consumesOnCall(callee)

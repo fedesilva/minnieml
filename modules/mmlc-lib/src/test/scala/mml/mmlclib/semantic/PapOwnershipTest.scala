@@ -1,6 +1,7 @@
 package mml.mmlclib.semantic
 
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.TypeQueries
 import mml.mmlclib.test.BaseEffFunSuite
 
 class PapOwnershipTest extends BaseEffFunSuite:
@@ -26,7 +27,7 @@ class PapOwnershipTest extends BaseEffFunSuite:
     assertEquals(generated.flatMap(_.id).distinct.size, generated.size)
     ownershipBindings.foreach { binding =>
       val witness = binding.witnessParam
-      assert(witness.typeSpec.flatMap(TypeUtils.getTypeName).contains("Bool"))
+      assert(witness.typeSpec.flatMap(TypeQueries.getTypeName).contains("Bool"))
       assert(witness.id.flatMap(module.resolvables.lookup).exists(_.id == witness.id))
       val uses = TermTraversal.collect(binding.body) {
         case ref: Ref if ref.resolvedId == witness.id => ref

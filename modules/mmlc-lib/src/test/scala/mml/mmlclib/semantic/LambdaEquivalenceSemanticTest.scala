@@ -3,6 +3,7 @@ package mml.mmlclib.semantic
 import cats.syntax.option.*
 import cats.syntax.traverse.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.TypeQueries
 import mml.mmlclib.test.BaseEffFunSuite
 import mml.mmlclib.test.ast.*
 
@@ -35,7 +36,7 @@ class LambdaEquivalenceSemanticTest extends BaseEffFunSuite:
       .getOrElse(fail(s"Expected param id for '$fnName.$paramName'"))
 
   private def resolvedTypeId(module: Module, tpe: Type): String =
-    TypeUtils.canonical(tpe, module.resolvables) match
+    TypeQueries.canonical(tpe, module.resolvables) match
       case Some(ref: TypeRef) =>
         ref.resolvedId
           .filter(module.resolvables.lookupType(_).isDefined)
@@ -46,7 +47,7 @@ class LambdaEquivalenceSemanticTest extends BaseEffFunSuite:
     module: Module,
     value:  Typeable
   ): (List[String], String) =
-    value.typeSpec.flatMap(TypeUtils.canonical(_, module.resolvables)) match
+    value.typeSpec.flatMap(TypeQueries.canonical(_, module.resolvables)) match
       case Some(fn: TypeFn) =>
         (
           fn.paramTypes.toList.map(resolvedTypeId(module, _)),

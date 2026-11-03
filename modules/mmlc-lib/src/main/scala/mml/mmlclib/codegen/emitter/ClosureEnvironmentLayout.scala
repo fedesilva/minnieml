@@ -2,6 +2,7 @@ package mml.mmlclib.codegen.emitter
 
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.NativeTypeQueries
 
 /** Physical payloads omit Unit values and proven constant PAP code pointers.
   */
@@ -62,10 +63,11 @@ object ClosureEnvironmentLayout:
               capture match
                 case _: Capture.CapturedLiteral | _: Capture.CapturedConditional => false
                 case _ => true
-          val isUnit = TypeUtils.resolveNativeType(field.typeSpec, module.resolvables).exists {
-            case NativePrimitive(_, "void", _, _) => true
-            case _ => false
-          }
+          val isUnit =
+            NativeTypeQueries.resolveNativeType(field.typeSpec, module.resolvables).exists {
+              case NativePrimitive(_, "void", _, _) => true
+              case _ => false
+            }
           val storage =
             if isUnit then CaptureStorage.UnitValue
             else

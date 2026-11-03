@@ -2,6 +2,7 @@ package mml.mmlclib.semantic
 
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.{DestructionTargets, TypeMemoryQueries, TypeQueries}
 import mml.mmlclib.compiler.CompilerState
 
 import BindingIds.Allocation
@@ -12,7 +13,7 @@ object StructDestructorBodyGenerator:
   private val unitType = TypeRef(source, "Unit", "stdlib::typedef::Unit".some)
 
   private def parameterStruct(param: FnParam, index: ResolvablesIndex): Option[TypeStruct] =
-    param.typeSpec.flatMap(TypeUtils.canonical(_, index)).flatMap {
+    param.typeSpec.flatMap(TypeQueries.canonical(_, index)).flatMap {
       case ref: TypeRef =>
         ref.resolvedId.flatMap(index.lookupType).collect { case struct: TypeStruct =>
           struct
@@ -34,7 +35,7 @@ object StructDestructorBodyGenerator:
         typeSpec   = field.typeSpec.some
       )
       val operand    = Expr(source, List(ref), typeSpec = field.typeSpec.some)
-      val isFunction = TypeUtils.canonical(field.typeSpec, index).exists(_.isInstanceOf[TypeFn])
+      val isFunction = TypeQueries.canonical(field.typeSpec, index).exists(_.isInstanceOf[TypeFn])
       val target =
         if isFunction then DestructionTargets.named("__free_closure", index)
         else DestructionTargets.forType(field.typeSpec, index)
@@ -61,12 +62,14 @@ object StructDestructorBodyGenerator:
       lambda <- binding.value.terms.collectFirst { case lambda: Lambda => lambda }
       param <- lambda.params.headOption
       struct <- parameterStruct(param, module.resolvables)
-      if TypeUtils.containsFunction(struct, module.resolvables)
+      if TypeMemoryQueries.containsFunction(struct, module.resolvables)
     yield (lambda, param, struct)
     eligible.fold((binding, List.empty[SemanticError]).pure[Allocation]) {
       (lambda, param, struct) =>
         val cleanup = struct.fields.toList
-          .filter(field => TypeUtils.requiresDestruction(field.typeSpec, module.resolvables))
+          .filter(field =>
+            TypeMemoryQueries.requiresDestruction(field.typeSpec, module.resolvables)
+          )
           .map(destroyField(param, _, module.resolvables))
         val errors = cleanup.collect { case Left(error) => error }
         val calls  = cleanup.collect { case Right(call) => call }

@@ -3,7 +3,7 @@ package mml.mmlclib.semantic
 import cats.data.{NonEmptyList, State}
 import cats.implicits.*
 import mml.mmlclib.ast.*
-import mml.mmlclib.ast.queries.DeclarationQueries
+import mml.mmlclib.ast.queries.{ApplicationQueries, DeclarationQueries, TypeQueries}
 import mml.mmlclib.compiler.CompilerState
 import mml.mmlclib.errors.{CompilationError, DiagnosticId, DiagnosticRelation, DiagnosticStore}
 
@@ -370,7 +370,7 @@ object TypeChecker:
           state
 
     def walkApp(app: App, state: LambdaInferenceState): LambdaInferenceState =
-      val inferredFromCall = CallableValues.applicationNodes(app) match
+      val inferredFromCall = ApplicationQueries.applicationNodes(app) match
         case (ref: Ref, applications) =>
           val signatures = callSignatures(ref, applications, state)
           applications.zipWithIndex.foldLeft(state) { case (current, (application, position)) =>
@@ -748,7 +748,7 @@ object TypeChecker:
 
     case tuple: Tuple =>
       val expectedElements = expectedType
-        .flatMap(TypeUtils.canonical(_, context.module.resolvables))
+        .flatMap(TypeQueries.canonical(_, context.module.resolvables))
         .collect { case expected: TypeTuple => expected.elements }
         .getOrElse(Nil)
       tuple.elements.zipWithIndex
@@ -810,7 +810,7 @@ object TypeChecker:
     case ref: Ref => checkRef(ref, context).widen
 
     case app: App =>
-      val (root, applications) = CallableValues.applicationNodes(app)
+      val (root, applications) = ApplicationQueries.applicationNodes(app)
       root match
 
         case ref: Ref if needsProtocolSelection(ref, context.module.resolvables) =>
@@ -933,7 +933,7 @@ object TypeChecker:
     yield checked.value match
       case application: App =>
         val (invocation, later) =
-          CallableValues.applicationNodes(application)._2.splitAt(lambda.params.size)
+          ApplicationQueries.applicationNodes(application)._2.splitAt(lambda.params.size)
         val lowered = DirectLambdaApplication.lower(
           function.value,
           invocation.map(_.arg),
@@ -1327,7 +1327,7 @@ object TypeChecker:
               walkExpr(lambda.body, nested, nextAliases, expected)
 
           case _ =>
-            val (root, applications) = CallableValues.applicationNodes(app)
+            val (root, applications) = ApplicationQueries.applicationNodes(app)
             val own = root match
               case ref: Ref if tracked(ref, aliases) =>
                 List(
@@ -1452,7 +1452,7 @@ object TypeChecker:
         case _ if explicit.isDefined => checkCallee(app.fn, context, explicit)
 
         case inner: App
-            if CallableValues.applicationNodes(inner)._1.isInstanceOf[Lambda] &&
+            if ApplicationQueries.applicationNodes(inner)._1.isInstanceOf[Lambda] &&
               expectedType.isDefined =>
           val (diagnostics, inferred) = checkCallee(inner, context, None).run(checkpoint).value
           val hasType =
@@ -1757,7 +1757,7 @@ object TypeChecker:
     extractTypeFnFromCallee(callee, module).map(_.paramTypes.head)
 
   private def extractTypeFn(typeSpec: Type, module: Module): Option[TypeFn] =
-    TypeUtils.canonical(typeSpec, module.resolvables).collect { case fn: TypeFn => fn }
+    TypeQueries.canonical(typeSpec, module.resolvables).collect { case fn: TypeFn => fn }
 
   private def buildFunctionTypeSpec(
     source:     SourceOrigin,
@@ -1786,7 +1786,7 @@ object TypeChecker:
     TypeCompatibility.same(t1, t2, module.resolvables)
 
   private def resolveStructType(typeSpec: Type, module: Module): Option[TypeStruct] =
-    TypeUtils.canonical(typeSpec, module.resolvables).flatMap {
+    TypeQueries.canonical(typeSpec, module.resolvables).flatMap {
       case ts: TypeStruct => Some(ts)
       case tr: TypeRef =>
         val resolved = tr.resolvedId

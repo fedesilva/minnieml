@@ -1,6 +1,7 @@
 package mml.mmlclib.semantic
 
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.{TypeMemoryQueries, TypeQueries}
 import mml.mmlclib.test.BaseEffFunSuite
 import mml.mmlclib.test.ast.*
 
@@ -791,7 +792,7 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
         .getOrElse(fail("expected the mixed source binding"))
       val witness = binding.witnessParam
       assert(witness.id.nonEmpty)
-      assert(witness.typeSpec.flatMap(TypeUtils.getTypeName).contains("Bool"))
+      assert(witness.typeSpec.flatMap(TypeQueries.getTypeName).contains("Bool"))
       assert(witness.id.flatMap(module.resolvables.lookup).exists(_.id == witness.id))
       val guardedCleanup = TermTraversal.collect(binding.body) {
         case condition: Cond
@@ -804,7 +805,7 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
       }
       val freeId = module.members.collectFirst {
         case value: Bnd
-            if TypeUtils
+            if TypeMemoryQueries
               .freeFnFor(
                 typeReference("String", module.resolvables),
                 module.resolvables

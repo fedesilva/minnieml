@@ -4,6 +4,7 @@ import cats.data.NonEmptyList
 import cats.syntax.all.*
 import fastparse.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.TypeFailureQueries
 
 import MmlWhitespace.*
 
@@ -472,7 +473,8 @@ private[parser] def innerFnExprP(info: SourceInfo)(using P[Any]): P[Term] =
         bodyExpr,
         parsedName.error.toList ++ parameters.error.toList ++ equalsError.toList ++ endError.toList
       )
-      val malformedResult = typeAsc.filter(TypeUtils.containsInvalidType(_, ResolvablesIndex()))
+      val malformedResult =
+        typeAsc.filter(TypeFailureQueries.containsInvalidType(_, ResolvablesIndex()))
       val bindingExpr =
         if parameters.complete || parameters.values.nonEmpty then
           val lambda = Lambda(

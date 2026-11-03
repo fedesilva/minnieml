@@ -2,6 +2,7 @@ package mml.mmlclib.semantic
 
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.{MemoryFunctions, TypeMemoryQueries}
 import mml.mmlclib.compiler.CompilerState
 
 import BindingIds.Allocation
@@ -19,7 +20,7 @@ object MemoryFunctionGenerator:
     TypeRef(source, "Unit", Some("stdlib::typedef::Unit"), Nil)
 
   private def isHeapField(field: Field, resolvables: ResolvablesIndex): Boolean =
-    TypeUtils.requiresDestruction(field.typeSpec, resolvables)
+    TypeMemoryQueries.requiresDestruction(field.typeSpec, resolvables)
 
   private def heapFieldsOf(struct: TypeStruct, resolvables: ResolvablesIndex): Vector[Field] =
     struct.fields.filter(isHeapField(_, resolvables))
@@ -60,7 +61,7 @@ object MemoryFunctionGenerator:
 
         // Build free calls for each heap field
         val fieldResults = heapFields.toList
-          .filter(field => TypeUtils.freeFnFor(field.typeSpec, resolvables).nonEmpty)
+          .filter(field => TypeMemoryQueries.freeFnFor(field.typeSpec, resolvables).nonEmpty)
           .map { field =>
             MemoryFunctions
               .free(field.typeSpec, resolvables, moduleName.some)
@@ -172,7 +173,8 @@ object MemoryFunctionGenerator:
         lambdaOpt match
           case Some(lambda) =>
             val newParams = lambda.params.zip(ns.fields).map { (param, field) =>
-              if TypeUtils.isHeapType(field._2, resolvables) then param.copy(consuming = true)
+              if TypeMemoryQueries.isHeapType(field._2, resolvables) then
+                param.copy(consuming = true)
               else param
             }
             val newLambda = lambda.copy(params = newParams)
@@ -189,13 +191,14 @@ object MemoryFunctionGenerator:
     val structs = module.members.collect { case s: TypeStruct => s }
 
     // Find structs that have heap fields
-    val structsNeedingMemFns = structs.filter(TypeUtils.hasHeapFields(_, module.resolvables))
+    val structsNeedingMemFns =
+      structs.filter(TypeMemoryQueries.hasHeapFields(_, module.resolvables))
 
     // Find native structs with heap fields (constructor rewrite only, no free/clone generation)
     val nativeStructsWithHeapFields = module.members.collect { case td: TypeDef =>
       td.typeSpec.collect {
         case ns: NativeStruct
-            if ns.fields.exists(f => TypeUtils.isHeapType(f._2, module.resolvables)) =>
+            if ns.fields.exists(f => TypeMemoryQueries.isHeapType(f._2, module.resolvables)) =>
           (td, ns)
       }
     }.flatten

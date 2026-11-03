@@ -2,6 +2,7 @@ package mml.mmlclib.semantic
 
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.{DestructionTargets, TypeMemoryQueries, TypeQueries}
 
 /** Proof used by ownership cleanup placement, independent of unfinished destructor bodies. */
 private[semantic] object StorageOnlyDestruction:
@@ -38,7 +39,7 @@ private[semantic] object StorageOnlyDestruction:
       activeTypes:   Set[String]
     ): Boolean =
       val index = values.index
-      TypeUtils.canonical(tpe, index).exists {
+      TypeQueries.canonical(tpe, index).exists {
 
         case _: TypeFn =>
           values
@@ -65,7 +66,7 @@ private[semantic] object StorageOnlyDestruction:
                     case b: Bnd => b.meta.exists(_.origin == BindingOrigin.Destructor)
                     case _ => false
                   }
-                (!TypeUtils.requiresDestruction(ref, index) || generated) &&
+                (!TypeMemoryQueries.requiresDestruction(ref, index) || generated) &&
                 struct.fields.forall { field =>
                   val projection = Ref(
                     SourceOrigin.Synth,
@@ -79,7 +80,7 @@ private[semantic] object StorageOnlyDestruction:
                 }
 
               case _: TypeDef =>
-                !TypeUtils.requiresDestruction(ref, index) ||
+                !TypeMemoryQueries.requiresDestruction(ref, index) ||
                 DestructionTargets.forType(ref, index).exists(runtimeTargets.contains)
 
               case _ => false
@@ -89,7 +90,7 @@ private[semantic] object StorageOnlyDestruction:
         case _ => false
       }
 
-    value.typeSpec.flatMap(TypeUtils.canonical(_, values.index)).exists {
+    value.typeSpec.flatMap(TypeQueries.canonical(_, values.index)).exists {
       case tpe: TypeFn => storageOnly(value, tpe, Set.empty, Set.empty)
       case _ => false
     }

@@ -3,7 +3,7 @@
 ## Metadata
 
 - **Owner:** The Author
-- **Status:** in_progress
+- **Status:** complete
 - **Kind:** improvement
 - **Priority:** unassigned
 - **Created:** 2026-10-29
@@ -20,11 +20,11 @@
 6. [x] **complete** — [Consume grouping outcomes directly in ExpressionRewriter](#follow-up-consume-grouping-outcomes-directly).
 7. [x] **complete** — [Extract declaration queries and move OperatorQueries to ast.queries](#step-7-declaration-queries-and-operator-package-move).
 8. [x] **complete** — [Share scope construction and name matching; simplify registry lookup](#step-8-scope-and-name-queries).
-9. [ ] **design** — Review type canonicalization, declarations, native representation, and destruction requirements for shared domain boundaries.
-10. [ ] **design** — Separate Clone target selection from call construction, preserving unavailable-target behavior.
-11. [ ] **design** — Review destruction-target and memory-function queries, retaining or refining their existing shared boundaries.
-12. [ ] **design** — Separate callable structural queries from value-flow analysis for origins, application structure, and parameter ownership.
-13. [ ] **design** — Identify reusable cursor, definition, reference, and source-span queries while preserving LSP policy and recovery.
+9. [x] **complete** — [Settle type-query domains and migrate their callers](#step-9-type-query-domains).
+10. [x] **complete** — Separate Clone target selection from call construction, preserving unavailable-target behavior.
+11. [x] **complete** — Review destruction-target and memory-function queries, retaining or refining their existing shared boundaries.
+12. [x] **complete** — Separate callable structural queries from value-flow analysis for origins, application structure, and parameter ownership.
+13. [x] **complete** — Identify reusable cursor, definition, reference, and source-span queries while preserving LSP policy and recovery.
 
 ## Tags
 
@@ -72,20 +72,18 @@ an exhaustive audit of private helpers or evidence that similarly named queries 
 | Operator classification, candidates, precedence, and associativity | [OperatorQueries](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/queries/OperatorQueries.scala); consumed by OperatorCoherence and ExpressionRewriter | Shared query extraction implemented; preserve the division between facts, diagnostics, and AST construction. |
 | Declaration metadata, source names, and instance-member IDs | [DeclarationQueries](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/queries/DeclarationQueries.scala); used by registration, coherence, ID assignment, diagnostics, and entry-point selection | AST facts extracted; registry operations retain their owner. |
 | Protocol visibility, candidates, and concrete implementations | [ValueScope](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/queries/ValueScope.scala), DeclarationQueries, and ProtocolRegistry instance methods | Shared AST scope/name queries; registry retains strict lookup, typed failures, and authoritative associations. |
-| Type canonicalization, declarations, native representation, and destruction requirements | [TypeUtils](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/TypeUtils.scala); used across parsing, semantics, and codegen | Already shared. Consider domain separation later without routing AST helpers through semantic phases. |
-| Clone target selection and call construction | [CloneCalls](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/CloneCalls.scala); used by struct generation and ownership analysis | Split selection from construction later; preserve the deliberate treatment of missing or rejected instances as unavailable targets. |
-| Destruction targets and memory-function lookup | [DestructionTargets](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/DestructionTargets.scala) and [MemoryFunctions](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/MemoryFunctions.scala); used by ownership, destructor generation, and codegen | Retain these focused shared boundaries initially. |
-| Callable origins, application structure, and parameter ownership | [CallableValues](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/CallableValues.scala) and [CallStages](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/CallStages.scala) | Distinguish structural queries from value-flow analysis before migration; retain the analysis owner. |
-| Cursor lookup, definitions, references, and source spans | [AstLookup](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/lsp/AstLookup.scala); used by LSP features | Keep editor policy in LSP; compare recovery behavior before extracting reusable semantic facts. |
+| Type canonicalization, declarations, native representation, and destruction requirements | [TypeQueries](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/queries/TypeQueries.scala), NativeTypeQueries, TypeFailureQueries, and TypeMemoryQueries; used across parsing, semantics, and codegen | Four shared domain owners extracted in [step 9](#step-9-type-query-domains); execution checks, independent review, and Author signoff are complete. |
+| Clone target selection and call construction | [CloneTargets](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/CloneTargets.scala) and [CloneCalls](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/CloneCalls.scala); used by struct generation and ownership analysis | Registry-backed selection is separate from call construction; missing or rejected instances remain unavailable targets. |
+| Destruction targets and memory-function lookup | [DestructionTargets](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/queries/DestructionTargets.scala) and [MemoryFunctions](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/queries/MemoryFunctions.scala); used by ownership, destructor generation, and codegen | Both focused query owners live in ast.queries; selection order and pending-generation behavior are preserved. |
+| Callable origins, application structure, and parameter ownership | [ApplicationQueries](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/queries/ApplicationQueries.scala), CallableValues, and CallStages | Shared structural queries serve semantic and codegen consumers; value-flow, parameter agreement, and invocation availability retain their analysis owners. |
+| Cursor lookup, definitions, references, and source spans | [AstLookup](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/lsp/AstLookup.scala); used by LSP features | Share source-span facts and canonical alias traversal; keep cursor selection, reference policy, and guarded source-name recovery in LSP. |
 
-### Remaining query families
+### Query-family boundaries
 
-Checklist steps 9–13 cover the remaining design decisions. Each family needs a bounded decision
-about its shared queries, owner, inputs, results, and failure/recovery contract before implementation.
-For each family, approve the plan, implement any agreed extraction or caller migration, and
-complete applicable verification and review before signoff. Where an existing shared boundary
-is retained, record the rationale and supporting evidence rather than forcing a relocation.
-Listing these families does not authorize their implementation.
+Phases 9–13 have explicit query owners, inputs, results, identity, ordering, and failure/recovery
+contracts. Step 13 records the deliberate editor recovery improvements. Existing shared boundaries
+are retained where their contracts differ. Implementation, execution verification, independent
+review, and combined Author signoff are complete.
 
 ### Shared query package and operator contracts
 
@@ -172,7 +170,7 @@ Verification and acceptance:
   handoff. No ABI or ownership/lambda behavior changes are planned; Linux ABI verification and
   the full memory harness apply only if implementation actually touches those boundaries.
 - Check documentation links and `git diff --check`; reconcile step 7 evidence and working memory.
-  Later query families require separate plans and signoff.
+  Later-family decisions and the authorization to complete phases 9–13 are recorded below.
 
 ### Step 8: scope and name queries
 
@@ -209,6 +207,152 @@ registry associations and typed failures. Moving them into ast.queries would int
 state dependencies or duplicate authoritative state. ProtocolChecker's raw instance-member shape
 matching retains its distinct pre-metadata contract. Later inventory steps retain separate scope.
 
+### Step 9: type-query domains
+
+**Status:** complete. Implementation, execution checks, independent review, and Author signoff are complete.
+
+Type-property queries use AST nodes and indexes without phase or registry dependencies.
+Their four owners live in `ast.queries`:
+
+| Owner | Operations | Boundary |
+| --- | --- | --- |
+| `TypeQueries` | `canonical`, `declaration`, `getTypeName` | Alias expansion and nominal declarations; display spelling remains separate from lookup identity. |
+| `NativeTypeQueries` | `resolveNativeType`, `isPointerNativeType`, `isPointerLike` | Native representation recorded in the AST, independent of allocation, target layout, and LLVM emission. |
+| `TypeFailureQueries` | Both `containsInvalidType` overloads, `invalidTypeIds` | Explicit parse/resolution failures, independent of whether a value is usable. |
+| `TypeMemoryQueries` | `requiresDestruction`, `isHeapType`, `hasHeapFields`, `isStructWithHeapFields`, `containsFunction`, `freeFnFor` | Recursive type properties and destructor names, independent of value ownership and registered target selection. |
+
+These boundaries distinguish facts that callers must not conflate: a pointer need not own storage,
+a type without explicit failures need not be usable, and a destructor name does not establish a
+registered target. Native and memory queries use TypeQueries; failure discovery retains its own
+AST traversal. Keep the mutually recursive destruction/heap checks and their private native-heap
+classification together in TypeMemoryQueries. TypeTraversal and TermTraversal retain their owners.
+
+Contracts to preserve:
+
+- `canonical` follows resolved alias IDs, single-element groups, and all schemes. It prefers an
+  alias's computed `typeSpec` over `typeRef`, returns `None` for alias cycles, and preserves a
+  reference whose identity is absent or missing from the index. It does not validate index identity.
+  `declaration` then selects an indexed nominal declaration or a direct TypeStruct. Neither guesses
+  from names. `getTypeName` reads written nominal spelling without canonicalizing it.
+- Native lookup returns a direct NativeType or the direct native `typeSpec` of a resolved TypeDef.
+  Pointer classification accepts NativePointer and the opaque `ptr` primitive. Backend allocation
+  attributes, Unit lowering, target layout, and ABI classification remain caller decisions.
+- Failure discovery follows alias `typeRef`, both TypeDef annotations, struct fields, compound
+  types, and annotations inside refinements. It deliberately does not substitute cached alias
+  `typeSpec`. Missing identities and cycles alone are not explicit failures. The summarized-ID
+  overload must use failure IDs from the same declaration index; ValueAvailability owns reuse.
+- Memory queries preserve nominal allocation effects and recursive struct identity guards.
+  A direct function requires destruction but is not itself a nominal heap type; a struct containing
+  a function is classified for cleanup. These facts do not establish ownership of a particular
+  value. `freeFnFor` preserves explicit native destructors and declaration-based default names.
+  MemoryFunctions retains registered/pending target selection and owning-module policy; step 11
+  moves that focused query owner into ast.queries.
+
+Retained boundaries and follow-ups:
+
+- [TypeResolver](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/TypeResolver.scala)
+  constructs alias metadata from reference chains and preserves nominal targets. It is not a query
+  relocation. TypeChecker's struct lookup also includes name recovery and NativeStruct-to-TypeStruct
+  construction; its value-alias inference is a separate operation.
+- [ProtocolRegistry.typeKey](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/ProtocolRegistry.scala)
+  validates indexed identities, rejects quantified schemes, normalizes built-in Unit, and reports
+  typed failures. TypeCompatibility and ValueAvailability retain comparison and usability policy.
+- [DestructionValidator](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/DestructionValidator.scala)
+  rejects missing nominal references and does not unwrap schemes. Its proposed canonicalization
+  unification belongs to [destruction contract generalization](destruction-contract-generalization.md),
+  where those differences need an explicit decision.
+- [Backend type helpers](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/emitter/package.scala)
+  retain LLVM mapping and NativeStruct construction. `resolveToTypeFn` also differs from canonical:
+  it leaves schemes intact, retries alias `typeRef` after an unsuitable cached result, and has no
+  cycle guard. Step 12 retains that distinct callable-query contract instead of substituting
+  canonicalization; application-chain collection is shared independently.
+- [PreCodegenValidator](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/PreCodegenValidator.scala)
+  uses name recovery and entry-type policy. Retain that behavior in this migration; replacing its
+  alias resolver needs a separate contract decision. AstLookup uses shared canonical traversal
+  and retains guarded source-name recovery for incomplete editor indexes, as described in step 13.
+  PreCodegenValidator's unguarded alias recursion remains a source-level concern, not a reproduced
+  reachable failure.
+
+Approved implementation and acceptance:
+
+1. Extract the four owners, preserving public operation names, inputs, results, and private
+   recursion. Migrate all production and test callers and remove TypeUtils without a forwarding
+   layer. Add concise public contracts where needed; introduce no query cache or policy switches.
+2. Replace the equivalent constructor-result lookup in
+   [CallableTargetAnalysis](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/emitter/CallableTargetAnalysis.scala)
+   with `TypeQueries.declaration(...).collect { case struct: TypeStruct => struct }`. Its current
+   canonicalization followed by direct-struct or indexed-reference selection has the same result.
+   Keep value-flow analysis and constructor eligibility in the caller; no new struct adapter is needed.
+3. Update the type-query sections and source-tree overview in compiler-design.md. Repair direct
+   source links affected by the move, including the QA spacing example, without rewriting historical
+   verification claims or unrelated task scope. Reconcile this task's inventory and working memory.
+4. Preserve existing semantic assertions. TypeUtilsTests covers alias chains, same-name identities,
+   missing identities, recursive aggregates, cycles, destructor names, and target ownership.
+   ParseTypeErrorTests covers compound/refinement failures, recursion, summarized-ID agreement,
+   original alias bodies, and both nominal annotations. FunctionSignatureTest covers native pointer
+   attributes; LocalCallableCodegenTests covers known targets through constructor fields. Add focused
+   regressions only if migration exposes an uncovered contract; avoid predicate-mirroring tests.
+5. Run `sbtn "scalafmtAll; scalafixAll; testFull"`, then `./tests/smoke/run.sh all`. After smoke
+   success, run `sbtn mmlcPublishLocal`, `make -C benchmark clean`, `make -C benchmark mml`, and
+   `./tests/mem/run.sh all`, sequentially. The memory harness covers the relocated destruction
+   classification and its consumers. No ABI changes are planned; Linux ABI-container checks apply
+   if implementation reaches that boundary. Check imports, obsolete callers, source links, and
+   `git diff --check`; complete local post-chores. Step 9 review is included in the final Author review under the
+   2026-11-03 authorization to continue through the remaining phases.
+
+Relevant behavior-preservation suites are
+[TypeUtilsTests](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/TypeUtilsTests.scala),
+[ParseTypeErrorTests](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/ParseTypeErrorTests.scala),
+[FunctionSignatureTest](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/FunctionSignatureTest.scala),
+and [LocalCallableCodegenTests](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/LocalCallableCodegenTests.scala).
+Execution and review results are recorded below. Steps 10–13 follow the query-family boundaries
+above. The separate destruction task retains its own scope and approval gate.
+
+### Steps 10–11: Clone and destruction targets
+
+- `semantic.CloneTargets` owns the Clone protocol/signature identities and registry-backed
+  selection. Missing or rejected instances yield no target. `CloneCalls` retains the unavailable
+  diagnostic and typed call construction; selection-only callers use the new query directly.
+  Registry state remains authoritative and does not enter `ast.queries`.
+- Move MemoryFunctions and DestructionTargets into `ast.queries`, preserving their focused APIs.
+  MemoryFunctions selects registered owning-module bindings, allows pending struct helpers only
+  for the generating module, then considers an explicitly named native stdlib destructor.
+  DestructionTargets preserves environment-layout matching and destructor-origin name priority.
+- Preserve existing owner-identity, alias, native fallback, generation, and closure-layout tests.
+  Add focused availability/precedence coverage only where the extraction lacks a behavioral guard.
+
+### Step 12: callable structure and analysis
+
+- `ast.queries.ApplicationQueries` owns application-chain nodes, ordered arguments, maximal
+  application traversal, and canonical callee-signature lookup. A node's own type takes precedence
+  over the indexed declaration type, including when that type is unsuitable as a function.
+- CallStages retains value-availability checks and completed-invocation decisions. CallableValues
+  retains origin propagation, lexical substitutions, cycle closure, and agreement between possible
+  parameter-ownership contracts. These facts require analysis rather than structural inspection.
+- Replace equivalent codegen argument-chain helpers with the shared query. CallableValues uses
+  TypeQueries.declaration for the same direct/indexed struct lookup as CallableTargetAnalysis;
+  constructor-field identity and argument-flow decisions stay in the analysis. Keep backend
+  `resolveToTypeFn`: it retries an alias's original body after an unsuitable cached type and leaves
+  schemes intact, so substituting canonical lookup would change its contract.
+- Add focused structure and signature-precedence tests; preserve invocation/ownership regressions.
+
+### Step 13: editor lookup and source facts
+
+- `ast.queries.SourceQueries` owns half-open span containment and valid-coordinate facts.
+  AstLookup retains cursor traversal order, synthetic-node filtering, constructor source mapping,
+  protocol-reference expansion, display, and source-name recovery.
+- Replace AstLookup's alias recursion with TypeQueries canonical traversal for resolved IDs.
+  Preserve source-name fallback when an editor type lacks a usable indexed declaration. Guard
+  recovered aliases against cycles; missing or cyclic type information yields no field target.
+- Exercise real definition/reference paths for cached/grouped aliases, identity precedence,
+  incomplete-ID name recovery, and cycles. Canonical traversal can recover nested cached aliases
+  that the old single-cache-step helper missed; describe that improvement explicitly.
+
+These plans are within the Author's 2026-11-03 authorization to complete all remaining phases.
+After integration, update the architecture and run formatting, lint, full tests, smoke, local
+publishing, benchmark builds, and the memory harness sequentially. Complete QA enforcement,
+tracking review, and the independent primary review with all four dedicated checks before handoff.
+
 ### First implementation slice: operator queries
 
 1. Extract candidate inspection, operator classification, and grouping comparison from
@@ -222,9 +366,9 @@ matching retains its distinct pre-metadata contract. Later inventory steps retai
 5. Verify behavior preservation, update the affected architecture documentation, complete the
    required compiler checks and review, then stop for Author review and signoff.
 
-Later query families require their own bounded migration decisions. This first slice establishes
-the shared pattern without moving type helpers, registry operations, Clone construction, callable
-analysis, or LSP policy.
+This first slice establishes the shared pattern. Later-family decisions and implementations are
+recorded in steps 7–13; registry associations, code construction, callable analysis, and editor
+policy retain their respective owners.
 
 Approval: metadata prerequisite complete; bounded operator-query extraction approved.
 
@@ -391,60 +535,136 @@ Host and toolchain match the scope/name-query verification above. After the corr
   documentation) completed with no actionable findings. No new candidate findings required claim
   verification. Review was read-only; execution evidence is recorded above.
 
+### Type-query extraction verification — 2026-11-03
+
+Host: Darwin arm64, Homebrew Clang 23.1.1; sbt 2.0.10 on GraalVM Java 25.0.4.1.
+
+- `sbtn "scalafmtAll; scalafixAll; testFull"`: passed; 2,499 library tests and 9 CLI tests,
+  zero failures or errors. The initial sandboxed launcher could not write the sbt boot lock;
+  the retry with cache access passed. No compiler source warnings; sbt reports multiple main classes.
+- `./tests/smoke/run.sh all`: 8/8 passed.
+- `sbtn "scalafmtAll; mmlcPublishLocal"`: passed. Final formatting changed import layout only.
+- `make -C benchmark clean` and `make -C benchmark mml`: passed (37 executable builds,
+  with no performance comparison).
+- `./tests/mem/run.sh all`: 52/52 passed with ASan and LSan (74 seconds).
+- All 20 extracted public/private method signatures and bodies match TypeUtils at `1259a348` after
+  ignoring owner qualifications, comments, and whitespace. Production and test caller migrations
+  preserve executable expressions and assertions apart from the approved equivalent constructor-result
+  lookup in CallableTargetAnalysis. TypeUtilsTests retains its existing suite name and cases.
+- No production or test calls to TypeUtils remain. The query package has no semantic, compiler,
+  or codegen imports. No added Scala line exceeds 100 characters. Parent QA compliance pass complete.
+- `git diff --check` and changed-document local-link checks pass. No ABI behavior changes;
+  additional Linux ABI-container verification does not apply.
+- The independent primary review and all four dedicated checks completed. One independently
+  confirmed documentation gap required a local contract for refinement expression types and
+  parameters omitted by term traversal. The scanner comment explains both traversal boundaries
+  and its reference predicate. A fresh primary correction review and four fresh dedicated checks
+  (QA, test quality, readability, and code documentation) completed with no remaining findings.
+  The correction passes diff and line-length checks. Executable code and tests are unchanged from
+  the verified implementation, so execution checks were not repeated for wording alone.
+- Refinement expression type coverage is supported by source inspection and existing failure
+  tests. The inspected tests do not isolate computed refinement annotations or Lambda/BindOwnership
+  parameter failures; the extraction preserves those paths without adding a coverage claim.
+- ValueScope and handcrafted bubblesort whitespace edits are outside this verification/review scope.
+  This verification checkpoint precedes combined Author signoff for phases 9–13.
+
+### Integrated type, target, callable, and editor queries — 2026-11-03
+
+Host: Darwin arm64, Homebrew Clang 23.1.1; sbt 2.0.10 on GraalVM Java 25.0.4.1.
+Scope: the combined phases 9–13 relative to `1259a348`.
+
+- `sbtn "scalafmtAll; scalafixAll; testFull"`: passed twice, with 2,513 library tests and
+  9 CLI tests, zero failures or errors. The second run includes the final equivalent constructor
+  declaration lookup in CallableValues. No compiler source warnings; sbt reports multiple mains.
+- `./tests/smoke/run.sh all`: 8/8 passed.
+- `sbtn mmlcPublishLocal`: passed after smoke; the verified compiler is installed locally.
+- `make -C benchmark clean` and `make -C benchmark mml`: passed, with 37 executable builds.
+  These are build checks, not performance measurements.
+- Fourteen added regressions cover Clone alias identity/current indexed bindings, missing/rejected
+  targets and operand diagnostics, destructor-origin precedence, application order and metadata,
+  signature identity/precedence, editor alias/name/cycle recovery, and source-span endpoints.
+- MemoryFunctions and DestructionTargets retain their executable query bodies; the move changes
+  package/import ownership and local contracts. Clone selection keeps the registry's authoritative
+  associations. Application and constructor-declaration migrations preserve query results.
+- Editor tests deliberately exercise controlled partial metadata. Shared canonical traversal finds
+  fields through nested cached/grouped/scheme aliases, cyclic aliases yield no field target, and
+  indexed nonstruct types cannot fall back to a different same-name struct. Name recovery preserves
+  source declaration order. Existing hover, definition, references, and protocol suites pass.
+- Parent QA checks pass: no new mutation, exception flow, focused/ignored tests, or Scala lines
+  over 100 characters. Shared AST queries have no semantic/compiler/codegen/LSP imports.
+  `git diff --check` and changed Markdown file/heading links pass.
+- No ABI contract change; additional Linux ABI-container checks do not apply. Hosted verification
+  is not run. The ValueScope and handcrafted bubblesort whitespace edits are outside this scope.
+- `./tests/mem/run.sh all`: 52/52 passed with ASan and LSan (74 seconds).
+- A fresh independent primary review and four separate fresh checks (QA/style, test quality,
+  human readability, and code documentation with humanizer) completed with no actionable findings.
+  Documentation review covered all 40 comments in new/moved production files and new tests, plus
+  affected caller documentation. No candidate findings required claim verification or corrections.
+  Review was read-only and used the execution evidence above without repeating builds.
+- Final handoff tracking review confirms complete implementation and verification, with the separate
+  application-reconstruction task still open. Local file and heading links and `git diff --check`
+  pass. Author signoff and delivery authorization are recorded in the Signoff section.
+
+### Delivery checks — 2026-11-03
+
+- The approved delivery also includes the existing ValueScope alignment and handcrafted bubblesort
+  spacing edits. Both have empty whitespace-insensitive diffs. The ValueScope edit was present
+  during the integrated compiler checks above.
+- `sbtn "run run mml/samples/handcrafted/bubblesort.mml"`: passed; output is `1`, `2`, `3`, `4`.
+  The JVM reports Scala LazyVals use of deprecated sun.misc.Unsafe APIs; no compiler error occurs.
+- A fresh independent review of the two additional whitespace hunks completed all four dedicated
+  checks with no actionable findings. No candidates required claim verification.
+- Closure bookkeeping marks all 13 phases complete, records combined Author signoff, removes the
+  active tracker entry, and adds the completed product changes to the changelog.
+
 ## Risks / Notes
 
 Follow-up after [Implement protocols](protocols.md). Protocol registration owns its associations;
 centralizing queries must not duplicate registry state or introduce dependencies on phase objects.
 The separate [explicit Clone work](explicit-clone.md) retains its own scope and signoff.
 
-LSP alias lookup in AstLookup falls back to source names, while TypeUtils follows resolved
-identities and guards alias cycles. These implementations are not interchangeable: unification
-must explicitly preserve editor recovery. AstLookup's recursive alias lookup has no explicit
-cycle guard; this is a suspected robustness issue, not a reproduced bug. Establish whether a
-cyclic partial AST reaches that path before proposing a repair.
+AstLookup uses TypeQueries for resolved alias traversal and keeps explicit source-name recovery
+for incomplete editor indexes. Controlled partial-AST regressions exercise cached/grouped aliases,
+missing identities, source-order recovery, indexed and recovered cycles, and a nominal/struct name
+collision. These tests establish navigation behavior on those trees, not that every malformed tree
+can be produced by parsing a source program. Cached/grouped/scheme traversal and cycle termination
+extend recovery; rejecting an indexed nonstruct preserves identity instead of guessing by name.
+
+Backend `resolveToTypeFn` and PreCodegenValidator retain distinct alias-resolution contracts.
+Their missing cycle guards remain source-inspection concerns without a reproduced reachable
+failure. This task does not change backend fallback policy or the separate destruction-validator
+canonicalization decision.
 
 ## Signoff
 
-- Workstream signoff: metadata prerequisite, operator-query extraction, and direct grouping-outcome
-  integration approved and complete.
-- Step 7: implementation, verification, independent review, and scoped signoff complete.
-- Step 8: implementation, execution verification, correction reviews, and scoped signoff complete.
-- Tracked item completion: pending; query families in steps 9–13 remain open.
-- Implementation approval: steps 1–8 complete. Steps 9–13 need their own bounded plans.
-- Local commit authorization: step 8 source, tests, architecture documentation, and bookkeeping.
-  Later implementation commits require separate authorization.
+- Workstream and tracked-item signoff: granted for all 13 phases.
+- Implementation, required execution verification, and independent review: complete.
+- Local commit and remote delivery: authorized for all current non-broken changes, including
+  the ValueScope and handcrafted bubblesort whitespace edits.
+- Delivery target: `origin/main`; the current checkout is already on `main`.
 
 ## Task Working Memory
 
-The metadata prerequisite is complete in `2f807e96`. Operator-query extraction is complete on
-`main`, with execution checks, independent review, and Author signoff. Its source, tests,
-architecture documentation, and completion records are included in the
-`Extract shared operator queries` commit.
+Earlier deliveries: metadata in `2f807e96`, operator queries in `2d8614db`, direct grouping
+integration in `626489d2`, declaration queries in `9ecc467f`, and lexical scopes/name queries
+in `a9fb2e94`. Their verification evidence is preserved above.
 
-`OperatorQueries` owns candidate inspection and shared conflict accumulation. `OperatorCoherence`
-owns visible-declaration enumeration and module diagnostics; `ExpressionRewriter` owns narrowed
-references and use-site diagnostics. The rewriter consumes grouping outcomes directly and reuses
-unary and binary results for selection and conflict diagnostics. Required execution checks and
-independent review pass; step 6 is signed off.
+All 13 phases are complete and signed off. Shared AST/index queries cover declaration metadata,
+operator grouping, lexical value scopes, types, destruction targets, application structure, and
+source spans. Registry associations, Clone call construction, callable value-flow analysis,
+completed-invocation decisions, and editor selection/recovery policy retain their owners.
 
-Direct grouping integration is committed in `626489d2`. Steps 1–8 are complete and signed off.
-Steps 9–13 need bounded plans, implementation where agreed, verification, and signoff.
+Phases 9–13 replace TypeUtils with four domain owners, separate Clone selection from construction,
+move the memory-target queries into ast.queries, and share application walkers across semantic and
+codegen consumers. AstLookup follows shared canonical aliases while retaining guarded name recovery.
+Cached/grouped aliases reach fields, cycles terminate, and indexed nonstruct types cannot select
+same-name structs. Architecture documentation and affected source links match these boundaries.
 
-Step 7 is committed in `9ecc467f`, with DeclarationQueries and OperatorQueries in `ast.queries`.
-Semantic, diagnostic, codegen, and test callers use the shared AST queries. Registry operations
-retain their owner.
-The approved extraction preserves the helper contracts; compiler verification passes as recorded
-above. Independent review passes with no actionable findings; scoped signoff is granted.
+Formatting, lint, 2,513 library tests, 9 CLI tests, 8 smoke checks, local publishing, 37 benchmark
+builds, and 52 ASan/LSan memory fixtures pass. The independent primary review and all four dedicated
+checks pass with no actionable findings. The 14 new regressions cover selection availability,
+identity and ordering, signature precedence, editor recovery, and span boundaries.
 
-Step 8 is complete with ValueScope and shared name matching in ast.queries. lookupNames uses the
-shared matcher; equivalent source-name helpers and the unused registry arity API are removed.
-Registry association lookup and failure policy retain their owner. Tests exercise visibleCandidates
-and operator grouping, with strict-index and hidden-outer-scope controls.
-
-DeclarationQueries comments describe their local contracts; the documentation review miss and
-completed correction review are recorded above. The redundant lookup condition is removed;
-verification and focused review pass. Scoped signoff is granted. The implementation, tests,
-architecture documentation, and completion records belong to the
-`Share value scopes and declaration name queries` commit.
-
-Next action: review the type-query boundaries in step 9 and prepare its bounded plan.
+The separate application-reconstruction task remains open for rebuilding and short-list behavior.
+No implementation or verification work remains for this task. Delivery consists of one commit on
+main and Git Town synchronization to origin/main; the two approved whitespace edits are included.

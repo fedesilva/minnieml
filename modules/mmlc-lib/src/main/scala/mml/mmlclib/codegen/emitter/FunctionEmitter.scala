@@ -2,6 +2,7 @@ package mml.mmlclib.codegen.emitter
 
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.NativeTypeQueries
 import mml.mmlclib.codegen.emitter.alias.AliasScopeEmitter
 import mml.mmlclib.codegen.emitter.compileExpr
 import mml.mmlclib.codegen.emitter.expression.{
@@ -119,7 +120,7 @@ def compileBndLambda(
 def isPointerParam(param: FnParam, resolvables: ResolvablesIndex): Boolean =
   param.typeSpec
     .orElse(param.typeAsc)
-    .exists(TypeUtils.isPointerLike(_, resolvables))
+    .exists(NativeTypeQueries.isPointerLike(_, resolvables))
 
 /** Describe storage available at a capturing closure entry. */
 private[emitter] def formatClosureEnvParam(

@@ -2,6 +2,7 @@ package mml.mmlclib.semantic
 
 import cats.effect.IO
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.{DestructionTargets, TypeMemoryQueries, TypeQueries}
 import mml.mmlclib.test.BaseEffFunSuite
 
 class CallStageOwnershipTests extends BaseEffFunSuite:
@@ -47,7 +48,7 @@ class CallStageOwnershipTests extends BaseEffFunSuite:
     assert(!lambdas.head.meta.exists(_.borrowedCaptures.contains(id)))
 
   private def destructorCalls(module: Module, owner: String, typeName: String): List[App] =
-    val destructorId = TypeUtils
+    val destructorId = TypeMemoryQueries
       .freeFnFor(typeReference(typeName, module.resolvables), module.resolvables)
       .flatMap(DestructionTargets.named(_, module.resolvables))
       .getOrElse(fail(s"Expected destructor for $typeName"))
@@ -177,7 +178,7 @@ class CallStageOwnershipTests extends BaseEffFunSuite:
                   .contains(true)
                 if allocates then
                   lambda.params
-                    .filter(_.typeSpec.flatMap(TypeUtils.getTypeName).contains("String"))
+                    .filter(_.typeSpec.flatMap(TypeQueries.getTypeName).contains("String"))
                     .flatMap(_.id)
                 else Nil
               case _ => Nil

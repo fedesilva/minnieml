@@ -1,6 +1,7 @@
 package mml.mmlclib.semantic
 
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.TypeQueries
 
 /** Concrete type equality follows aliases while preserving nominal declaration identity. */
 object TypeCompatibility:
@@ -12,7 +13,7 @@ object TypeCompatibility:
     (ProtocolRegistry.typeKey(left, index), ProtocolRegistry.typeKey(right, index)) match
       case (Right(a), Right(b)) => a == b
       case _ =>
-        (TypeUtils.canonical(left, index), TypeUtils.canonical(right, index)) match
+        (TypeQueries.canonical(left, index), TypeQueries.canonical(right, index)) match
           case (Some(a: NativePrimitive), Some(b: NativePrimitive)) => a.llvmType == b.llvmType
           case (Some(a: TypeFn), Some(b: TypeFn)) if a.paramTypes.size == b.paramTypes.size =>
             sameChildren(a, b, index)

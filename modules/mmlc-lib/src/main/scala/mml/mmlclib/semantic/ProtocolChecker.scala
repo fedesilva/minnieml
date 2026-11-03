@@ -3,7 +3,7 @@ package mml.mmlclib.semantic
 import cats.data.NonEmptyList
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
-import mml.mmlclib.ast.queries.DeclarationQueries
+import mml.mmlclib.ast.queries.{DeclarationQueries, TypeFailureQueries}
 import mml.mmlclib.compiler.CompilerState
 import mml.mmlclib.errors.{DiagnosticId, DiagnosticStore}
 
@@ -110,8 +110,11 @@ object ProtocolChecker:
         val resolved = instance.copy(protocol = instance.protocol.copy(resolvedId = protocol.id))
         val registered =
           protocol.id.exists(id => current.registry.protocol(id, current.index).isRight)
-        if !registered || TypeUtils.containsInvalidType(instance.concreteType, current.index) then
-          current.retain(resolved, Nil)
+        if !registered || TypeFailureQueries.containsInvalidType(
+            instance.concreteType,
+            current.index
+          )
+        then current.retain(resolved, Nil)
         else
           current.registry.registerInstance(resolved, current.index) match
 
@@ -340,8 +343,8 @@ object ProtocolChecker:
     expected: Type,
     index:    ResolvablesIndex
   ): List[ProtocolError] =
-    if TypeUtils.containsInvalidType(written, index) ||
-      TypeUtils.containsInvalidType(expected, index)
+    if TypeFailureQueries.containsInvalidType(written, index) ||
+      TypeFailureQueries.containsInvalidType(expected, index)
     then Nil
     else
       val keys = for

@@ -3,6 +3,7 @@ package mml.mmlclib.codegen
 import cats.effect.{IO, Resource}
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.TypeMemoryQueries
 import mml.mmlclib.compiler.CompilerConfig
 import mml.mmlclib.semantic.SemanticError
 import mml.mmlclib.test.BaseEffFunSuite
@@ -113,7 +114,7 @@ class StringReturnTests extends BaseEffFunSuite:
           typeReference("String", module.resolvables),
           module
         ).get
-        val freeName = TypeUtils
+        val freeName = TypeMemoryQueries
           .freeFnFor(
             typeReference("String", module.resolvables),
             module.resolvables
@@ -190,7 +191,7 @@ class StringReturnTests extends BaseEffFunSuite:
   for allocated <- List(false, true) do
     test(s"returned callable supplies the final String ownership contract, allocated=$allocated") {
       semNotFailed(returnedCallableSource(allocated)).map { module =>
-        val freeName = TypeUtils
+        val freeName = TypeMemoryQueries
           .freeFnFor(
             typeReference("String", module.resolvables),
             module.resolvables

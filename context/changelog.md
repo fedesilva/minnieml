@@ -2,6 +2,16 @@
 
 Durable product changes belong here. Current task state belongs in task files.
 
+## 2026-11-03
+
+- Centralize type, destruction-target, application, and source-span queries in `ast.queries`.
+  Separate registry-backed Clone selection from call construction, and share application traversal
+  between semantic analysis and code generation while retaining availability and ownership policy.
+
+- Share canonical alias traversal with editor field navigation. Follow cached and grouped aliases,
+  stop alias cycles, and preserve resolved type identity over same-name struct recovery. Retain
+  source-name recovery for incomplete editor indexes.
+
 ## 2026-11-01
 
 - Share value-scope construction and declaration name matching through `ast.queries`. Reuse source

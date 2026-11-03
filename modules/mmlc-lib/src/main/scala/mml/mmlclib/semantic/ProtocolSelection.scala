@@ -3,6 +3,7 @@ package mml.mmlclib.semantic
 import cats.data.NonEmptyList
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.TypeQueries
 
 /** Candidate discovery and signature evidence are independent of expression checking. */
 object ProtocolSelection:
@@ -92,7 +93,7 @@ object ProtocolSelection:
       def matchType(wanted: Type, actual: Type, evidence: SignatureEvidence): SignatureEvidence =
         if evidence == SignatureEvidence.Incompatible then evidence
         else
-          (TypeUtils.canonical(wanted, index), TypeUtils.canonical(actual, index)) match
+          (TypeQueries.canonical(wanted, index), TypeQueries.canonical(actual, index)) match
             case (Some(variable: TypeVariable), Some(concrete))
                 if variable.name == protocol.typeParameter.name =>
               evidence match
@@ -135,7 +136,7 @@ object ProtocolSelection:
             (current, expected) =>
               matchType(remaining, expected, current)
           }
-          TypeUtils.canonical(remaining, index) match
+          TypeQueries.canonical(remaining, index) match
 
             case Some(function: TypeFn) =>
               val next = application.argumentType
@@ -153,7 +154,7 @@ object ProtocolSelection:
                     // One supplied argument and a non-callable result determine a complete
                     // returned function. Longer chains can have different invocation boundaries.
                     case (List(ApplicationEvidence(Some(input), _)), Some(result))
-                        if !TypeUtils.canonical(result, index).exists(_.isInstanceOf[TypeFn]) =>
+                        if !TypeQueries.canonical(result, index).exists(_.isInstanceOf[TypeFn]) =>
                       SignatureEvidence.Concrete(
                         TypeFn(variable.source, NonEmptyList.one(input), result)
                       )
@@ -180,7 +181,7 @@ object ProtocolSelection:
         case Nil => remaining.some
 
         case application :: rest =>
-          TypeUtils.canonical(remaining, index).collect { case fn: TypeFn => fn }.flatMap { fn =>
+          TypeQueries.canonical(remaining, index).collect { case fn: TypeFn => fn }.flatMap { fn =>
             val compatible = application.calleeAscriptions.forall(matches(remaining, _)) &&
               application.argumentType.forall(matches(fn.paramTypes.head, _))
             val result = remainingCallableType(fn, fn.source)

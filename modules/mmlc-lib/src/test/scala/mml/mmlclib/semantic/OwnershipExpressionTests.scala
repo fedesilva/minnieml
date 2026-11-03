@@ -3,6 +3,7 @@ package mml.mmlclib.semantic
 import cats.effect.IO
 import mml.mmlclib.api.FrontEndApi
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.TypeMemoryQueries
 import mml.mmlclib.compiler.{CompilerConfig, CompilerState}
 import mml.mmlclib.errors.DiagnosticRelation
 import mml.mmlclib.parser.SourceInfo
@@ -401,7 +402,9 @@ class OwnershipExpressionTests extends BaseEffFunSuite:
       assert(!typeChecked.hasErrors, typeChecked.errors)
       assert(ValueAvailability.fromModule(input.module).isAvailable(replacement))
       val consumed = TermTraversal.collect(cond.cond) { case r: Ref if r.name == "owned" => r }.head
-      assert(!TypeUtils.requiresDestruction(consumed.typeSpec.get, input.module.resolvables))
+      assert(
+        !TypeMemoryQueries.requiresDestruction(consumed.typeSpec.get, input.module.resolvables)
+      )
       val result = OwnershipAnalyzer.rewriteModule(input)
       assert(!result.hasErrors, result.errors)
     }

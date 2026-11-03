@@ -2,7 +2,7 @@
 fn bubble_sort(arr: IntArray): Unit =
 
   fn pass(arr: IntArray, i: Int, swapped: Bool): Bool =
-    if i >= (ar_int_len arr) -1 then
+    if i >= (ar_int_len arr) - 1 then
       swapped;
     else
       let left  = ar_int_get arr i;

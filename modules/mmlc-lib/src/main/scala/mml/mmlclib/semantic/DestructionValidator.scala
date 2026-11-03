@@ -2,6 +2,7 @@ package mml.mmlclib.semantic
 
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.{DestructionTargets, TypeMemoryQueries}
 import mml.mmlclib.compiler.CompilerState
 
 import scala.annotation.tailrec
@@ -130,7 +131,7 @@ object DestructionValidator:
                 "Closure layout requires a destructor pointer"
               ) ++
               layout.fields.toList.drop(1).flatMap { field =>
-                TypeUtils.freeFnFor(field.typeSpec, index) match
+                TypeMemoryQueries.freeFnFor(field.typeSpec, index) match
                   case None => Nil
                   case Some(_) if field.id.exists(d.borrowedFields.contains) => Nil
                   case Some(name) =>

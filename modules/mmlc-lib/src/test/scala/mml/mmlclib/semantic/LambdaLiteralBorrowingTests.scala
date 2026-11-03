@@ -2,6 +2,7 @@ package mml.mmlclib.semantic
 
 import cats.effect.IO
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.{DestructionTargets, TypeMemoryQueries}
 import mml.mmlclib.test.BaseEffFunSuite
 
 class LambdaLiteralBorrowingTests extends BaseEffFunSuite:
@@ -50,7 +51,7 @@ class LambdaLiteralBorrowingTests extends BaseEffFunSuite:
     assertEquals(errors.head.movedAt, movedAt)
 
   private def stringCleanup(module: Module, owner: String): List[App] =
-    val destructorId = TypeUtils
+    val destructorId = TypeMemoryQueries
       .freeFnFor(typeReference("String", module.resolvables), module.resolvables)
       .flatMap(DestructionTargets.named(_, module.resolvables))
       .getOrElse(fail("Expected String destructor"))

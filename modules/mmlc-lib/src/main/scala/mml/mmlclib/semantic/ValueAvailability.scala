@@ -1,6 +1,7 @@
 package mml.mmlclib.semantic
 
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.{TypeFailureQueries, TypeQueries}
 
 /** Failed values do not establish ownership contracts. Independent continuations remain usable. */
 final case class ValueAvailability private (
@@ -27,12 +28,13 @@ final case class ValueAvailability private (
     else ValueAvailability.fromModule(module, current)
 
   /** Explicit failed type nodes remain distinct from missing or cyclic type information. */
-  def containsInvalidType(tpe: Type): Boolean = TypeUtils.containsInvalidType(tpe, invalidTypes)
+  def containsInvalidType(tpe: Type): Boolean =
+    TypeFailureQueries.containsInvalidType(tpe, invalidTypes)
 
   private def withIndex(next: ResolvablesIndex): ValueAvailability =
     if index.resolvableTypes eq next.resolvableTypes then copy(index = next)
     else
-      val failed = TypeUtils.invalidTypeIds(next)
+      val failed = TypeFailureQueries.invalidTypeIds(next)
       val available = next.resolvableTypes.map { (id, declaration) =>
         val reference = TypeRef(SourceOrigin.Synth, declaration.name, Some(id))
         id -> ValueAvailability.canonicalTypeAvailable(reference, next, Map.empty)
@@ -105,7 +107,7 @@ object ValueAvailability:
         case _ => None
 
       referencedId.exists(seen.contains) || referencedId.flatMap(named.get).getOrElse {
-        TypeUtils.canonical(current, index).exists {
+        TypeQueries.canonical(current, index).exists {
           case fn: TypeFn =>
             val visited = seen ++ referencedId
             fn.paramTypes.forall(check(_, visited)) && check(fn.returnType, visited)

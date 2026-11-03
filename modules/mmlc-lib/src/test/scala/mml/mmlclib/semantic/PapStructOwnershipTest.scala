@@ -1,6 +1,7 @@
 package mml.mmlclib.semantic
 
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.TypeMemoryQueries
 import mml.mmlclib.test.BaseEffFunSuite
 
 class PapStructOwnershipTest extends BaseEffFunSuite:
@@ -131,7 +132,7 @@ class PapStructOwnershipTest extends BaseEffFunSuite:
     semNotFailed(prelude).map { module =>
       val structs = module.members.collect { case s: TypeStruct if s.name == "Outer" => s }
       assertEquals(structs.size, 1)
-      assert(TypeUtils.containsFunction(structs.head, module.resolvables))
+      assert(TypeMemoryQueries.containsFunction(structs.head, module.resolvables))
       assertEquals(
         cloneNameFor(typeReference("Outer", module.resolvables), module),
         None

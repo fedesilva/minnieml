@@ -2,6 +2,7 @@ package mml.mmlclib.codegen.emitter
 
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.NativeTypeQueries
 import mml.mmlclib.codegen.emitter.abis.NativeAbiPlan
 import mml.mmlclib.codegen.emitter.alias.AliasScopeEmitter
 import mml.mmlclib.codegen.emitter.expression.escapeString
@@ -297,10 +298,11 @@ private def emitBndLambda(
             // Add noalias for functions that allocate and return a pointer type
             // Check both the NativeImpl memEffect (stdlib) and the return type's own
             // memEffect (user-defined types like @metal:repr[t=*i8, mem=heap])
-            val returnNativeType = TypeUtils.resolveNativeType(fnType.returnType, state.resolvables)
+            val returnNativeType =
+              NativeTypeQueries.resolveNativeType(fnType.returnType, state.resolvables)
 
             val isAllocatingPointerReturn = returnNativeType.exists { nativeType =>
-              TypeUtils.isPointerNativeType(nativeType) &&
+              NativeTypeQueries.isPointerNativeType(nativeType) &&
               (native.memEffect
                 .contains(MemEffect.Alloc) || nativeType.memEffect.contains(MemEffect.Alloc))
             }

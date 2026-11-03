@@ -224,7 +224,7 @@ These are readability guidelines, not a demand for a blank line at every syntact
 Let the grouping of ideas guide the spacing.
 
 The `canonical` method in
-[TypeUtils.scala](../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/TypeUtils.scala)
+[TypeQueries.scala](../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/queries/TypeQueries.scala)
 illustrates the intended spacing. Formatter compliance alone does not establish readability.
 
 ## Design code

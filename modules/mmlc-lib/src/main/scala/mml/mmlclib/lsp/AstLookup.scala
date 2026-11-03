@@ -1,7 +1,7 @@
 package mml.mmlclib.lsp
 
 import mml.mmlclib.ast.*
-import mml.mmlclib.ast.queries.DeclarationQueries
+import mml.mmlclib.ast.queries.{DeclarationQueries, SourceQueries, TypeQueries}
 import mml.mmlclib.compiler.CompilerState
 
 /** Result of looking up a position in the AST. */
@@ -24,7 +24,7 @@ object AstLookup:
     if isNonSourceRefAt(module, line, col) then Nil
     else
       val spans = findDefinitionInMembers(module.members, line, col, module)
-      spans.filter(isValidSpan).distinct
+      spans.filter(SourceQueries.hasCoordinates).distinct
 
   private def isNonSourceRefAt(module: Module, line: Int, col: Int): Boolean =
     findInnermostRefAt(module, line, col).exists { ref =>
@@ -115,22 +115,11 @@ object AstLookup:
       }
       .map(collectReferences(module, _, includeDeclaration))
       .getOrElse(Nil)
-      .filter(isValidSpan)
+      .filter(SourceQueries.hasCoordinates)
       .distinct
 
-  private def containsPosition(span: SrcSpan, line: Int, col: Int): Boolean =
-    val afterStart = line > span.start.line ||
-      (line == span.start.line && col >= span.start.col)
-    // End is exclusive: span [28, 38) contains columns 28-37, not 38
-    val beforeEnd = line < span.end.line ||
-      (line == span.end.line && col < span.end.col)
-    afterStart && beforeEnd
-
-  private def isValidSpan(span: SrcSpan): Boolean =
-    span.start.line > 0 && span.start.col > 0 && span.end.line > 0 && span.end.col > 0
-
   private def containsOrInvalid(span: SrcSpan, line: Int, col: Int): Boolean =
-    !isValidSpan(span) || containsPosition(span, line, col)
+    !SourceQueries.hasCoordinates(span) || SourceQueries.containsPosition(span, line, col)
 
   private def isGeneratedReference(node: FromSource): Boolean = node match
     case ref: Ref => !ref.source.isFromSource
@@ -138,10 +127,10 @@ object AstLookup:
     case _ => false
 
   private def containsPosition(node: FromSource, line: Int, col: Int): Boolean =
-    !isGeneratedReference(node) && node.spanOpt.exists(containsPosition(_, line, col))
+    !isGeneratedReference(node) && node.spanOpt.exists(SourceQueries.containsPosition(_, line, col))
 
   private def isValidSpan(node: FromSource): Boolean =
-    node.spanOpt.exists(isValidSpan)
+    node.spanOpt.exists(SourceQueries.hasCoordinates)
 
   private def containsOrInvalid(node: FromSource, line: Int, col: Int): Boolean =
     !isGeneratedReference(node) && node.spanOpt.forall(containsOrInvalid(_, line, col))
@@ -166,7 +155,7 @@ object AstLookup:
       case bnd: Bnd =>
         // Bnd span is just the name, but we also need to check value span for params/body
         containsPosition(bnd, line, col) || containsPosition(bnd.value, line, col)
-      case fs: FromSource => fs.source.spanOpt.exists(containsPosition(_, line, col))
+      case fs: FromSource => fs.source.spanOpt.exists(SourceQueries.containsPosition(_, line, col))
       case _ => false
 
   private def findInMember(member: Member, line: Int, col: Int): Option[LookupResult] =
@@ -682,11 +671,9 @@ object AstLookup:
     ref.resolvedId.flatMap(module.resolvables.lookupType) match
       case Some(resolvable: FromSource) => resolvable.source.spanOpt
       case _ =>
-        module.members.collectFirst {
-          case ta: TypeAlias if ta.name == ref.name => ta.spanOpt
-          case td: TypeDef if td.name == ref.name => td.spanOpt
-          case ts: TypeStruct if ts.name == ref.name => ts.spanOpt
-        }.flatten
+        typeDeclarationByName(ref.name, module)
+          .collect { case declaration: FromSource => declaration }
+          .flatMap(_.spanOpt)
 
   /** A failed inner lookup does not turn annotation text into a declaration reference. */
   private def definitionAtName(
@@ -715,42 +702,39 @@ object AstLookup:
       case fs:    FromSource => fs.source.spanOpt
       case _ => None
 
+  /** Resolves field owners by identity. Partial editor trees can lack indexed declarations, so
+    * unmatched references recover through the first source-name declaration. Recovered alias names
+    * are guarded separately from the canonical query's resolved-ID cycle check.
+    */
   private def resolveStructType(typeSpec: Type, module: Module): Option[TypeStruct] =
-    unwrapTypeGroup(resolveAliasChain(typeSpec, module)) match
-      case ts: TypeStruct => Some(ts)
-      case TypeRef(_, name, resolvedId, _) =>
-        resolvedId
-          .flatMap(module.resolvables.lookupType)
-          .collect { case ts: TypeStruct => ts }
-          .orElse(module.members.collectFirst { case ts: TypeStruct if ts.name == name => ts })
-      case _ => None
 
-  private def unwrapTypeGroup(typeSpec: Type): Type =
-    typeSpec match
-      case TypeGroup(_, types) if types.size == 1 => unwrapTypeGroup(types.head)
-      case other => other
+    def recover(current: Type, seenNames: Set[String]): Option[TypeStruct] =
+      TypeQueries.canonical(current, module.resolvables).flatMap {
+        case struct: TypeStruct => Some(struct)
 
-  // TODO:QA: Yet another alias resolution pass. sigh. must find why and unify
-  private def resolveAliasChain(typeSpec: Type, module: Module): Type = typeSpec match
-    case tr @ TypeRef(_, name, resolvedId, _) =>
-      val resolved = resolvedId
-        .flatMap(module.resolvables.lookupType)
-        .orElse(module.members.collectFirst {
-          case ta: TypeAlias if ta.name == name => ta
-          case td: TypeDef if td.name == name => td
-          case ts: TypeStruct if ts.name == name => ts
-        })
-      resolved match
-        case Some(ta: TypeAlias) =>
-          ta.typeSpec match
-            case Some(resolvedSpec) => resolvedSpec
-            case None => resolveAliasChain(ta.typeRef, module)
-        case Some(td: TypeDef) =>
-          TypeRef(tr.source, td.name, td.id)
-        case Some(ts: TypeStruct) =>
-          TypeRef(tr.source, ts.name, ts.id)
-        case _ => tr
-    case other => other
+        case ref: TypeRef =>
+          val declaration = ref.resolvedId
+            .flatMap(module.resolvables.lookupType)
+            .orElse(typeDeclarationByName(ref.name, module))
+
+          declaration match
+            case Some(struct: TypeStruct) => Some(struct)
+            case Some(alias: TypeAlias) if !seenNames.contains(alias.name) =>
+              recover(alias.typeSpec.getOrElse(alias.typeRef), seenNames + alias.name)
+            case _ => None
+
+        case _ => None
+      }
+
+    recover(typeSpec, Set.empty)
+
+  /** Source-name lookup is editor recovery for incomplete indexes, never canonical identity. */
+  private def typeDeclarationByName(name: String, module: Module): Option[ResolvableType] =
+    module.members.collectFirst {
+      case alias:      TypeAlias if alias.name == name => alias
+      case definition: TypeDef if definition.name == name => definition
+      case struct:     TypeStruct if struct.name == name => struct
+    }
 
   private def findReferenceTargetInMembers(
     members: List[Member],
@@ -1361,16 +1345,9 @@ object AstLookup:
       case _ => resolvable.id.map(ValueTarget(_))
 
   private def typeTargetFromRef(ref: TypeRef, module: Module): Option[ReferenceTarget] =
-    ref.resolvedId.map(TypeTarget(_)).orElse {
-      module.members
-        .collectFirst {
-          case ta: TypeAlias if ta.name == ref.name => ta.id
-          case td: TypeDef if td.name == ref.name => td.id
-          case ts: TypeStruct if ts.name == ref.name => ts.id
-        }
-        .flatten
-        .map(TypeTarget(_))
-    }
+    ref.resolvedId
+      .map(TypeTarget(_))
+      .orElse(typeDeclarationByName(ref.name, module).flatMap(_.id).map(TypeTarget(_)))
 
   /** Collect all symbols in a module for workspace/symbol. Uses indexes, skips stdlib. */
   def collectSymbols(module: Module, uri: String): List[SymbolInformation] =

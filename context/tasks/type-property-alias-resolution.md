@@ -34,7 +34,7 @@ or unresolved types do not silently select a declaration with the same short nam
 ## Scope
 
 - Review `cloneFnFor`, `isStructWithHeapFields`, `freeFnFor`, and `isHeapType` in
-  [TypeUtils.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/TypeUtils.scala),
+  [type memory queries](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/queries/TypeMemoryQueries.scala),
   their shared resolution helpers, and the identity available at their callers.
 - Establish the smallest consistent repair and its relationship to the broader QA-001 work.
 - Preserve explicit free functions, nominal type distinctions, recursive-struct termination,

@@ -2,6 +2,7 @@ package mml.mmlclib.semantic
 
 import mml.mmlclib.ast.*
 import mml.mmlclib.ast.queries.DeclarationQueries.lookupNames
+import mml.mmlclib.ast.queries.TypeQueries
 import mml.mmlclib.test.BaseEffFunSuite
 import mml.mmlclib.test.ast.*
 import mml.mmlclib.util.*
@@ -399,8 +400,8 @@ class AppRewritingTests extends BaseEffFunSuite:
         assertEquals(arguments.flatMap(literalValues(_, Set(id))), List(expected))
       }
       assertEquals(
-        binding.value.typeSpec.flatMap(TypeUtils.canonical(_, module.resolvables)),
-        first.typeSpec.flatMap(TypeUtils.canonical(_, module.resolvables))
+        binding.value.typeSpec.flatMap(TypeQueries.canonical(_, module.resolvables)),
+        first.typeSpec.flatMap(TypeQueries.canonical(_, module.resolvables))
       )
     }
   }

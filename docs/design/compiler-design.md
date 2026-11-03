@@ -329,6 +329,15 @@ that looks up definitions during its own rewrite maintains its intermediate inde
 stabilization refreshes between iterations. Reindexing rebuilds ID-to-node mappings only. It does
 not assign IDs, remap references, or refresh type information stored on reference nodes.
 
+Editor navigation keeps its selection and recovery rules in `lsp.AstLookup`. It uses
+`ast.queries.SourceQueries` for inclusive-start, exclusive-end span containment and positive
+source coordinates. Hiding generated references, choosing the innermost node, and mapping a
+constructor to its source struct remain editor decisions. Field-owner lookup uses TypeQueries
+for resolved aliases, including cached chains and grouped types. When a reference lacks an indexed
+declaration, the editor can recover the first module declaration with the source name; it guards
+those recovered aliases against cycles. An indexed non-struct declaration does not fall through
+to an unrelated same-name struct. Protocol reference expansion still uses the authoritative registry.
+
 ---
 
 ## 7. Parser architecture
@@ -825,13 +834,22 @@ constructors so ownership transfer is visible in the callable signature.
 - Rewrites constructor params to mark heap fields as consuming
 - Extends the resolvables index with the synthetic helpers
 
-Type-property queries in `TypeUtils` accept typed AST nodes and resolve nominal declarations
-through `ResolvablesIndex`. Alias, group, and scheme unwrapping shares `canonical`; unresolved
-references do not fall back to short-name lookup. Recursive heap queries track declaration IDs.
-`MemoryFunctions` selects destructor bindings in the resolved declaration's owning
+Shared type queries live in `ast.queries` and accept AST nodes and explicit declaration indexes.
+`TypeQueries` follows resolved aliases, single-type groups, and schemes while preserving nominal
+declarations. It also exposes nominal display names separately from declaration lookup; unresolved
+references do not fall back to short-name lookup. `NativeTypeQueries` reads native representations
+and classifies pointer types; target layout and ABI lowering belong to codegen.
+`TypeFailureQueries` finds explicit failed types through type structure and resolved declarations.
+`TypeMemoryQueries` supplies destruction requirements, recursive struct-field properties, and
+destructor names. Recursive heap queries track declaration IDs; these type properties do not
+establish ownership of a particular value.
+
+`ast.queries.MemoryFunctions` selects destructor bindings in the resolved declaration's owning
 module. Explicit native destructors may also name an injected stdlib binding. Struct generation
 can reference its own pending helpers; later phases require registered bindings. Missing native
-field destructors accumulate diagnostics during generation.
+field destructors accumulate diagnostics during generation. `DestructionTargets` shares registered
+target lookup by type, closure-layout identity, or name. Name lookup prefers bindings marked as
+destructors before considering other bindings; it preserves index iteration order within each group.
 
 ---
 
@@ -845,8 +863,10 @@ nested clone bodies select members, so source declaration order does not affect 
 
 Fields copy scalar values or call the registered Clone member. Unsupported native types and
 function-bearing structs do not receive generated instances. Native instances call named
-`clone_*` bindings with explicit FFI symbols and allocating results. `CloneCalls` uses the
-shared protocol registry for generated bodies and internal ownership promotion; it never
+`clone_*` bindings with explicit FFI symbols and allocating results. `semantic.CloneTargets`
+selects concrete members through the shared protocol registry, treating missing or rejected
+instances as unavailable. `CloneCalls` builds typed calls and reports unavailable duplication at
+the operand. Generated bodies and internal ownership promotion share this selection; neither
 constructs a helper name from a type name. Ownership analysis requires an owned result from
 Clone implementations whose result type needs ownership tracking.
 
@@ -1097,7 +1117,7 @@ types when possible.
   Returning a callable preserves the boundary between the first invocation and the returned one.
 - Callee checking preserves the `Callee` type. Inference and validation share callable lookup;
   references retain their resolved-declaration fallback and diagnostic names.
-- Callable lookup, compatibility, and struct selection use `TypeUtils.canonical` to follow
+- Callable lookup, compatibility, and struct selection use `TypeQueries.canonical` to follow
   aliases, single-type groups, and schemes while preserving nominal types and detecting alias
   cycles. `TypeCompatibility` compares the same resolved identities used by protocol instance
   lookup; equal source names alone do not make two nominal declarations equal. Source type
@@ -1255,12 +1275,16 @@ A dependency with its own reported invalid use links downstream reports to that 
 Raw reports remain in the diagnostic store; presentation hides proven consequences. CLI and
 LSP diagnostics use the explicit current-use origin.
 
-**Call stages**: `CallStages` partitions a typed application chain at each invocation boundary.
+**Call stages**: `ast.queries.ApplicationQueries` reads left-associated application chains in
+argument order and reads canonical callee signatures. A callee node's type takes precedence over
+its indexed declaration type; missing node metadata permits declaration fallback. Semantic and
+codegen consumers share this structural query without moving value-flow analysis into the AST
+package. `CallStages` partitions a typed application chain at each invocation boundary.
 Each stage retains its callee, supplied application nodes, signature, result, and completion
 state. Typed application arity is distinct from source parameters: a nullary callable consumes
 one Unit expression without binding a parameter. Unavailable operands cannot establish a
 completed invocation. Stage structure depends on the AST, types, and value availability, not
-on ownership decisions.
+on ownership decisions. Availability and completed-invocation decisions stay in CallStages.
 
 `CallableValues` uses these boundaries for origin resolution and argument propagation,
 including partially supplied and returned callables. Observed argument flow remains separate
@@ -1742,7 +1766,7 @@ from incomplete evidence; only complete evidence can justify a consequential dia
 A discarded failed initializer does not taint an independent continuation. PAP elaboration continues across
 independent members and through statement continuations even when the module has errors.
 `ValueAvailability` propagates unavailable results through binding identities and aliases.
-Type checking and availability share `TypeUtils.containsInvalidType` to find explicit failed
+Type checking and availability share `TypeFailureQueries.containsInvalidType` to find explicit failed
 types within composite and resolved nominal types. Cycle guards terminate recursive declarations;
 absence of an explicit failed node does not itself establish usable type information.
 Named type failures and cause evidence are summarized immutably against the type-declaration
@@ -2103,7 +2127,12 @@ flowchart TD
 - **ast/queries/**: Shared facts over AST nodes and indexes, independent of semantic phases and
   registry state. `DeclarationQueries` supplies callable metadata, source names, and recorded
   instance implementation IDs; `ValueScope` constructs lexical value levels; `OperatorQueries`
-  supplies operator candidates and grouping outcomes.
+  supplies operator candidates and grouping outcomes. `TypeQueries` supplies canonical types,
+  nominal declarations, and display names; `NativeTypeQueries` supplies native representation
+  and pointer facts; `TypeFailureQueries` finds explicit type failures; `TypeMemoryQueries`
+  supplies destruction requirements, aggregate type properties, and destructor names.
+  `MemoryFunctions` and `DestructionTargets` select memory-operation targets; `ApplicationQueries`
+  supplies application structure and callee signatures; `SourceQueries` supplies source-span facts.
 - **codegen/**: `LlvmIrEmitter.scala`, `LlvmToolchain.scala`, `emitter/*`
 - **api/**: `ParserApi.scala`, `SemanticApi.scala`, `FrontEndApi.scala`, `CompilerApi.scala`, `CodeGenApi.scala`, `NativeEmitterApi.scala`
 - **lsp/**: LSP server, diagnostics, document manager

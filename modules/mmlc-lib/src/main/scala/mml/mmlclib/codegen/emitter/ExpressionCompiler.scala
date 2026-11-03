@@ -2,6 +2,7 @@ package mml.mmlclib.codegen.emitter
 
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.{ApplicationQueries, DestructionTargets}
 import mml.mmlclib.codegen.emitter.alias.AliasScopeEmitter
 import mml.mmlclib.codegen.emitter.expression.*
 import mml.mmlclib.codegen.emitter.tbaa.TbaaEmitter
@@ -990,7 +991,7 @@ def compileApp(
   state:         CodeGenState,
   functionScope: Map[String, ScopeEntry] = Map.empty
 ): Either[CodeGenError, CompileResult] =
-  val (fnOrLambda, allArgs) = collectArgsAndFunction(app)
+  val (fnOrLambda, allArgs) = ApplicationQueries.application(app)
 
   fnOrLambda match
     case lambda: Lambda =>

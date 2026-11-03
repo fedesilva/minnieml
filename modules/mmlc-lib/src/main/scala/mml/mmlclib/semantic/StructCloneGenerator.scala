@@ -2,6 +2,7 @@ package mml.mmlclib.semantic
 
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.{NativeTypeQueries, TypeMemoryQueries, TypeQueries}
 import mml.mmlclib.compiler.CompilerState
 
 import BindingIds.Allocation
@@ -15,9 +16,9 @@ object StructCloneGenerator:
 
   /** Scalar fields copy their value; native aggregates require a declared Clone instance. */
   private def scalarField(tpe: Type, index: ResolvablesIndex): Boolean =
-    !TypeUtils.requiresDestruction(tpe, index) && (
-      TypeUtils.canonical(tpe, index).exists(_.isInstanceOf[TypeUnit]) ||
-        TypeUtils.resolveNativeType(tpe, index).exists {
+    !TypeMemoryQueries.requiresDestruction(tpe, index) && (
+      TypeQueries.canonical(tpe, index).exists(_.isInstanceOf[TypeUnit]) ||
+        NativeTypeQueries.resolveNativeType(tpe, index).exists {
           case _: NativePrimitive | _: NativePointer => true
           case _ => false
         }
@@ -35,18 +36,18 @@ object StructCloneGenerator:
             if ProtocolRegistry
               .resolveDeclaration(instance.protocol, protocols)
               .flatMap(_.id)
-              .contains(CloneCalls.protocolId) =>
+              .contains(CloneTargets.protocolId) =>
           ProtocolRegistry.typeKey(instance.concreteType, index).toOption
       }
       .flatten
       .toSet
 
     def supported(tpe: Type, seen: Set[String]): Boolean =
-      if TypeUtils.containsFunction(tpe, index) then false
+      if TypeMemoryQueries.containsFunction(tpe, index) then false
       else if ProtocolRegistry.typeKey(tpe, index).toOption.exists(declared.contains) then true
       else if scalarField(tpe, index) then true
       else
-        TypeUtils.declaration(tpe, index) match
+        TypeQueries.declaration(tpe, index) match
           case Some(struct: TypeStruct) if !struct.id.exists(seen.contains) =>
             struct.fields.forall(field => supported(field.typeSpec, seen ++ struct.id))
           case Some(_: TypeStruct) => false
@@ -91,7 +92,7 @@ object StructCloneGenerator:
           )
           ProtocolInstance(
             source       = source,
-            protocol     = ProtocolRef(source, Name.synth("Clone"), CloneCalls.protocolId.some),
+            protocol     = ProtocolRef(source, Name.synth("Clone"), CloneTargets.protocolId.some),
             concreteType = tpe,
             members      = List(ProtocolInstanceMember(member, BindingOrigin.Operator)),
             id           = id.some
@@ -120,9 +121,9 @@ object StructCloneGenerator:
     val allocation =
       state.module.members.collect { case struct: TypeStruct => struct }.flatTraverse { struct =>
         val registered = for
-          selected <- state.protocols.instance(CloneCalls.protocolId, struct, index).toOption
+          selected <- state.protocols.instance(CloneTargets.protocolId, struct, index).toOption
           if selected == instanceId(struct)
-          binding <- CloneCalls.target(struct, index, state.protocols)
+          binding <- CloneTargets.forType(struct, index, state.protocols)
         yield binding
 
         registered

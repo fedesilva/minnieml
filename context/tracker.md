@@ -20,13 +20,6 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 
 ## Active Tasks
 
-### Centralize, and Unify ast queries
-
-- **Tracker:** [Centralize, and Unify ast queries](tasks/centralize-and-unify-ast-queries.md)
-- **Status:** in_progress
-- **Current focus:** Plan the type-query boundaries in step 9. Shared scope construction,
-  declaration name matching, and registry lookup cleanup are complete.
-
 ### Bug notes
 
 - **Tracker:** [Bug notes](tasks/bug-notes.md)

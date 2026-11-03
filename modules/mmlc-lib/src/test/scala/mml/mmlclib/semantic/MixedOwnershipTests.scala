@@ -1,6 +1,7 @@
 package mml.mmlclib.semantic
 
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.{TypeMemoryQueries, TypeQueries}
 import mml.mmlclib.test.BaseEffFunSuite
 
 class MixedOwnershipTests extends BaseEffFunSuite:
@@ -301,7 +302,9 @@ class MixedOwnershipTests extends BaseEffFunSuite:
       assert(unrelatedId.nonEmpty)
       assert(selectedId.nonEmpty)
       val freeName =
-        TypeUtils.freeFnFor(typeReference("String", module.resolvables), module.resolvables).get
+        TypeMemoryQueries
+          .freeFnFor(typeReference("String", module.resolvables), module.resolvables)
+          .get
       val freeId = member(module, freeName).id
 
       def destructions(term: Term, ownerId: Option[String]): List[App] =
@@ -367,7 +370,7 @@ class MixedOwnershipTests extends BaseEffFunSuite:
       assertEquals(capture.ref.resolvedId, binding.valueParam.id)
       assertEquals(capture.witness.resolvedId, binding.witnessParam.id)
       assert(capture.witness.resolvedId.nonEmpty)
-      assert(capture.witness.typeSpec.flatMap(TypeUtils.getTypeName).contains("Bool"))
+      assert(capture.witness.typeSpec.flatMap(TypeQueries.getTypeName).contains("Bool"))
       assertEquals(
         capture.witness.resolvedId.flatMap(module.resolvables.lookup).flatMap(_.id),
         binding.witnessParam.id
@@ -382,8 +385,8 @@ class MixedOwnershipTests extends BaseEffFunSuite:
       assertEquals(
         environment.fields
           .drop(1)
-          .map(field => TypeUtils.canonical(field.typeSpec, module.resolvables)),
-        Vector(binding.valueParam.typeSpec.flatMap(TypeUtils.canonical(_, module.resolvables)))
+          .map(field => TypeQueries.canonical(field.typeSpec, module.resolvables)),
+        Vector(binding.valueParam.typeSpec.flatMap(TypeQueries.canonical(_, module.resolvables)))
       )
     }
   }
@@ -430,7 +433,9 @@ class MixedOwnershipTests extends BaseEffFunSuite:
       val clone =
         cloneNameFor(typeReference("String", module.resolvables), module).get
       val free =
-        TypeUtils.freeFnFor(typeReference("String", module.resolvables), module.resolvables).get
+        TypeMemoryQueries
+          .freeFnFor(typeReference("String", module.resolvables), module.resolvables)
+          .get
       assertEquals(referencesTo(module, body, clone).size, 0)
       assertEquals(referencesTo(module, body, free).size, 0)
     }
@@ -451,7 +456,9 @@ class MixedOwnershipTests extends BaseEffFunSuite:
       val clone =
         cloneNameFor(typeReference("String", module.resolvables), module).get
       val free =
-        TypeUtils.freeFnFor(typeReference("String", module.resolvables), module.resolvables).get
+        TypeMemoryQueries
+          .freeFnFor(typeReference("String", module.resolvables), module.resolvables)
+          .get
       assertEquals(referencesTo(module, member(module, "static_result").value, clone).size, 0)
       assertEquals(referencesTo(module, member(module, "static_result").value, free).size, 1)
       assertEquals(referencesTo(module, member(module, "caller").value, free).size, 0)

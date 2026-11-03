@@ -2,6 +2,13 @@ package mml.mmlclib.semantic
 
 import cats.syntax.option.*
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.{
+  DestructionTargets,
+  MemoryFunctions,
+  NativeTypeQueries,
+  TypeMemoryQueries,
+  TypeQueries
+}
 import mml.mmlclib.test.BaseEffFunSuite
 
 class TypeUtilsTests extends BaseEffFunSuite:
@@ -15,8 +22,8 @@ class TypeUtilsTests extends BaseEffFunSuite:
         }
         val index =
           structs.foldLeft(module.resolvables)((index, struct) => index.updatedType(struct))
-        assertEquals(TypeUtils.hasHeapFields(structs.head, index), heap)
-        assertEquals(TypeUtils.isHeapType(typeReference("Recursive", index), index), heap)
+        assertEquals(TypeMemoryQueries.hasHeapFields(structs.head, index), heap)
+        assertEquals(TypeMemoryQueries.isHeapType(typeReference("Recursive", index), index), heap)
       }
     }
   }
@@ -82,7 +89,7 @@ class TypeUtilsTests extends BaseEffFunSuite:
 
     semNotFailed(code).map { module =>
       val result =
-        TypeUtils.freeFnFor(typeReference("Handle", module.resolvables), module.resolvables)
+        TypeMemoryQueries.freeFnFor(typeReference("Handle", module.resolvables), module.resolvables)
       assertEquals(result, Some("close_handle"))
     }
 
@@ -93,7 +100,7 @@ class TypeUtilsTests extends BaseEffFunSuite:
 
     semNotFailed(code).map { module =>
       val result =
-        TypeUtils.freeFnFor(typeReference("MyBuf", module.resolvables), module.resolvables)
+        TypeMemoryQueries.freeFnFor(typeReference("MyBuf", module.resolvables), module.resolvables)
       assertEquals(result, Some("__free_MyBuf"))
     }
 
@@ -104,7 +111,7 @@ class TypeUtilsTests extends BaseEffFunSuite:
 
     semNotFailed(code).map { module =>
       val result =
-        TypeUtils.freeFnFor(typeReference("MyInt", module.resolvables), module.resolvables)
+        TypeMemoryQueries.freeFnFor(typeReference("MyInt", module.resolvables), module.resolvables)
       assertEquals(result, None)
     }
 
@@ -118,7 +125,7 @@ class TypeUtilsTests extends BaseEffFunSuite:
 
     semNotFailed(code).map { module =>
       val result =
-        TypeUtils.freeFnFor(typeReference("MyStr", module.resolvables), module.resolvables)
+        TypeMemoryQueries.freeFnFor(typeReference("MyStr", module.resolvables), module.resolvables)
       assertEquals(result, Some("destroy_str"))
     }
 
@@ -130,17 +137,25 @@ class TypeUtilsTests extends BaseEffFunSuite:
 
     semNotFailed(code).map { module =>
       assert(
-        TypeUtils.isHeapType(typeReference("HeapName", module.resolvables), module.resolvables)
+        TypeMemoryQueries.isHeapType(
+          typeReference("HeapName", module.resolvables),
+          module.resolvables
+        )
       )
       assert(
-        TypeUtils.isHeapType(typeReference("OtherHeapName", module.resolvables), module.resolvables)
+        TypeMemoryQueries.isHeapType(
+          typeReference("OtherHeapName", module.resolvables),
+          module.resolvables
+        )
       )
       assertEquals(
-        TypeUtils.freeFnFor(typeReference("HeapName", module.resolvables), module.resolvables),
+        TypeMemoryQueries
+          .freeFnFor(typeReference("HeapName", module.resolvables), module.resolvables),
         Some("__free_String")
       )
       assertEquals(
-        TypeUtils.freeFnFor(typeReference("OtherHeapName", module.resolvables), module.resolvables),
+        TypeMemoryQueries
+          .freeFnFor(typeReference("OtherHeapName", module.resolvables), module.resolvables),
         Some("__free_String")
       )
       val stringId = module.resolvables.resolvableTypes.values
@@ -153,7 +168,7 @@ class TypeUtilsTests extends BaseEffFunSuite:
       assertEquals(aliases.size, 2)
       aliases.foreach { alias =>
         val reference = TypeRef(alias.source, alias.name, alias.id)
-        val canonicalId = TypeUtils
+        val canonicalId = TypeQueries
           .canonical(reference, module.resolvables)
           .collect { case ref: TypeRef =>
             ref.resolvedId
@@ -180,10 +195,14 @@ class TypeUtilsTests extends BaseEffFunSuite:
 
     semNotFailed(code).map { module =>
       assert(
-        TypeUtils.isHeapType(typeReference("AliasBuf", module.resolvables), module.resolvables)
+        TypeMemoryQueries.isHeapType(
+          typeReference("AliasBuf", module.resolvables),
+          module.resolvables
+        )
       )
       assertEquals(
-        TypeUtils.freeFnFor(typeReference("AliasBuf", module.resolvables), module.resolvables),
+        TypeMemoryQueries
+          .freeFnFor(typeReference("AliasBuf", module.resolvables), module.resolvables),
         Some("__free_BaseBuf")
       )
       assertEquals(
@@ -201,32 +220,36 @@ class TypeUtilsTests extends BaseEffFunSuite:
 
     semNotFailed(code).map { module =>
       assert(
-        TypeUtils.isHeapType(typeReference("PersonAlias", module.resolvables), module.resolvables)
-      )
-      assert(
-        TypeUtils.isHeapType(
-          typeReference("OtherPersonAlias", module.resolvables),
-          module.resolvables
-        )
-      )
-      assert(
-        TypeUtils.isStructWithHeapFields(
+        TypeMemoryQueries.isHeapType(
           typeReference("PersonAlias", module.resolvables),
           module.resolvables
         )
       )
       assert(
-        TypeUtils.isStructWithHeapFields(
+        TypeMemoryQueries.isHeapType(
+          typeReference("OtherPersonAlias", module.resolvables),
+          module.resolvables
+        )
+      )
+      assert(
+        TypeMemoryQueries.isStructWithHeapFields(
+          typeReference("PersonAlias", module.resolvables),
+          module.resolvables
+        )
+      )
+      assert(
+        TypeMemoryQueries.isStructWithHeapFields(
           typeReference("OtherPersonAlias", module.resolvables),
           module.resolvables
         )
       )
       assertEquals(
-        TypeUtils.freeFnFor(typeReference("PersonAlias", module.resolvables), module.resolvables),
+        TypeMemoryQueries
+          .freeFnFor(typeReference("PersonAlias", module.resolvables), module.resolvables),
         Some("__free_Person")
       )
       assertEquals(
-        TypeUtils
+        TypeMemoryQueries
           .freeFnFor(typeReference("OtherPersonAlias", module.resolvables), module.resolvables),
         Some("__free_Person")
       )
@@ -265,7 +288,7 @@ class TypeUtilsTests extends BaseEffFunSuite:
       )
       assertEquals(cloneNameFor(typeReference("Count", index), module), none[String])
       List("CallbackAlias", "WrapperAlias").foreach { name =>
-        assert(TypeUtils.isStructWithHeapFields(typeReference(name, index), index))
+        assert(TypeMemoryQueries.isStructWithHeapFields(typeReference(name, index), index))
         assertEquals(cloneNameFor(typeReference(name, index), module), none[String])
       }
     }
@@ -286,7 +309,7 @@ class TypeUtilsTests extends BaseEffFunSuite:
           name
         )
         assert(
-          !TypeUtils
+          !TypeMemoryQueries
             .isStructWithHeapFields(typeReference(name, module.resolvables), module.resolvables),
           name
         )
@@ -318,13 +341,13 @@ class TypeUtilsTests extends BaseEffFunSuite:
     )
     val index = ResolvablesIndex().updatedAllTypes(List(heap, scalar, alias))
     val tpe   = refTo(alias)
-    assertEquals(TypeUtils.declaration(tpe, index).flatMap(_.id), scalar.id)
-    assert(!TypeUtils.isHeapType(tpe, index))
-    assert(!TypeUtils.requiresDestruction(tpe, index))
-    assertEquals(TypeUtils.freeFnFor(tpe, index), none[String])
-    assertEquals(TypeUtils.resolveNativeType(tpe, index), scalar.typeSpec)
-    assert(!TypeUtils.isPointerLike(tpe, index))
-    assert(TypeUtils.isHeapType(refTo(heap), index))
+    assertEquals(TypeQueries.declaration(tpe, index).flatMap(_.id), scalar.id)
+    assert(!TypeMemoryQueries.isHeapType(tpe, index))
+    assert(!TypeMemoryQueries.requiresDestruction(tpe, index))
+    assertEquals(TypeMemoryQueries.freeFnFor(tpe, index), none[String])
+    assertEquals(NativeTypeQueries.resolveNativeType(tpe, index), scalar.typeSpec)
+    assert(!NativeTypeQueries.isPointerLike(tpe, index))
+    assert(TypeMemoryQueries.isHeapType(refTo(heap), index))
   }
 
   test("missing identities never fall back to same-name declarations") {
@@ -332,10 +355,10 @@ class TypeUtilsTests extends BaseEffFunSuite:
     val index = ResolvablesIndex().updatedType(heap)
     List(none[String], "missing".some).foreach { id =>
       val tpe = TypeRef(synthetic, heap.name, id)
-      assertEquals(TypeUtils.declaration(tpe, index), none[ResolvableType])
-      assert(!TypeUtils.requiresDestruction(tpe, index))
-      assertEquals(TypeUtils.resolveNativeType(tpe, index), none[NativeType])
-      assertEquals(TypeUtils.freeFnFor(tpe, index), none[String])
+      assertEquals(TypeQueries.declaration(tpe, index), none[ResolvableType])
+      assert(!TypeMemoryQueries.requiresDestruction(tpe, index))
+      assertEquals(NativeTypeQueries.resolveNativeType(tpe, index), none[NativeType])
+      assertEquals(TypeMemoryQueries.freeFnFor(tpe, index), none[String])
     }
   }
 
@@ -363,14 +386,14 @@ class TypeUtilsTests extends BaseEffFunSuite:
     )
     val index = ResolvablesIndex().updatedAllTypes(List(first, second))
     List(firstRef, secondRef).foreach { ref =>
-      assert(TypeUtils.requiresDestruction(ref, index))
-      assert(TypeUtils.isStructWithHeapFields(ref, index))
-      assert(TypeUtils.containsFunction(ref, index))
+      assert(TypeMemoryQueries.requiresDestruction(ref, index))
+      assert(TypeMemoryQueries.isStructWithHeapFields(ref, index))
+      assert(TypeMemoryQueries.containsFunction(ref, index))
     }
     val scalarSecond = second.copy(fields = second.fields.take(1))
     val scalarIndex  = index.updatedType(scalarSecond)
-    assert(!TypeUtils.requiresDestruction(firstRef, scalarIndex))
-    assert(!TypeUtils.containsFunction(firstRef, scalarIndex))
+    assert(!TypeMemoryQueries.requiresDestruction(firstRef, scalarIndex))
+    assert(!TypeMemoryQueries.containsFunction(firstRef, scalarIndex))
   }
 
   test("alias cycles terminate across property queries") {
@@ -387,10 +410,10 @@ class TypeUtilsTests extends BaseEffFunSuite:
       id       = "Test::typealias::B".some
     )
     val index = ResolvablesIndex().updatedAllTypes(List(a, b))
-    assertEquals(TypeUtils.canonical(refTo(a), index), none[Type])
-    assertEquals(TypeUtils.resolveNativeType(refTo(a), index), none[NativeType])
-    assert(!TypeUtils.requiresDestruction(refTo(a), index))
-    assertEquals(TypeUtils.freeFnFor(refTo(a), index), none[String])
+    assertEquals(TypeQueries.canonical(refTo(a), index), none[Type])
+    assertEquals(NativeTypeQueries.resolveNativeType(refTo(a), index), none[NativeType])
+    assert(!TypeMemoryQueries.requiresDestruction(refTo(a), index))
+    assertEquals(TypeMemoryQueries.freeFnFor(refTo(a), index), none[String])
   }
 
   private def memoryBinding(owner: String, name: String): Bnd =
@@ -400,6 +423,25 @@ class TypeUtilsTests extends BaseEffFunSuite:
       value    = Expr(synthetic, Nil),
       id       = BindingIds.declaration(owner, name).some
     )
+
+  test("named destruction lookup prefers destructor origin and retains ordinary fallback") {
+    val ordinary = memoryBinding("User", "release")
+    val destructor = memoryBinding("Generated", "release").copy(
+      meta = BindingMeta(
+        BindingKind.Destructor,
+        CallableArity.Unary,
+        "release",
+        "release"
+      ).some
+    )
+    val index = ResolvablesIndex().updatedAll(List(ordinary, destructor))
+    assertEquals(DestructionTargets.named("release", index), destructor.id)
+    assertEquals(
+      DestructionTargets.named("release", ResolvablesIndex().updated(ordinary)),
+      ordinary.id
+    )
+    assertEquals(DestructionTargets.named("missing", index), None)
+  }
 
   test("memory targets retain declaration ownership with colliding function names") {
     val native      = NativePointer(synthetic, "i8", MemEffect.Alloc.some, "release".some)
@@ -490,9 +532,9 @@ class TypeUtilsTests extends BaseEffFunSuite:
       ParseTypeError(synthetic, "invalid type", None)
     )
     failures.foreach { tpe =>
-      assertEquals(TypeUtils.declaration(tpe, index), none[ResolvableType])
-      assert(!TypeUtils.requiresDestruction(tpe, index))
-      assertEquals(TypeUtils.resolveNativeType(tpe, index), none[NativeType])
+      assertEquals(TypeQueries.declaration(tpe, index), none[ResolvableType])
+      assert(!TypeMemoryQueries.requiresDestruction(tpe, index))
+      assertEquals(NativeTypeQueries.resolveNativeType(tpe, index), none[NativeType])
       assertEquals(MemoryFunctions.free(tpe, index), none[MemoryFunctions.Target])
     }
   }

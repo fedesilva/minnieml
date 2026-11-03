@@ -1,6 +1,7 @@
 package mml.mmlclib.semantic
 
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.TypeQueries
 import mml.mmlclib.compiler.{CompilerConfig, CompilerState, SemanticStage}
 import mml.mmlclib.parser.SourceInfo
 import mml.mmlclib.test.BaseEffFunSuite
@@ -11,7 +12,7 @@ class CallableTypeTests extends BaseEffFunSuite:
     val result = module.members
       .collectFirst { case b: Bnd if b.name == "result" => b }
       .getOrElse(fail("Expected result binding"))
-    val resultType = result.typeSpec.flatMap(TypeUtils.canonical(_, module.resolvables))
+    val resultType = result.typeSpec.flatMap(TypeQueries.canonical(_, module.resolvables))
     assertEquals(
       resultType.collect { case ref: TypeRef => ref.resolvedId },
       Some(Some("stdlib::typedef::Int32"))
@@ -210,7 +211,7 @@ class CallableTypeTests extends BaseEffFunSuite:
       val calleeIds = partial.captures
         .map(_.ref)
         .filter { ref =>
-          ref.typeSpec.flatMap(TypeUtils.canonical(_, module.resolvables)).exists {
+          ref.typeSpec.flatMap(TypeQueries.canonical(_, module.resolvables)).exists {
             case _: TypeFn => true
             case _ => false
           }
@@ -298,7 +299,8 @@ class CallableTypeTests extends BaseEffFunSuite:
             case binding: Bnd if binding.name == "result" => binding.value.terms.head
           }
           .getOrElse(fail("Expected result literal"))
-        val ascribedType = resultLiteral.typeAsc.flatMap(TypeUtils.canonical(_, module.resolvables))
+        val ascribedType =
+          resultLiteral.typeAsc.flatMap(TypeQueries.canonical(_, module.resolvables))
         assertEquals(
           ascribedType.collect { case ref: TypeRef => ref.resolvedId }.flatten,
           Some(expectedId)
