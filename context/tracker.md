@@ -86,10 +86,11 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 
 
 ### Relax struct ownership rules
-- [Spec](context/tasks/struct-capture-ownership.md)
-**Status** design
-**Priority** High
-**Current focus** needs design, highly desireable
+
+- **Tracker** [Spec](context/tasks/struct-capture-ownership.md)
+- **Status** design
+- **Priority** HIGH
+- **Current focus** needs design, highly desireable
 
 ### Module naming
 
