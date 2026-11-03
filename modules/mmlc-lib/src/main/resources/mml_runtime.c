@@ -968,6 +968,10 @@ FORCE_INLINE StringArray ar_str_new(int32_t size)
     if (!storage)
         mml_sys_oom_abort();
 
+    // Initialize owned storage in place so every slot is safe to read and destroy.
+    for (int32_t i = 0; i < size; i++)
+        storage[i] = (String){0, NULL};
+
     return (StringArray){size, storage};
 }
 

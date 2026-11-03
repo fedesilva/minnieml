@@ -194,12 +194,12 @@ These are short notes for later triage, not approved repair plans.
   sanitizer regressions, full verification, and independent review pass. The signed-off repair is
   [B28 — Bound writes to buffer capacity](buffer-write-capacity.md).
 
-- **B29 — Open, P1: dropping an unfilled StringArray frees uninitialized pointers.**
-  [ar_str_new](../../modules/mmlc-lib/src/main/resources/mml_runtime.c) allocates slots with
-  `malloc` without initializing them. `__free_StringArray` destroys every slot, including those
-  never assigned. Creating two slots and immediately destroying the array produces an ASan
-  invalid free from `__free_String`; filling only the first slot also fails. Empty arrays and
-  fully initialized arrays pass. Each slot needs a valid empty or initialized ownership state.
+- **B29 — Corrected and verified: unfilled StringArray destruction.**
+  [ar_str_new](../../modules/mmlc-lib/src/main/resources/mml_runtime.c) initializes each slot to
+  an empty String. Unfilled and partially filled arrays support reads, cloning, and destruction.
+  Five regressions fail against uninitialized allocation and pass with initialization, including
+  compiled MML at O0/O3. Required compiler and memory checks and independent review pass.
+  Signed-off repair: [B29 — Initialize StringArray slots safely](string-array-initialization.md).
 
 - **B30 — Open, P2: dropping a local Buffer discards pending output.**
   [__free_Buffer](../../modules/mmlc-lib/src/main/resources/mml_runtime.c) frees its data without
@@ -328,5 +328,5 @@ tasks; B23 needs bounded parser reproduction. B14/B20/B21/B22/B24–B27 pass foc
 verification: 366 focused cases, 2,277 library/9 CLI tests, eight smoke fixtures, benchmark compilation,
 and all 52 memory fixtures. The [repair task](protocols-review-repairs.md) is complete and signed off.
 Keep broad design choices in their discussion subtasks.
-B29–B33 are independently confirmed and open for runtime/tooling triage. Reproductions and
+B30–B33 are independently confirmed and open for runtime/tooling triage. Reproductions and
 controls are embedded above.

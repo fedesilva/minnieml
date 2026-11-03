@@ -1531,6 +1531,9 @@ The `StringArray` family uses `ar_str_*` and the `FloatArray` family uses
 `ar_float_*`. The `StringArray` family does not have `unsafe_ar_str_set` or
 `unsafe_ar_str_get` variants.
 
+`ar_str_new(size)` initializes every slot to an empty String. An unfilled or partially
+filled array can be read, cloned, and destroyed. Nonpositive sizes produce an empty array.
+
 `ar_str_set(arr: StringArray, i: Int, ~value: String): Unit` borrows the array and
 consumes the string value. After storing an owned string, the caller must not reuse it;
 the array owns that value.

@@ -64,7 +64,8 @@ class RuntimeTests extends BaseEffFunSuite:
   private def runSanitizedProgram(
     source:         String,
     name:           String,
-    expectedOutput: List[String]
+    expectedOutput: List[String],
+    optLevel:       Int = 3
   ): IO[Unit] =
     withDirectory { directory =>
       val binary = directory.resolve("program")
@@ -72,7 +73,8 @@ class RuntimeTests extends BaseEffFunSuite:
         mode       = CompilationMode.Exe,
         outputDir  = directory,
         outputName = binary.toString.some,
-        asan       = true
+        asan       = true,
+        optLevel   = optLevel
       )
       for
         ir <- compileAndGenerate(source, name, config)
@@ -89,6 +91,105 @@ class RuntimeTests extends BaseEffFunSuite:
           expectedOutput = expectedOutput.some
         )
       yield ()
+    }
+
+  test("StringArray destruction accepts unfilled slots") {
+    val driver = """
+      int main(void) {
+        StringArray array = ar_str_new(2);
+        __free_StringArray(array);
+        return 0;
+      }
+    """
+    runSanitizedRuntime(driver)
+  }
+
+  test("StringArray destruction accepts partially filled slots") {
+    val driver = """
+      int main(void) {
+        StringArray array = ar_str_new(3);
+        ar_str_set(array, 1, int_to_str(42));
+        __free_StringArray(array);
+        return 0;
+      }
+    """
+    runSanitizedRuntime(driver)
+  }
+
+  test("StringArray empty slots support reads and independent clones") {
+    val driver = """
+      #include <assert.h>
+
+      int main(void) {
+        StringArray empty = ar_str_new(0);
+        StringArray negative = ar_str_new(-2);
+        assert(ar_str_len(empty) == 0);
+        assert(ar_str_len(negative) == 0);
+        __free_StringArray(empty);
+        __free_StringArray(negative);
+
+        StringArray partial = ar_str_new(3);
+        ar_str_set(partial, 1, int_to_str(42));
+        assert(str_eq(ar_str_get(partial, 0), (String){0, NULL}));
+        assert(str_eq(ar_str_get(partial, 2), (String){0, NULL}));
+        StringArray copied = __clone_StringArray(partial);
+        __free_StringArray(partial);
+        assert(ar_str_len(copied) == 3);
+        assert(str_eq(ar_str_get(copied, 0), (String){0, NULL}));
+        assert(str_eq(ar_str_get(copied, 1), (String){2, "42"}));
+        assert(str_eq(ar_str_get(copied, 2), (String){0, NULL}));
+        __free_StringArray(copied);
+
+        StringArray full = ar_str_new(2);
+        ar_str_set(full, 0, int_to_str(7));
+        ar_str_set(full, 1, int_to_str(8));
+        assert(str_eq(ar_str_get(full, 0), (String){1, "7"}));
+        assert(str_eq(ar_str_get(full, 1), (String){1, "8"}));
+        __free_StringArray(full);
+        return 0;
+      }
+    """
+    runSanitizedRuntime(driver)
+  }
+
+  for optimization <- List(0, 3) do
+    test(s"compiled StringArray scopes release unfilled and partial arrays at O$optimization") {
+      val source = """
+        fn unfilled(size: Int): Int =
+          let array = ar_str_new size;
+          ar_str_len array;
+        ;
+        fn partial(): Unit =
+          let array = ar_str_new 3;
+          ar_str_set array 1 (int_to_str 42);
+          let copied = ^array;
+          println (ar_str_get copied 0);
+          println (ar_str_get copied 1);
+          println (ar_str_get copied 2);
+        ;
+        fn full(): Unit =
+          let array = ar_str_new 2;
+          ar_str_set array 0 (int_to_str 7);
+          ar_str_set array 1 (int_to_str 8);
+          println (ar_str_get array 0);
+          println (ar_str_get array 1);
+        ;
+        pub fn main(): Int =
+          println (int_to_str (unfilled 0));
+          println (int_to_str (unfilled (-2)));
+          println (int_to_str (unfilled 1));
+          println (int_to_str (unfilled 3));
+          partial ();
+          full ();
+          0;
+        ;
+      """
+      runSanitizedProgram(
+        source,
+        "StringArrayInitialization",
+        List("0", "0", "1", "3", "", "42", "", "7", "8"),
+        optLevel = optimization
+      )
     }
 
   test("buffered writers preserve exact bytes across capacity boundaries") {

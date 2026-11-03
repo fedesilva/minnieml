@@ -4,6 +4,9 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-11-03
 
+- Initialize StringArray slots to empty Strings so unfilled and partially filled arrays support
+  reads, cloning, and destruction. Document the initialization contract.
+
 - Bound buffered output to its fixed allocation, splitting oversized string and numeric payloads
   across flushes. Share capacity handling with newline and byte writes, preserving output order
   even with one-byte buffers.
