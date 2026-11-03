@@ -84,14 +84,6 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 - **Status:** in_progress
 - **Current focus:** Collect confirmed bugs and fix status; split into focused tasks later.
 
-
-### Relax struct ownership rules
-
-- **Tracker** [Spec](context/tasks/struct-capture-ownership.md)
-- **Status** design
-- **Priority** HIGH
-- **Current focus** needs design, highly desireable
-
 ### Module naming
 
 - **Tracker:** [Prevent module symbol and output-name collisions](tasks/module-name-collisions.md)
