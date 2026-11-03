@@ -9,8 +9,8 @@ Do not read or act on them unless directed to do so explicitely.
 * On struct ownership:
   * change to non move by default
     * have them work like lambdas
-    * if they borrow and don't escape scope that's legal.
-    * this allows for non escaping structs withing functions
+    * if they borrow and don't escape their scope, that's legal.
+    * this allows for non escaping structs within functions
   * Introduce move constructors (call site?)
     * just like move lambdas
       * struct Person { name }
