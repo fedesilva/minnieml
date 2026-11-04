@@ -1,13 +1,143 @@
 package mml.mmlclib.lsp
 
+import cats.effect.{ExitCode, IO}
 import cats.syntax.option.*
+import mml.mmlclib.api.{CompilerApi, CompilerError}
 import mml.mmlclib.ast.*
+import mml.mmlclib.codegen.LlvmCompilationError
+import mml.mmlclib.codegen.emitter.CodeGenError
 import mml.mmlclib.compiler.{Compilation, CompilerConfig}
-import mml.mmlclib.parser.SourceInfo
+import mml.mmlclib.errors.CompilationError
+import mml.mmlclib.parser.{ParserError, SourceInfo}
 import mml.mmlclib.semantic.SemanticError
 import mml.mmlclib.test.BaseEffFunSuite
+import mml.mmlclib.util.error.print.ErrorPrinter
 
 class DiagnosticsTests extends BaseEffFunSuite:
+
+  test("error families outside editor conversion remain omitted"):
+    parseNotFailed("let value = 1;").map { module =>
+      val extensionError = new CompilationError:
+        def message: String = "extension failure"
+
+      val errors = List(
+        ParserError.Failure("parse failure"),
+        ParserError.Unknown("unknown parse failure"),
+        CompilerError.Unknown("frontend failure"),
+        CodeGenError("code generation failure", module.some),
+        LlvmCompilationError.TargetResolutionError("target failure"),
+        extensionError
+      )
+      errors.foreach { error =>
+        assertEquals(Diagnostics.fromError(error), None, error.message)
+        assertEquals(Diagnostics.fromErrorAll(error), Nil, error.message)
+      }
+    }
+
+  test("direct and wrapped type errors preserve the same editor diagnostic"):
+    semState("let value: Int = true;").map { result =>
+      val errors = result.errors.collect { case error: SemanticError.TypeCheckingError => error }
+      assertEquals(errors.size, 1)
+      val wrapped = errors.head
+      val direct  = Diagnostics.fromErrorAll(wrapped.error)
+      assertEquals(direct.size, 1)
+      assertEquals(direct.head.message, "Type mismatch: expected Int, got Bool")
+      assertEquals(Diagnostics.fromErrorAll(wrapped), direct)
+    }
+
+  test("LSP compilation reports a moved capture at its use with the existing CLI evidence"):
+    val code = """fn main(): Unit =
+                 |  let s = "hello" ++ " world";
+                 |  let f = ~{ println s; }: Unit;
+                 |  let g = ~{ println s; }: Unit;
+                 |  f ();
+                 |  g ();
+                 |;
+                 |""".stripMargin
+    val info         = SourceInfo(code)
+    val start        = code.lastIndexOf("println s") + "println ".length
+    val expectedSpan = SrcSpan(info.pointAt(start), info.pointAt(start + 1))
+
+    withSourceFixture(code, "moved-capture.mml") { (path, config) =>
+      for
+        state <- Compilation.compileSource(code, "MovedCapture", path.toString, config)
+        // Capture CLI output without redirecting the shared test-process console.
+        output <- cats.effect.Ref.of[IO, Vector[String]](Vector.empty)
+        exit <- CompilerApi.processAstOnly(path, config, message => output.update(_ :+ message))
+        messages <- output.get
+      yield
+        val errors = state.visibleErrors.collect { case e: SemanticError.CapturedMovedHeapBinding =>
+          e
+        }
+        assertEquals(errors.size, 1)
+        val error = errors.head
+        assertEquals(error.ref.spanOpt, expectedSpan.some)
+        val expected = Diagnostic(
+          range    = Range.fromSrcSpan(expectedSpan),
+          severity = DiagnosticSeverity.Error,
+          message  = error.message
+        )
+        assertEquals(Diagnostics.fromErrorAll(error), List(expected))
+        assertEquals(
+          Diagnostics.fromCompilerState(state).filter(_.message == error.message),
+          List(expected)
+        )
+
+        assertEquals(exit, ExitCode.Error)
+        val movedSpan = error.movedAt.spanOpt.getOrElse(fail("Expected the first capture location"))
+        val cli       = messages.mkString("\n")
+        val captureReport = ErrorPrinter.prettyPrint(error, info.some)
+        assert(cli.contains(captureReport), cli)
+        val captureLocation = ErrorPrinter.formatLocation(expectedSpan)
+        assert(
+          captureReport.contains(s"Cannot capture moved heap binding 's' at $captureLocation"),
+          captureReport
+        )
+        assert(
+          captureReport.contains(s"Moved at: ${ErrorPrinter.formatLocation(movedSpan)}"),
+          captureReport
+        )
+        val highlightedCapture =
+          s"let g = ~{ println ${Console.RED}${Console.BOLD}s${Console.RESET};"
+        assert(captureReport.contains(highlightedCapture), captureReport)
+        assertEquals(
+          Diagnostics.fromErrorAll(error.copy(ref = error.ref.copy(source = SourceOrigin.Synth))),
+          Nil
+        )
+    }
+
+  test("visibility diagnostic presentation uses the reference location and existing message"):
+    val code         = "let hidden = 1;\nlet use = hidden;"
+    val info         = SourceInfo(code)
+    val start        = code.lastIndexOf("hidden")
+    val expectedSpan = SrcSpan(info.pointAt(start), info.pointAt(start + "hidden".length))
+
+    parseNotFailed(code).map { module =>
+      val (declaration, use) = module.members match
+        case List(declaration: Bnd, use: Bnd) => (declaration, use)
+        case other => fail(s"Expected two source bindings, got $other")
+      val ref = use.value.terms match
+        case List(ref: Ref) => ref
+        case other => fail(s"Expected the reference to hidden, got $other")
+      // Visibility enforcement does not yet emit this diagnostic; test its presentation contract.
+      val error: SemanticError.VisibilityViolation =
+        SemanticError.VisibilityViolation(ref, declaration, "test")
+      val expected = Diagnostic(
+        range    = Range.fromSrcSpan(expectedSpan),
+        severity = DiagnosticSeverity.Error,
+        message  = "'hidden' is not visible here (declared in 'hidden')"
+      )
+      assertEquals(Diagnostics.fromError(error), expected.some)
+      assertEquals(Diagnostics.fromErrorAll(error), List(expected))
+      val cli = ErrorPrinter.prettyPrint(error, info.some)
+      assert(cli.contains("'hidden' is not visible (declared in 'hidden')"), cli)
+      val highlightedReference = s"let use = ${Console.RED}${Console.BOLD}hidden${Console.RESET};"
+      assert(cli.contains(highlightedReference), cli)
+      assertEquals(
+        Diagnostics.fromErrorAll(error.copy(ref = ref.copy(source = SourceOrigin.Synth))),
+        Nil
+      )
+    }
 
   test("LSP compilation reports nested invalid identifiers with the parser source span"):
     val code = "let x = let 123invalid = 5; 6;"

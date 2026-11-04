@@ -1,12 +1,15 @@
 package mml.mmlclib.lsp
 
+import mml.mmlclib.api.CompilerError
 import mml.mmlclib.ast.*
+import mml.mmlclib.codegen.LlvmCompilationError
+import mml.mmlclib.codegen.emitter.CodeGenError
 import mml.mmlclib.compiler.CompilerState
 import mml.mmlclib.errors.CompilationError
 import mml.mmlclib.parser.ParserError
 import mml.mmlclib.semantic.{SemanticError, TypeError}
 
-/** Converts compiler errors to LSP diagnostics. */
+/** Converts source-bearing semantic and type errors to LSP diagnostics. */
 object Diagnostics:
 
   /** Extract diagnostics from compiler state. */
@@ -22,19 +25,32 @@ object Diagnostics:
     fromErrorDiagnostics(error)
 
   private def fromErrorDiagnostics(error: CompilationError): List[Diagnostic] =
-    extractSpans(error).map { span =>
+    error match
+      case semantic: SemanticError =>
+        fromSpans(extractSemanticErrorSpans(semantic), formatSemanticError(semantic))
+      case typeError: TypeError =>
+        fromSpans(extractTypeErrorSpans(typeError), formatTypeError(typeError))
+
+      case ParserError.Failure(_) => Nil
+      case ParserError.Unknown(_) => Nil
+      case _: CompilerError => Nil
+      case _: CodeGenError => Nil
+      case _: LlvmCompilationError => Nil
+      // CompilationError is open; other families have no editor conversion contract.
+      case _ => Nil
+
+  /** Render messages only for source spans that can be shown in the editor. */
+  private def fromSpans(spans: List[SrcSpan], message: => String): List[Diagnostic] =
+    spans.map { span =>
       Diagnostic(
         range    = Range.fromSrcSpan(span),
         severity = DiagnosticSeverity.Error,
-        message  = formatErrorMessage(error)
+        message  = message
       )
     }
 
-  private def extractSpans(error: CompilationError): List[SrcSpan] =
+  private def extractSemanticErrorSpans(error: SemanticError): List[SrcSpan] =
     error match
-      case ParserError.Failure(_) => Nil
-      case ParserError.Unknown(_) => Nil
-
       case SemanticError.UndefinedRef(ref, _, _) => ref.spanOpt.toList
       case SemanticError.UndefinedTypeRef(typeRef, _, _) => typeRef.spanOpt.toList
       case SemanticError.AmbiguousTypeRef(typeRef, _, _, _) => typeRef.spanOpt.toList
@@ -53,6 +69,7 @@ object Diagnostics:
       case SemanticError.TypeCheckingError(typeErr) => extractTypeErrorSpans(typeErr)
       case SemanticError.ProtocolErrorFound(error, _) => error.source.spanOpt.toList
       case SemanticError.InvalidEntryPoint(_, source) => source.spanOpt.toList
+      case SemanticError.VisibilityViolation(ref, _, _) => ref.spanOpt.toList
       case error: SemanticError.UseAfterMove => error.source.spanOpt.toList
       case SemanticError.ConsumingParamNotLastUse(_, ref, _) => ref.spanOpt.toList
       case SemanticError.BorrowedValuePassedToConsumingParam(_, ref, _) => ref.spanOpt.toList
@@ -60,12 +77,9 @@ object Diagnostics:
       case SemanticError.ConditionalOwnershipMismatch(cond, _) => cond.spanOpt.toList
       case SemanticError.BorrowEscapeViaReturn(ref, _) => ref.spanOpt.toList
       case SemanticError.CapturedBorrowedHeapBinding(ref, _) => ref.spanOpt.toList
+      case SemanticError.CapturedMovedHeapBinding(ref, _, _) => ref.spanOpt.toList
       case SemanticError.BorrowClosureEscapeViaReturn(lambda, _) =>
         lambda.spanOpt.toList
-
-      case te: TypeError => extractTypeErrorSpans(te)
-
-      case _ => Nil
 
   private def extractTypeErrorSpans(error: TypeError): List[SrcSpan] =
     error match
@@ -101,11 +115,8 @@ object Diagnostics:
       case fs: FromSource => fs.source.spanOpt
       case _ => None
 
-  private def formatErrorMessage(error: CompilationError): String =
+  private def formatSemanticError(error: SemanticError): String =
     error match
-      case ParserError.Failure(msg) => s"Parse error: $msg"
-      case ParserError.Unknown(msg) => s"Unknown parse error: $msg"
-
       case SemanticError.UndefinedRef(ref, _, _) =>
         s"Undefined reference: ${ref.name}"
       case SemanticError.UndefinedTypeRef(typeRef, _, _) =>
@@ -134,6 +145,7 @@ object Diagnostics:
         error.message
       case SemanticError.InvalidEntryPoint(msg, _) =>
         s"Invalid entry point: $msg"
+      case e: SemanticError.VisibilityViolation => e.message
       case e: SemanticError.UseAfterMove => e.message
       case e: SemanticError.ConsumingParamNotLastUse => e.message
       case e: SemanticError.BorrowedValuePassedToConsumingParam => e.message
@@ -141,11 +153,8 @@ object Diagnostics:
       case e: SemanticError.ConditionalOwnershipMismatch => e.message
       case e: SemanticError.BorrowEscapeViaReturn => e.message
       case e: SemanticError.CapturedBorrowedHeapBinding => e.message
+      case e: SemanticError.CapturedMovedHeapBinding => e.message
       case e: SemanticError.BorrowClosureEscapeViaReturn => e.message
-
-      case te: TypeError => formatTypeError(te)
-
-      case other => other.toString
 
   private def formatTypeError(error: TypeError): String =
     error match

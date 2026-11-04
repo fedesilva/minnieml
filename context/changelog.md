@@ -4,6 +4,10 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-11-04
 
+- Show moved-capture and visibility diagnostic payloads at their offending references in the
+  editor. Match semantic error variants exhaustively for source ranges and messages so missing
+  mappings fail compilation.
+
 - Encode string literals as UTF-8, sharing bytes between LLVM constants and String lengths
   for global and expression values. Document byte-based string lengths and offsets.
   [Verification](history/utf8-string-literals.md).

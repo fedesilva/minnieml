@@ -59,6 +59,39 @@ item needs its own plan. A cleanup campaign can work through several approved gr
 - **Scope:** Deferred. Scalar ToString conversions do not use this builder; array conversion is
   also deferred.
 
+### QA-003: Exercise normal CLI reporting in diagnostic agreement tests
+
+- **Status:** complete
+- **Implementation and verification:** [Moved-capture and visibility diagnostics](lsp-missing-semantic-diagnostics.md).
+- **Source:** [DiagnosticsTests.scala](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/lsp/DiagnosticsTests.scala),
+  [CompilerApi.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/api/CompilerApi.scala),
+  and [ErrorPrinter.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/util/error/print/ErrorPrinter.scala).
+- **Problem:** CLI agreement assertions using `SemanticErrorPrinter` bypass normal command
+  reporting through `ErrorPrinter`, whose moved-capture and visibility branches are separate.
+  A defect in those normal CLI branches would not fail the secondary-printer assertions.
+- **Expected outcome:** Source-driven checks capture normal CLI command output; constructed
+  diagnostic payloads use the normal renderer and verify the offending source highlight.
+- **Evidence:** Independent review confirmed the dispatch mismatch. The corrected tests use
+  `CompilerApi.processAstOnly` for moved capture and `ErrorPrinter` for visibility; both focused
+  diagnostic suites pass all 14 tests. Independent review accepts the corrected reporting path.
+- **Resolution:** Compiler gates, independent review, and Author signoff are complete.
+
+### QA-004: Isolate diagnostic-specific evidence in CLI assertions
+
+- **Status:** complete
+- **Implementation and verification:** [Moved-capture and visibility diagnostics](lsp-missing-semantic-diagnostics.md).
+- **Source:** [DiagnosticsTests.scala](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/lsp/DiagnosticsTests.scala).
+- **Problem:** Searching combined CLI output for a moved site and highlighted reference lets
+  a neighboring use-after-move diagnostic satisfy assertions intended for the moved-capture report.
+- **Expected outcome:** Check the capture report's own evidence and verify that this complete
+  report appears in normal CLI output.
+- **Evidence:** Independent execution confirms that both diagnostics report the same reference
+  and move site in the fixture. The correction isolates the typed capture error through
+  `ErrorPrinter`; both focused diagnostic suites pass all 14 tests. Independent narrow review
+  and its four dedicated checks have no actionable findings.
+- **Resolution:** Compiler gates, independent review, and Author signoff are complete.
+
 ## Working memory
 
 QA-001 implementation and verification are tracked in the linked alias-resolution task.
+QA-003/QA-004 are resolved in the completed diagnostic repair task.

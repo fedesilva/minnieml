@@ -22,15 +22,17 @@ These are short notes for later triage, not approved repair plans.
 
 ## Notes
 
-- **B1 — Open, existing: moved-capture errors disappear in the editor.**
-  `CapturedMovedHeapBinding` has a compiler diagnostic, but
+- **B1 — Fixed: moved-capture editor diagnostics.**
   [LSP diagnostics](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/lsp/Diagnostics.scala)
-  lacks its source-span mapping and returns no editor diagnostic. The CLI reports it.
+  maps `CapturedMovedHeapBinding` to its reference range and existing message. A source-driven
+  regression confirms the capture-specific diagnostic alongside the existing use-after-move error.
   This is a diagnostic-delivery bug; no ownership-checking or memory-safety defect is established.
   Follow-up: [Show moved-capture and visibility errors in the editor](lsp-missing-semantic-diagnostics.md).
 
-- **B2 — Open, existing: visibility errors disappear in the editor.**
-  `VisibilityViolation` is omitted by the same LSP source-span mapping. The CLI reports it.
+- **B2 — Fixed: visibility diagnostic presentation.**
+  `VisibilityViolation` has LSP range and message mappings, covered with a diagnostic built from
+  parsed source nodes. It has a CLI renderer but no production emitter; this repair does not
+  establish source-level visibility enforcement.
   Follow-up: [Show moved-capture and visibility errors in the editor](lsp-missing-semantic-diagnostics.md).
 
 - **B16 — Open, existing: 1,000 nested lets overflow the compiler stack.**
@@ -115,7 +117,8 @@ are authorized. Broader protocol choices have
 
 ## Verification
 
-B1/B2 are confirmed by source tracing through the LSP span mapping and CLI error printers.
+B1/B2 compiler checks and independent review pass. Verification evidence is recorded in their
+[repair task](lsp-missing-semantic-diagnostics.md#evidence-and-verification).
 
 ## Signoff
 
@@ -125,6 +128,8 @@ B1/B2 are confirmed by source tracing through the LSP span mapping and CLI error
 
 ## Task Working Memory
 
-Unresolved notes are B1/B2, B16, B23, B30/B31, and B33. B1/B2/B16 have dedicated repair tasks;
-B23's task needs bounded parser reproduction. B30/B31/B33 need runtime/tooling triage.
-Next: select a focused repair plan for an open note.
+B1/B2 diagnostic-delivery mappings and exhaustive semantic conversion are complete, verified,
+independently reviewed, and signed off.
+Open notes are B16, B23, B30/B31, and B33. B16 has a dedicated repair task; B23 needs bounded parser
+reproduction. B30/B31/B33 need runtime/tooling triage. Next: select a focused repair plan for an
+open note.
