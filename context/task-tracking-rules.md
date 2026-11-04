@@ -114,6 +114,17 @@ Do not rewrite historical evidence or treat another branch's completed checklist
 
 ## Branching
 
+Before implementing each approved task, create a `dev/<task-name>` branch unless the
+Author directs otherwise. Establish the working branch before making task changes.
+
+If already on a feature or theme branch, inspect its name and recent history for a
+thematic connection to the task. Consider the change's size and risk as well: a large or
+risky change may warrant isolation even when its theme matches. Continue on the existing
+branch when the work clearly belongs there and is reasonably bounded. Otherwise, ask
+whether to create a new `dev/<task-name>` branch before proceeding. Do not assume that
+any existing feature branch is suitable, or create a new branch mechanically when the
+existing theme branch is a sensible fit.
+
 Use Git Town as specified in `context/coding-rules.md`. Record the actual working branch
 in the task's **Target Branch** metadata. Leave it unassigned until known. Never infer a
 Git Town parent from a branch name or historical checklist.
