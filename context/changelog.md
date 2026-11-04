@@ -2,6 +2,12 @@
 
 Durable product changes belong here. Current task state belongs in task files.
 
+## 2026-11-04
+
+- Encode string literals as UTF-8, sharing bytes between LLVM constants and String lengths
+  for global and expression values. Document byte-based string lengths and offsets.
+  [Verification](history/utf8-string-literals.md).
+
 ## 2026-11-03
 
 - Initialize StringArray slots to empty Strings so unfilled and partially filled arrays support

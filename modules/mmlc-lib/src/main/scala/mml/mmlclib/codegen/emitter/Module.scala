@@ -5,7 +5,6 @@ import mml.mmlclib.ast.*
 import mml.mmlclib.ast.queries.NativeTypeQueries
 import mml.mmlclib.codegen.emitter.abis.NativeAbiPlan
 import mml.mmlclib.codegen.emitter.alias.AliasScopeEmitter
-import mml.mmlclib.codegen.emitter.expression.escapeString
 import mml.mmlclib.codegen.emitter.tbaa.TbaaEmitter
 import mml.mmlclib.codegen.{EntryPoint, TargetAbi, TargetAttributes}
 import mml.mmlclib.errors.CompilerWarning
@@ -178,10 +177,10 @@ private def emitPlannedModule(
     // 3. String constants
     if finalState.stringConstants.nonEmpty then
       output.append("; String constants\n")
-      finalState.stringConstants.foreach { case (name, content) =>
-        val escaped = escapeString(content)
+      finalState.stringConstants.values.foreach { constant =>
         output.append(
-          s"@$name = private constant [${content.length} x i8] c\"$escaped\", align 1\n"
+          s"@${constant.name} = private constant [${constant.byteLength} x i8] " +
+            s"c\"${constant.escapedBytes}\", align 1\n"
         )
       }
       output.append('\n')
@@ -343,7 +342,7 @@ private def emitValueBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError
       term match {
         case lit: LiteralString =>
           // Generate static String global: @a = global %String { i32 4, ptr @str.0 }
-          val (newState, constName) = state.addStringConstant(lit.value)
+          val (newState, constant) = state.addStringConstant(lit.value)
           val llvmTypeE = bnd.typeSpec match {
             case Some(typeSpec) => getLlvmType(typeSpec, newState)
             case None =>
@@ -355,7 +354,7 @@ private def emitValueBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError
               )
           }
           llvmTypeE.map { llvmType =>
-            val staticValue = s"{ i32 ${lit.value.length}, ptr @$constName }"
+            val staticValue = s"{ i32 ${constant.byteLength}, ptr @${constant.name} }"
             newState.emit(emitGlobalVariable(mangledName, llvmType, staticValue))
           }
 

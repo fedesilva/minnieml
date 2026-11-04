@@ -102,16 +102,16 @@ def compileLiteralString(
 ): Either[CodeGenError, CompileResult] =
   lit.typeSpec.toRight(CodeGenError("LiteralString missing type specification", lit.some)).map {
     _ =>
-      val (withConstant, constName) = state.addStringConstant(lit.value)
-      val strLen                    = lit.value.length
-      val ptrReg                    = withConstant.nextRegister
-      val lengthReg                 = ptrReg + 1
-      val resultReg                 = lengthReg + 1
+      val (withConstant, constant) = state.addStringConstant(lit.value)
+      val strLen                   = constant.byteLength
+      val ptrReg                   = withConstant.nextRegister
+      val lengthReg                = ptrReg + 1
+      val resultReg                = lengthReg + 1
       val gep = emitGetElementPtr(
         ptrReg,
         s"[$strLen x i8]",
         s"[$strLen x i8]*",
-        s"@$constName",
+        s"@${constant.name}",
         List(("i64", "0"), ("i64", "0"))
       )
       val result = withConstant

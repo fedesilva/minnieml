@@ -1804,8 +1804,10 @@ conditionals and loop back edges use these results as PHI predecessors. Deferred
 bodies keep their block labels separate from the enclosing expression.
 
 String literals construct their `{ length, data }` value with SSA `insertvalue` instructions,
-pointing at global constant bytes. Literal evaluation requires no temporary stack allocation,
-including inside unoptimized loops. The String layout and native ABI are unchanged. Alias
+pointing at global constant bytes. Registration encodes each distinct literal as UTF-8;
+the constant array, LLVM escapes, and String length all use those bytes. Global bindings and
+expression literals share the registered constant. Literal evaluation requires no temporary stack
+allocation, including inside unoptimized loops. The String layout and native ABI are unchanged. Alias
 metadata describes actual memory operations, such as capture stores and loads, rather than
 literal aggregate construction.
 

@@ -515,7 +515,8 @@ fn process(name: String): Unit =
 - **Integers**: `[0-9]+` (e.g. `42`, `0`, `1234`)
 - **Floats**: `[0-9]+\.[0-9]+` or `\.[0-9]+` (e.g. `3.14`, `.5`, `0.001`)
 - **Strings**: `"[^"]*"` — raw content, no escape processing during parsing. Multiline.
-  Escape handling is performed at code generation time using LLVM hex escapes.
+  Code generation encodes the content as UTF-8 and uses LLVM hex escapes for its bytes.
+  A string's `length` counts bytes: `"é"` has length 2 and `"😀"` has length 4.
 - **Booleans**: `true`, `false`
 - **Unit**: `()`, the only value of type `Unit`
 
@@ -1436,6 +1437,9 @@ There is no implicit conversion when calling `print` or `println`; pass `to_str 
 Arrays, raw pointers, and opaque `Buffer` / `Rng` handles have no `ToString` instance.
 
 #### String operations
+
+String operations use byte lengths and offsets. Substrings can split a UTF-8 sequence;
+these operations do not interpret Unicode characters or normalize text.
 
 | Function          | Type                         | Description                                                |
 | ----------------- | ---------------------------- | ---------------------------------------------------------- |

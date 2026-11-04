@@ -6,6 +6,8 @@ import mml.mmlclib.codegen.TargetAbi
 import mml.mmlclib.codegen.emitter.abis.NativeCallKey
 import mml.mmlclib.errors.{CompilationError, CompilerWarning}
 
+import java.nio.charset.StandardCharsets.UTF_8
+
 /** Helper for generating syntactically correct LLVM IR type definitions */
 def emitTypeDefinition(typeName: String, fields: List[String]): String =
   s"%$typeName = type { ${fields.mkString(", ")} }"
@@ -248,6 +250,19 @@ enum TbaaNode derives CanEqual:
   case Scalar(name: String, parentId: Int)
   case Struct(name: String, fields: List[(Int, Int)]) // (typeId, offset) pairs
 
+/** A named byte array shared by LLVM constant storage and String values. */
+case class StringConstant(name: String, bytes: Vector[Byte]):
+
+  def byteLength: Int = bytes.length
+
+  /** LLVM byte-string content, with hex escapes for nonprintable bytes, quotes, and backslashes. */
+  def escapedBytes: String =
+    bytes.map { byte =>
+      val value = byte & 0xff
+      if value >= 0x20 && value <= 0x7e && value != '"' && value != '\\' then value.toChar.toString
+      else f"\\$value%02X"
+    }.mkString
+
 /** Carries both the current LLVM body's output and the module registries used by nested emission.
   * Deferred bodies isolate output and register numbering, then merge their registries back so later
   * uses can reuse entries and adapters already emitted inside those bodies.
@@ -261,7 +276,7 @@ enum TbaaNode derives CanEqual:
   * @param initializers
   *   list of initializer function names for global ctors
   * @param stringConstants
-  *   map of string constant name to its content
+  *   source literal content mapped to its named UTF-8 byte array
   * @param nextStringId
   *   the next available string constant ID
   * @param moduleHeader
@@ -291,19 +306,19 @@ enum TbaaNode derives CanEqual:
   * TBAAState, AliasScopeState, etc.)
   */
 case class CodeGenState(
-  moduleName:           String              = "",
-  layout:               TargetLayout        = TargetLayout.default,
-  targetAbi:            TargetAbi           = TargetAbi.Default,
-  nextRegister:         Int                 = 0,
-  output:               List[String]        = List.empty,
-  entryPrologueOutput:  List[String]        = List.empty,
-  initializers:         List[String]        = List.empty,
-  stringConstants:      Map[String, String] = Map.empty,
-  nextStringId:         Int                 = 0,
-  moduleHeader:         Option[String]      = None,
-  nativeTypes:          Map[String, String] = Map.empty,
-  functionDeclarations: Map[String, String] = Map.empty,
-  emitLoopMetadata:     Boolean             = false,
+  moduleName:           String                      = "",
+  layout:               TargetLayout                = TargetLayout.default,
+  targetAbi:            TargetAbi                   = TargetAbi.Default,
+  nextRegister:         Int                         = 0,
+  output:               List[String]                = List.empty,
+  entryPrologueOutput:  List[String]                = List.empty,
+  initializers:         List[String]                = List.empty,
+  stringConstants:      Map[String, StringConstant] = Map.empty,
+  nextStringId:         Int                         = 0,
+  moduleHeader:         Option[String]              = None,
+  nativeTypes:          Map[String, String]         = Map.empty,
+  functionDeclarations: Map[String, String]         = Map.empty,
+  emitLoopMetadata:     Boolean                     = false,
   // Warnings accumulated during codegen (lifted to CompilerState when done)
   warnings: List[CompilerWarning] = List.empty,
   // TBAA State
@@ -560,21 +575,20 @@ case class CodeGenState(
     val (stateWithScope, id) = ensureAliasScopeNode(typeName)
     (stateWithScope, s"!{!$id}")
 
-  /** Adds a string constant to the state and returns the name of the constant. */
-  def addStringConstant(content: String): (CodeGenState, String) =
-    // Check if this content already exists
-    stringConstants.find(_._2 == content) match {
-      case Some((existingId, _)) => (this, existingId)
+  /** Registers UTF-8 literal bytes once and returns the constant shared by all uses. */
+  def addStringConstant(content: String): (CodeGenState, StringConstant) =
+    stringConstants.get(content) match
+      case Some(constant) => (this, constant)
       case None =>
         val stringId = s"str.${nextStringId}"
+        val constant = StringConstant(stringId, content.getBytes(UTF_8).toVector)
         (
           copy(
-            stringConstants = stringConstants + (stringId -> content),
+            stringConstants = stringConstants + (content -> constant),
             nextStringId    = nextStringId + 1
           ),
-          stringId
+          constant
         )
-    }
 
   /** Sets the module header if not already set.
     *

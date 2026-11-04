@@ -208,19 +208,3 @@ def applyUnaryOp(
       Left(
         CodeGenError(s"No native template found for unary operator '${opRef.name}'", Some(opRef))
       )
-
-// ============================================================================
-// String Helpers
-// ============================================================================
-
-/** Helper for string escaping - converts to LLVM IR format using hex escapes. */
-def escapeString(str: String): String =
-  str.flatMap {
-    case '"' => "\\\""
-    case '\\' => "\\\\"
-    case '\n' => "\\0A"
-    case '\r' => "\\0D"
-    case '\t' => "\\09"
-    case c if c < 0x20 || c > 0x7e => f"\\${c.toInt}%02X"
-    case c => c.toString
-  }

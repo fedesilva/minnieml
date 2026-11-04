@@ -66,16 +66,6 @@ These are short notes for later triage, not approved repair plans.
   directory without spaces also passes. Use the existing argument-vector execution API at
   the remaining string-command sites; this finding does not establish a final-output-path bug.
 
-- **B32 — Open, P2: non-ASCII string literals produce wrong bytes or invalid LLVM IR.**
-  [escapeString](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/emitter/expression/package.scala)
-  escapes UTF-16 characters as if each were one byte. Literal array lengths in
-  [Literals](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/emitter/expression/Literals.scala)
-  and [Module](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/emitter/Module.scala)
-  likewise use character counts. A literal `λ` emits `[1 x i8] c"\3BB"`, which LLVM parses as
-  two bytes and rejects; `😀` declares two bytes but emits six. Both global and expression
-  literals are affected. `é` builds but prints byte `e9` instead of UTF-8 `c3 a9`; an ASCII
-  control prints correctly. Escape encoded bytes and derive lengths from that same byte sequence.
-
 - **B33 — Open, P2: editor compile commands do not decode file URIs.**
   [LspHandler.uriToPath](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/lsp/LspHandler.scala)
   strips `file://` and passes the percent-encoded remainder to path-based compilation.
@@ -86,7 +76,7 @@ These are short notes for later triage, not approved repair plans.
   than prefix stripping. This is source tracing plus a filesystem reproduction; editor execution
   was not run.
 
-### Reproduction evidence for B30–B33
+### Reproduction evidence for B30, B31, and B33
 
 Independent checks confirm these findings at commit
 `4cd89e56cbb47e8a52b3103235492b6b7eca66f0` on macOS arm64 with Clang/LLVM 23.1.1.
@@ -109,18 +99,6 @@ int main(void) {
     mml_sys_flush();
     return 0;
 }
-```
-
-B32's compiler fixture is UTF-8 source. Compile it with `sbtn 'run fixture.mml'`;
-replace both occurrences of `λ` with `A`, `é`, or `😀` for the controls described above.
-Use `sbtn 'run run fixture.mml'` to inspect the successful controls' output bytes.
-
-```mml
-let greeting = "λ";
-pub fn main(): Unit =
-  println greeting;
-  println "λ";
-;
 ```
 
 B33's filesystem check uses a real existing file `original`, obtains
@@ -147,7 +125,6 @@ B1/B2 are confirmed by source tracing through the LSP span mapping and CLI error
 
 ## Task Working Memory
 
-Open notes are B1/B2, B16, B23, and B30–B33. B1/B2/B16 have dedicated repair tasks;
-B23's task needs bounded parser reproduction. B30–B33 are independently confirmed and need
-runtime/tooling triage; reproductions and controls are embedded above.
+Unresolved notes are B1/B2, B16, B23, B30/B31, and B33. B1/B2/B16 have dedicated repair tasks;
+B23's task needs bounded parser reproduction. B30/B31/B33 need runtime/tooling triage.
 Next: select a focused repair plan for an open note.
