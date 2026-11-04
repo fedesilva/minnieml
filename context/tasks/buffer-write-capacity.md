@@ -22,9 +22,9 @@ A single flush empties the pending output but cannot make a payload larger than 
 fit. Copying the entire payload after that flush exceeds the allocation. String and numeric
 writers need bounded copies; newline variants also need room for their final byte.
 
-[Bug notes B28](bug-notes.md#notes) records sanitizer failures for a five-byte string written
-to a four-byte buffer and numeric/newline writes with capacity one in the
-[runtime](../../modules/mmlc-lib/src/main/resources/mml_runtime.c).
+Sanitizer failures cover a five-byte string written to a four-byte buffer and numeric/newline
+writes with capacity one in the [runtime](../../modules/mmlc-lib/src/main/resources/mml_runtime.c).
+The reproduction and verification results are recorded below.
 
 ## Outcome
 
@@ -69,9 +69,19 @@ Implementation approval: granted for this fix plan and its verification.
 
 ## Verification
 
-- Existing reproduction and controls are embedded in
-  [Bug notes](bug-notes.md#reproduction-evidence-for-b28b33); they are historical evidence.
-- On 2026-11-03, the linked B28 C reproduction failed on macOS arm64 with Clang 23.1.1,
+The minimal reproduction at commit `4cd89e56cbb47e8a52b3103235492b6b7eca66f0` includes
+`mml_runtime.c` and writes five bytes into a four-byte buffer:
+
+```c
+int main(void) {
+    Buffer b = mkBufferWithSize(4);
+    buffer_write(b, (String){5, "abcde"});
+    __free_Buffer(b);
+    return 0;
+}
+```
+
+- On 2026-11-03, this C reproduction failed on macOS arm64 with Clang 23.1.1,
   compiled using `-std=c17 -O2 -g -fsanitize=address,undefined -fno-sanitize-recover=all`.
   AddressSanitizer reported `heap-buffer-overflow`, `WRITE of size 5`, immediately past a
   four-byte allocation. The process aborted; symbolizer startup warnings left native frames

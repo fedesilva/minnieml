@@ -530,7 +530,10 @@ P3 verification:
   omitted their internal binding names; it accepts both source and internal names, with an
   additional constructor regression. The corrected `sbtn 'scalafmtAll;scalafixAll;testFull'` run
   passed all 2,108 library and 9 CLI tests. No compiler warnings were reported.
-- B6 stale-reference selection has a passing rerun regression. See [Bug notes](bug-notes.md).
+- Repeated reference resolution clears a stale binding target when a signature becomes visible;
+  the rerun regression in
+  [ProtocolRefResolverTests](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/ProtocolRefResolverTests.scala)
+  passes.
 
 P4 verification:
 
@@ -540,8 +543,11 @@ P4 verification:
 - Earlier full runs exposed grouped annotation loss, duplicate parser annotations, bare-function
   ownership marking, and stale wrapper-annotation assertions. Focused tests also exposed repeated
   operand checking and premature selection in the presence of an unresolved signature. Corrections
-  and explicit regressions are included in the passing full suite; see B10–B15 in
-  [Bug notes](bug-notes.md).
+  and explicit regressions are included in the passing full suite. Shared type compatibility
+  compares nominal declaration IDs and expands aliases; its four identity regressions pass.
+  The partial-application recovery regression also passes: an invalid outer argument retains
+  the independently inferred inner call. Later failed-operand checking is covered by
+  [protocol review repairs](protocols-review-repairs.md#2-failed-nested-expressions).
 - Both new examples execute successfully via `sbtn 'run run -s <path>'` with sanitizers:
   `mml/samples/protocol-functions.mml` prints `answer: 42`, `ready: true`, `function value: 5`,
   and `partial: 15`; `mml/samples/protocol-operators.mml` prints `42`, `true`, `5`, and `15`.

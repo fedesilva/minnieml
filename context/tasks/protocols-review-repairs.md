@@ -231,5 +231,5 @@ Verification on macOS arm64 with Clang/LLVM 23.1.1 and Tree-sitter 0.27.0:
 The error-recovery repairs and four standalone corrections are complete and signed off.
 Compiler, sanitizer, grammar, required Linux checks, and independent review pass as recorded above.
 Optional cloud verification is deferred. No implementation work remains in this task.
-The parent Protocols task stays open: Num checkpoint signoff, local binding inference, Clone
-integration, and separate design discussions remain outside this closure.
+The parent [Protocols task](protocols.md#signoff) is complete and signed off. Clone integration
+and broader design discussions have separate task records linked from the parent.
