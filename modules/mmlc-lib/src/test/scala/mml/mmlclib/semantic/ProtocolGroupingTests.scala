@@ -591,10 +591,19 @@ class ProtocolGroupingTests extends BaseEffFunSuite:
         .getOrElse(fail("Expected the addition reference"))
 
       assertEquals(
-        checked.visibleErrors.map(_.message),
-        Vector(
-          "Operator '+' has conflicting precedence or associativity for the same arity"
-        )
+        checked.visibleErrors.map {
+          case SemanticError
+                .ProtocolErrorFound(ProtocolError.OperatorGroupingConflict(first, other), _) =>
+            assert(first.id.nonEmpty)
+            assert(other.id.nonEmpty)
+            assertNotEquals(first.id, other.id)
+            (
+              mml.mmlclib.ast.queries.DeclarationQueries.sourceName(first),
+              mml.mmlclib.ast.queries.DeclarationQueries.sourceName(other)
+            )
+          case other => fail(s"Expected grouping conflict, got $other")
+        },
+        Vector(("+", "+"))
       )
       assert(
         OperatorQueries
@@ -618,10 +627,19 @@ class ProtocolGroupingTests extends BaseEffFunSuite:
         .getOrElse(fail("Expected the remainder reference"))
 
       assertEquals(
-        checked.visibleErrors.map(_.message),
-        Vector(
-          "Operator '%' has conflicting precedence or associativity for the same arity"
-        )
+        checked.visibleErrors.map {
+          case SemanticError
+                .ProtocolErrorFound(ProtocolError.OperatorGroupingConflict(first, other), _) =>
+            assert(first.id.nonEmpty)
+            assert(other.id.nonEmpty)
+            assertNotEquals(first.id, other.id)
+            (
+              mml.mmlclib.ast.queries.DeclarationQueries.sourceName(first),
+              mml.mmlclib.ast.queries.DeclarationQueries.sourceName(other)
+            )
+          case other => fail(s"Expected grouping conflict, got $other")
+        },
+        Vector(("%", "%"))
       )
       assert(
         OperatorQueries

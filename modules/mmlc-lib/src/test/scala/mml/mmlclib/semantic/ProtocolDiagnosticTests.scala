@@ -138,7 +138,7 @@ class ProtocolDiagnosticTests extends BaseEffFunSuite:
       assertEquals(
         Diagnostics.fromCompilerState(state).map(_.message).toSet,
         Set(
-          "Undefined reference: missing",
+          "Undefined reference: 'missing'",
           "Operator '<+>' has conflicting precedence or associativity for the same arity"
         )
       )

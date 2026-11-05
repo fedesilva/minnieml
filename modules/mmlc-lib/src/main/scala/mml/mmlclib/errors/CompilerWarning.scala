@@ -1,8 +1,7 @@
 package mml.mmlclib.errors
 
-import mml.mmlclib.ast.LinkEntry
+import mml.mmlclib.ast.{Bnd, LinkEntry}
 
 enum CompilerWarning:
-  case Generic(message: String)
   case DiscardedLinkDirective(entry: LinkEntry)
-  case TailRecPatternUnsupported(functionName: String, reason: String)
+  case TailRecPatternUnsupported(binding: Bnd)

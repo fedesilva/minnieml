@@ -8,6 +8,34 @@ import mml.mmlclib.test.BaseEffFunSuite
 
 class ProtocolParserTests extends BaseEffFunSuite:
 
+  private def reasons(module: Module): List[SyntaxError] =
+    def flatten(reason: SyntaxError): List[SyntaxError] = reason match
+      case SyntaxError.Group(errors) => errors.flatMap(error => flatten(error.reason))
+      case reason => List(reason)
+    flatten(error(module).reason)
+
+  test("grouped recovery retains repeated failures with their own source fragments") {
+    val source = "protocol Eq 'T = fn first(x): Bool; fn second(y): Bool; ;"
+    justParse(source).map { module =>
+      val nested = error(module).reason match
+        case SyntaxError.Group(errors) => errors
+        case other => fail(s"Expected grouped signature errors, got $other")
+      assertEquals(nested.map(_.reason), List.fill(2)(SyntaxError.MissingSignatureTypes))
+      val info      = SourceInfo(source)
+      val fragments = List("fn first(x): Bool;", "fn second(y): Bool;")
+      val expected = fragments.map { fragment =>
+        val start = source.indexOf(fragment)
+        SrcSpan(info.pointAt(start), info.pointAt(start + fragment.length))
+      }
+      assertEquals(nested.flatMap(_.spanOpt), expected)
+      assertEquals(nested.flatMap(_.failedCode), fragments)
+      assertEquals(
+        mml.mmlclib.util.error.print.syntaxMessage(error(module).reason),
+        "Protocol signatures require parameter and return types"
+      )
+    }
+  }
+
   test("a protocol declares one type parameter and a required named signature") {
     val source = "protocol Eq 'T = fn equal(left: 'T, right: 'T): Bool; ;"
     parseNotFailed(source).map { module =>
@@ -165,7 +193,7 @@ class ProtocolParserTests extends BaseEffFunSuite:
 
   test("a default implementation is rejected and the following declaration survives") {
     justParse("protocol Eq 'T = fn equal(x: 'T): Bool = true;; ;\nlet after = 1;").map { module =>
-      assertEquals(error(module).message, "Default protocol implementations are not supported")
+      assertEquals(reasons(module), List(SyntaxError.DefaultProtocolImplementation))
       assertEquals(module.members.collect { case b: Bnd => b.name }, List("after"))
     }
   }
@@ -173,36 +201,36 @@ class ProtocolParserTests extends BaseEffFunSuite:
   test("multiple protocol parameters receive a focused unsupported diagnostic") {
     justParse("protocol Pair 'A 'B = fn first(x: 'A): 'A; ;").map { module =>
       assertEquals(
-        error(module).message,
-        "Protocols require exactly one type parameter; multiple parameters are not supported"
+        reasons(module),
+        List(SyntaxError.ProtocolParameterCount)
       )
     }
   }
 
   test("protocol prerequisites receive a focused unsupported diagnostic") {
     justParse("protocol Monoid 'T: Semigroup = fn empty(): 'T; ;").map { module =>
-      assertEquals(error(module).message, "Protocol prerequisites are not supported")
+      assertEquals(reasons(module), List(SyntaxError.ProtocolPrerequisites))
     }
   }
 
   test("an instance with a type variable is rejected") {
     justParse("instance Eq 'T = fn equal(x, y) = true;; ;").map { module =>
       assertEquals(
-        error(module).message,
-        "Parameterized instances and instance constraints are not supported"
+        reasons(module),
+        List(SyntaxError.ParameterizedInstance)
       )
     }
   }
 
   test("a signature cannot introduce a member-local type variable") {
     justParse("protocol Convert 'T = fn convert(x: 'T): 'U; ;").map { module =>
-      assertEquals(error(module).message, "Member-local type variables are not supported")
+      assertEquals(reasons(module), List(SyntaxError.MemberTypeVariables))
     }
   }
 
   test("missing signature annotations are rejected") {
     justParse("protocol Eq 'T = fn equal(x, y); ;").map { module =>
-      assertEquals(error(module).message, "Protocol signatures require parameter and return types")
+      assertEquals(reasons(module), List(SyntaxError.MissingSignatureTypes))
     }
   }
 
@@ -211,8 +239,8 @@ class ProtocolParserTests extends BaseEffFunSuite:
       "protocol Eq 'T = fn equal(x: 'T): Bool\nfn other(x): Bool; ;\nlet after = 1;"
     ).map { module =>
       assertEquals(
-        error(module).message,
-        "Expected ';'; Protocol signatures require parameter and return types"
+        reasons(module),
+        List(SyntaxError.ExpectedToken(";"), SyntaxError.MissingSignatureTypes)
       )
       assertEquals(module.members.collect { case b: Bnd => b.name }, List("after"))
     }
@@ -229,21 +257,21 @@ class ProtocolParserTests extends BaseEffFunSuite:
 
   test("missing protocol equals is diagnosed without losing the following declaration") {
     justParse("protocol Eq 'T fn equal(x: 'T): Bool; ;\nlet after = 1;").map { module =>
-      assertEquals(error(module).message, "Expected '='")
+      assertEquals(reasons(module), List(SyntaxError.ExpectedToken("=")))
       assertEquals(module.members.collect { case b: Bnd => b.name }, List("after"))
     }
   }
 
   test("missing protocol terminator leaves a following value declaration intact") {
     justParse("protocol Eq 'T = fn equal(x: 'T): Bool;\nlet after = 1;").map { module =>
-      assertEquals(error(module).message, "Expected ';'")
+      assertEquals(reasons(module), List(SyntaxError.ExpectedToken(";")))
       assertEquals(module.members.collect { case b: Bnd => b.name }, List("after"))
     }
   }
 
   test("member where clauses are diagnosed as deferred syntax") {
     justParse("protocol Copy 'T = fn copy(x: 'T): 'T where 'T: Clone; ;").map { module =>
-      assertEquals(error(module).message, "Member constraints are not supported")
+      assertEquals(reasons(module), List(SyntaxError.MemberConstraints))
     }
   }
 
@@ -253,7 +281,10 @@ class ProtocolParserTests extends BaseEffFunSuite:
       pub protocol Keep 'T = fn keep(value: 'T): 'T; ;
     """
     justParse(source).map { module =>
-      assertEquals(error(module).message, "Expected '='; Expected ';'")
+      assertEquals(
+        reasons(module),
+        List(SyntaxError.ExpectedToken("="), SyntaxError.ExpectedToken(";"))
+      )
       assertEquals(protocol(module).name, "Keep")
       assertEquals(protocol(module).visibility, Visibility.Public)
       assert(!written(error(module), source).contains("pub"))
@@ -266,7 +297,10 @@ class ProtocolParserTests extends BaseEffFunSuite:
       priv protocol Keep 'T = fn keep(value: 'T): 'T; ;
     """
     justParse(source).map { module =>
-      assertEquals(error(module).message, "Expected '='; Expected ';'")
+      assertEquals(
+        reasons(module),
+        List(SyntaxError.ExpectedToken("="), SyntaxError.ExpectedToken(";"))
+      )
       assertEquals(protocol(module).name, "Keep")
       assertEquals(protocol(module).visibility, Visibility.Private)
       assert(!written(error(module), source).contains("priv"))
@@ -279,7 +313,7 @@ class ProtocolParserTests extends BaseEffFunSuite:
       type Count = Int;
     """
     justParse(source).map { module =>
-      assert(error(module).message.contains("Member constraints are not supported"))
+      assert(reasons(module).contains(SyntaxError.MemberConstraints))
       assert(!written(error(module), source).contains("type Count"))
       assertEquals(
         module.members.collect { case declaration: TypeAlias => declaration.name },
@@ -294,7 +328,7 @@ class ProtocolParserTests extends BaseEffFunSuite:
       struct Count { value: Int };
     """
     justParse(source).map { module =>
-      assert(error(module).message.contains("Member constraints are not supported"))
+      assert(reasons(module).contains(SyntaxError.MemberConstraints))
       assert(!written(error(module), source).contains("struct Count"))
       assertEquals(
         module.members.collect { case declaration: TypeStruct => declaration.name },
@@ -311,7 +345,7 @@ class ProtocolParserTests extends BaseEffFunSuite:
 
   test("malformed parameter syntax retains the following top-level declaration") {
     justParse("protocol Eq 'T = fn equal(x: 'T, ???): Bool; ;\nlet after = 1;").map { module =>
-      assertEquals(error(module).message, "Invalid parameter list")
+      assertEquals(reasons(module), List(SyntaxError.InvalidParameterList))
       assertEquals(module.members.collect { case b: Bnd => b.name }, List("after"))
     }
   }
@@ -388,22 +422,28 @@ class ProtocolParserTests extends BaseEffFunSuite:
   test("a parameterized instance inside parentheses receives a focused diagnostic") {
     justParse("instance Eq (Option 'T) = fn equal(x, y) = true;; ;").map { module =>
       assertEquals(
-        error(module).message,
-        "Parameterized instances and instance constraints are not supported"
+        reasons(module),
+        List(SyntaxError.ParameterizedInstance)
       )
     }
   }
 
   test("a required function cannot use a reserved word as its name") {
     justParse("protocol Bad 'T = fn if(x: 'T): 'T; ;").map { module =>
-      assertEquals(error(module).message, "Invalid identifier 'if'")
+      assertEquals(
+        reasons(module),
+        List(SyntaxError.InvalidIdentifier("if", IdentifierKind.Binding, false))
+      )
       assertEquals(module.members.collect { case p: Protocol => p }, Nil)
     }
   }
 
   test("an instance function cannot use a reserved word as its name") {
     justParse("instance Bad Int = fn if(x) = x;; ;").map { module =>
-      assertEquals(error(module).message, "Invalid identifier 'if'")
+      assertEquals(
+        reasons(module),
+        List(SyntaxError.InvalidIdentifier("if", IdentifierKind.Binding, false))
+      )
       assertEquals(module.members.collect { case i: ProtocolInstance => i }, Nil)
     }
   }

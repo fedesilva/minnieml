@@ -572,7 +572,7 @@ class NumSelectionTests extends BaseEffFunSuite:
         case Vector(SemanticError.InvalidExpression(literal, message, _)) =>
           val span = literal.spanOpt.get
           assertEquals(source.substring(span.start.index, span.end.index), "2147483648")
-          assertEquals(message, "Integer literal is outside the Int32 range")
+          assertEquals(message, ExpressionProblem.IntegerOutOfRange)
         case other => fail(s"Expected the positive literal range diagnostic, got $other")
     }
 

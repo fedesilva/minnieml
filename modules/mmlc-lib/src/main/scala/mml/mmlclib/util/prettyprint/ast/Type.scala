@@ -1,6 +1,7 @@
 package mml.mmlclib.util.prettyprint.ast
 
 import mml.mmlclib.ast.*
+import mml.mmlclib.util.error.print.diagnosticMessage
 
 def prettyPrintTypeSpec(
   typeSpec:        Option[Type],
@@ -88,7 +89,7 @@ def prettyPrintTypeSpec(
     case Some(error: ParseTypeError) =>
       val spanStr    = if showSourceSpans then s" ${printSourceOrigin(error.source)}" else ""
       val failedCode = error.failedCode.fold("")(code => s"\n  code: $code")
-      s"ParseTypeError$spanStr\n  message: ${error.message}$failedCode"
+      s"ParseTypeError$spanStr\n  message: ${diagnosticMessage(error)}$failedCode"
 
     case Some(inv: TypeResolutionError) =>
       val spanStr = if showSourceSpans then s" ${printSourceOrigin(inv.source)}" else ""

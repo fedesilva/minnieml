@@ -568,7 +568,7 @@ class PartialApplicationElaboratorTests extends BaseEffFunSuite:
             original.value.copy(terms = original.value.terms ++ original.value.terms)
           else original.value
         val prior =
-          SemanticError.InvalidExpression(payload, "Retained frontend failure", "frontend")
+          SemanticError.InvalidExpression(payload, ExpressionProblem.InvalidStructure, "frontend")
         val (diagnostics, roots) = typed.diagnostics.emit(prior)
         val invalid = InvalidExpression(
           payload.source,

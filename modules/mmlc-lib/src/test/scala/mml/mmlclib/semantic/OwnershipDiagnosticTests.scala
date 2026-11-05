@@ -191,7 +191,7 @@ class OwnershipDiagnosticTests extends BaseEffFunSuite:
         assertEquals(result.errors.size, 2, result.errors.toString)
         assertEquals(errors.size, 2)
         val argumentErrors =
-          errors.filter(_.msg == "A call-once function requires a consuming parameter")
+          errors.filter(_.reason == OwnershipError.CallOnceRequiresConsuming)
         assertEquals(argumentErrors.size, 1)
         val error = argumentErrors.head
         val span  = error.expr.spanOpt.getOrElse(fail("Expected source argument location"))

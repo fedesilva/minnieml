@@ -175,7 +175,7 @@ class CallableTypeTests extends BaseEffFunSuite:
     """).map { result =>
       assert(result.errors.exists {
         case error: SemanticError.InvalidExpression =>
-          error.msg == "An ownership sink cannot receive a value with borrowed ownership"
+          error.reason == OwnershipError.BorrowedSink
         case _ => false
       })
     }
@@ -278,8 +278,8 @@ class CallableTypeTests extends BaseEffFunSuite:
           }
           assertEquals(errors.size, 1, result.errors.toString)
           assertEquals(
-            errors.head.msg,
-            "An ownership sink cannot receive a value with borrowed ownership"
+            errors.head.reason,
+            OwnershipError.BorrowedSink
           )
       }
     }

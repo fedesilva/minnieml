@@ -6,10 +6,6 @@ import mml.mmlclib.ast.*
 
 import MmlWhitespace.*
 
-private val invalidLinkMessage =
-  "Expected @link[\"library\", \"library\"]; " +
-    "with nonempty library names, not paths or linker arguments"
-
 private def memberBoundary(using P[Any]): P[Unit] =
   P(End | "@link" | "/*" | declarationStartP)
 
@@ -65,7 +61,7 @@ private def failedLinkP(info: SourceInfo)(using P[Any]): P[ParsingMemberError] =
     .map { case (start, end) =>
       ParsingMemberError(
         span(start, end),
-        invalidLinkMessage,
+        SyntaxError.InvalidLink,
         info.text.substring(start.index, end.index).some
       )
     }
@@ -78,7 +74,7 @@ private[parser] def linkHeaderP(
       if directive.entries.forall(entry => validLinkName(entry.name)) then
         directive.asRight[ParsingMemberError]
       else
-        ParsingMemberError(directive.span, invalidLinkMessage, directive.syntax.some)
+        ParsingMemberError(directive.span, SyntaxError.InvalidLink, directive.syntax.some)
           .asLeft[LinkDirective]
     } |
       failedLinkP(info).map(_.asLeft[LinkDirective])
@@ -90,7 +86,7 @@ private[parser] def misplacedLinkP(info: SourceInfo)(using P[Any]): P[Member] =
     case Right(directive) =>
       ParsingMemberError(
         directive.span,
-        "@link must occur once, before all module members",
+        SyntaxError.MisplacedLink,
         directive.syntax.some
       )
   }

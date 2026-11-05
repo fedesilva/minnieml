@@ -5,6 +5,7 @@ import mml.mmlclib.ast.*
 import mml.mmlclib.codegen.emitter.alias.AliasScopeEmitter
 import mml.mmlclib.codegen.emitter.{
   CodeGenError,
+  CodeGenReason,
   CodeGenState,
   CompileResult,
   emitCall,
@@ -29,7 +30,7 @@ private val holeFunctionParamTypes = List("i64", "i64", "i64", "i64")
 def compileHole(hole: Hole, state: CodeGenState): Either[CodeGenError, CompileResult] =
   hole.spanOpt match
     case None =>
-      Left(CodeGenError("Hole expression is missing source span", Some(hole)))
+      Left(CodeGenError(CodeGenReason.MissingHoleSpan, Some(hole)))
     case Some(span) =>
       val stateWithDecl =
         state.withFunctionDeclaration(holeFunctionName, "void", holeFunctionParamTypes)
@@ -71,18 +72,12 @@ def compileHole(hole: Hole, state: CodeGenState): Either[CodeGenError, CompileRe
                   CompileResult(loadReg, stateWithLoad, false, typeName).asRight
                 case Left(_) =>
                   Left(
-                    CodeGenError(
-                      s"Could not determine MML type name for hole from spec: $typeSpec",
-                      Some(hole)
-                    )
+                    CodeGenError(CodeGenReason.MissingHoleNominalType(typeSpec), Some(hole))
                   )
             case Left(err) => Left(err)
         case None =>
           Left(
-            CodeGenError(
-              "Missing type information for hole - TypeChecker should have provided this",
-              Some(hole)
-            )
+            CodeGenError(CodeGenReason.MissingHoleType, Some(hole))
           )
 
 // ============================================================================
@@ -100,28 +95,27 @@ def compileLiteralString(
   lit:   LiteralString,
   state: CodeGenState
 ): Either[CodeGenError, CompileResult] =
-  lit.typeSpec.toRight(CodeGenError("LiteralString missing type specification", lit.some)).map {
-    _ =>
-      val (withConstant, constant) = state.addStringConstant(lit.value)
-      val strLen                   = constant.byteLength
-      val ptrReg                   = withConstant.nextRegister
-      val lengthReg                = ptrReg + 1
-      val resultReg                = lengthReg + 1
-      val gep = emitGetElementPtr(
-        ptrReg,
-        s"[$strLen x i8]",
-        s"[$strLen x i8]*",
-        s"@${constant.name}",
-        List(("i64", "0"), ("i64", "0"))
-      )
-      val result = withConstant
-        .withRegister(resultReg + 1)
-        .emitAll(
-          List(
-            gep,
-            s"  %$lengthReg = insertvalue %struct.String undef, i32 $strLen, 0",
-            s"  %$resultReg = insertvalue %struct.String %$lengthReg, ptr %$ptrReg, 1"
-          )
+  lit.typeSpec.toRight(CodeGenError(CodeGenReason.MissingStringLiteralType, lit.some)).map { _ =>
+    val (withConstant, constant) = state.addStringConstant(lit.value)
+    val strLen                   = constant.byteLength
+    val ptrReg                   = withConstant.nextRegister
+    val lengthReg                = ptrReg + 1
+    val resultReg                = lengthReg + 1
+    val gep = emitGetElementPtr(
+      ptrReg,
+      s"[$strLen x i8]",
+      s"[$strLen x i8]*",
+      s"@${constant.name}",
+      List(("i64", "0"), ("i64", "0"))
+    )
+    val result = withConstant
+      .withRegister(resultReg + 1)
+      .emitAll(
+        List(
+          gep,
+          s"  %$lengthReg = insertvalue %struct.String undef, i32 $strLen, 0",
+          s"  %$resultReg = insertvalue %struct.String %$lengthReg, ptr %$ptrReg, 1"
         )
-      CompileResult(resultReg, result, false, "String")
+      )
+    CompileResult(resultReg, result, false, "String")
   }

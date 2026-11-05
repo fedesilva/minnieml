@@ -10,7 +10,7 @@ import mml.mmlclib.lsp.{DiagnosticSeverity, Diagnostics, Range}
 import mml.mmlclib.parser.SourceInfo
 import mml.mmlclib.test.BaseEffFunSuite
 import mml.mmlclib.test.ast.*
-import mml.mmlclib.util.error.print.ErrorPrinter
+import mml.mmlclib.util.error.print.{ErrorPrinter, diagnosticMessage}
 
 import java.nio.file.Files
 
@@ -114,8 +114,13 @@ class BindingRecoveryIntegrationTests extends BaseEffFunSuite:
       case other => fail(s"Expected normalized independent addition, got $other")
 
   List(
-    ("missing equals", "fn broken(x: Int): Int x + 1;;", "Expected '='", ""),
-    ("malformed body", "fn broken(x: Int): Int = x + 1 @;;", "Invalid expression syntax", "@")
+    ("missing equals", "fn broken(x: Int): Int x + 1;;", SyntaxError.ExpectedToken("="), ""),
+    (
+      "malformed body",
+      "fn broken(x: Int): Int = x + 1 @;;",
+      SyntaxError.InvalidExpressionSyntax,
+      "@"
+    )
   ).foreach { (label, declaration, message, fragment) =>
     test(s"a complete header retains parameter scope through $label"):
       val code = s"$declaration let after = 7;"
@@ -131,7 +136,7 @@ class BindingRecoveryIntegrationTests extends BaseEffFunSuite:
           else
             val point = SourceInfo(code).pointAt(code.indexOf("x + 1"))
             SrcSpan(point, point)
-        assertEquals(error.message, message)
+        assertEquals(error.reason, message)
         assertEquals(error.failedCode, Option.when(fragment.nonEmpty)(fragment))
         assertEquals(error.spanOpt, expectedSpan.some)
         assertEquals(original.params.map(_.nameNode.spanOpt), List(spanOf(code, "x").some))
@@ -191,7 +196,7 @@ class BindingRecoveryIntegrationTests extends BaseEffFunSuite:
         assert(originalFunction.typeSpec.isEmpty)
         assert(originalFunction.typeAsc.isEmpty)
         val error = onlyParseError(originalFunction)
-        assertEquals(error.message, "Invalid parameter list")
+        assertEquals(error.reason, SyntaxError.InvalidParameterList)
         assertEquals(error.failedCode, Option.when(fragment.nonEmpty)(fragment))
         val broken       = binding(state.module, "broken")
         val retained     = function(broken.value)
@@ -344,7 +349,7 @@ class BindingRecoveryIntegrationTests extends BaseEffFunSuite:
       yield
         val errors = parsed.members.collect { case error: ParsingIdError => error }
         assertEquals(errors.size, 1)
-        assertEquals(errors.head.message, "Expected binding name")
+        assertEquals(errors.head.reason, SyntaxError.ExpectedBindingName)
         assertEquals(errors.head.invalidId, "")
         assertEquals(errors.head.failedCode, declaration.some)
         assertEquals(errors.head.spanOpt, spanOf(code, declaration).some)
@@ -372,7 +377,8 @@ class BindingRecoveryIntegrationTests extends BaseEffFunSuite:
           val point = info.pointAt(code.indexOf(": bad"))
           SrcSpan(point, point)
       val nameMessage =
-        if name.isEmpty then "Expected binding name" else s"Invalid identifier '$name'"
+        if name.isEmpty then SyntaxError.ExpectedBindingName
+        else SyntaxError.InvalidIdentifier(name, IdentifierKind.Binding, false)
       val typeSpans        = typeFragments.map(spanOf(code, _))
       val initializerStart = code.indexOf(s"= $initializer") + 2
       val initializerSpan =
@@ -389,12 +395,12 @@ class BindingRecoveryIntegrationTests extends BaseEffFunSuite:
           val annotations = malformedAnnotations(retained.initializer)
           assert(!retained.parameter.source.isFromSource)
           assert(!retained.parameter.nameNode.source.isFromSource)
-          assertEquals(nameError.message, nameMessage)
+          assertEquals(nameError.reason, nameMessage)
           assertEquals(nameError.spanOpt, nameSpan.some)
           assertEquals(nameError.failedCode, Option.when(name.nonEmpty)(name))
           assertEquals(
-            annotations.map(_.message),
-            List.fill(typeFragments.size)("Invalid type syntax")
+            annotations.map(_.reason),
+            List.fill(typeFragments.size)(SyntaxError.InvalidTypeSyntax)
           )
           assertEquals(annotations.map(_.spanOpt), typeSpans.map(_.some))
           assertEquals(annotations.map(_.failedCode), typeFragments.map(_.some))
@@ -432,7 +438,10 @@ class BindingRecoveryIntegrationTests extends BaseEffFunSuite:
           val diagnostics = Diagnostics
             .fromCompilerState(current)
             .sortBy(diagnostic => (diagnostic.range.start.line, diagnostic.range.start.character))
-          val expected = (s"Parsing error: $nameMessage", Range.fromSrcSpan(nameSpan)) ::
+          val expected = (
+            s"Parsing error: ${mml.mmlclib.util.error.print.syntaxMessage(nameMessage)}",
+            Range.fromSrcSpan(nameSpan)
+          ) ::
             typeSpans.map(span =>
               ("Parse error in type: Invalid type syntax", Range.fromSrcSpan(span))
             )
@@ -558,7 +567,7 @@ class BindingRecoveryIntegrationTests extends BaseEffFunSuite:
       val diagnostics = Diagnostics.fromCompilerState(state)
       assertEquals(
         diagnostics.map(_.message),
-        List("Parsing error: Invalid expression syntax", "Undefined reference: missing")
+        List("Parsing error: Invalid expression syntax", "Undefined reference: 'missing'")
       )
       assertEquals(
         diagnostics.map(_.range),
@@ -581,7 +590,7 @@ class BindingRecoveryIntegrationTests extends BaseEffFunSuite:
       yield
         assertEquals(exit, ExitCode.Error)
         val rendered = messages.mkString("\n")
-        List("Parser error", "Undefined reference 'missing'").foreach { header =>
+        List("Parser error", "Undefined reference: 'missing'").foreach { header =>
           assertEquals(rendered.linesIterator.count(_.contains(header)), 1, rendered)
         }
         assert(rendered.contains("Invalid expression syntax"), rendered)
@@ -593,7 +602,7 @@ class BindingRecoveryIntegrationTests extends BaseEffFunSuite:
           )
         }
         assertEquals(state.visibleErrors.size, 2)
-        val expected = state.visibleErrors.map(_.message).mkString("\n").some
+        val expected = state.visibleErrors.map(diagnosticMessage).mkString("\n").some
         assertEquals(ast.left.toOption, expected)
         assertEquals(ir.left.toOption, expected)
         assertEquals(native.left.toOption, expected)

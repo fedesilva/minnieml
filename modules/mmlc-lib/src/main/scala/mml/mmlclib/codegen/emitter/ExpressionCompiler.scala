@@ -65,18 +65,15 @@ def compileTerm(
         case Some(entry) =>
           entry match
             case ScopeEntry.KnownCallable(id, _, _) if !ref.resolvedId.contains(id) =>
-              CodeGenError("Known callable reference identity mismatch", ref.some).asLeft
+              CodeGenError(CodeGenReason.KnownCallableIdentityMismatch, ref.some).asLeft
             case ScopeEntry.Callable(id, _) if !ref.resolvedId.contains(id) =>
-              CodeGenError("Local callable reference identity mismatch", ref.some).asLeft
+              CodeGenError(CodeGenReason.LocalCallableIdentityMismatch, ref.some).asLeft
             case _ => ScopeEntry.materialize(entry, state)
         case None if !ref.resolvedId.flatMap(state.resolvables.lookup).exists {
               case _: Bnd => true
               case _ => false
             } =>
-          CodeGenError(
-            s"Missing local binding or unresolved reference '${ref.name}'",
-            ref.some
-          ).asLeft
+          CodeGenError(CodeGenReason.MissingLocalBinding(ref), ref.some).asLeft
         case None =>
           // Only resolved module bindings can load global storage.
           ref.typeSpec match {
@@ -107,19 +104,13 @@ def compileTerm(
                       ).asRight
 
                     case Left(_) =>
-                      CodeGenError(
-                        s"Could not determine MML type name for global reference '${ref.name}'",
-                        ref.some
-                      ).asLeft
+                      CodeGenError(CodeGenReason.MissingGlobalNominalType(ref), ref.some).asLeft
                   }
                 case Left(err) =>
                   err.asLeft
               }
             case None =>
-              CodeGenError(
-                s"Missing type information for global reference '${ref.name}' - TypeChecker should have provided this",
-                ref.some
-              ).asLeft
+              CodeGenError(CodeGenReason.MissingGlobalType(ref), ref.some).asLeft
           }
       }
     }
@@ -137,7 +128,7 @@ def compileTerm(
       compileOwnershipBinding(binding, state, functionScope)
 
     case result: YieldOwnership =>
-      CodeGenError("Ownership result requires an enclosing ownership binding", result.some).asLeft
+      CodeGenError(CodeGenReason.OwnershipResultWithoutBinding, result.some).asLeft
 
     case destruction: Destruction =>
       compileDestruction(destruction, state, functionScope)
@@ -148,17 +139,14 @@ def compileTerm(
     case impl @ NativeImpl(_, _, _, _, _, _) => {
       // Native implementation should be handled at function declaration level (compileBndLambda).
       // If reached here, it implies it's being used as an expression, which is invalid.
-      CodeGenError(
-        "NativeImpl encountered in expression context - this is a malformed AST or compiler bug",
-        impl.some
-      ).asLeft
+      CodeGenError(CodeGenReason.NativeExpression, impl.some).asLeft
     }
 
     case lambda: Lambda =>
       compileLambdaLiteral(lambda, state, functionScope)
 
     case other =>
-      CodeGenError(s"Unsupported term: ${other.getClass.getSimpleName}", other.some).asLeft
+      CodeGenError(CodeGenReason.UnsupportedTerm(other), other.some).asLeft
   }
 }
 
@@ -177,7 +165,7 @@ private[emitter] def compileLambdaLiteral(
   val typeFn = lambda.typeSpec match
     case Some(tf: TypeFn) => tf.asRight
     case other =>
-      CodeGenError(s"Lambda missing TypeFn typeSpec, got: $other", lambda.some).asLeft
+      CodeGenError(CodeGenReason.InvalidLambdaType(other), lambda.some).asLeft
 
   typeFn.flatMap { tf =>
     val allocated = preAllocatedName.getOrElse(state.allocAnonFnName)
@@ -459,10 +447,7 @@ private def lambdaReferencesBinding(
     case Some(param) =>
       param.id match
         case None =>
-          CodeGenError(
-            s"Missing semantic ID for closure binding '${param.name}'",
-            lambda.some
-          ).asLeft
+          CodeGenError(CodeGenReason.MissingClosureBindingIdentity(param), lambda.some).asLeft
         case Some(targetId) => exprReferencesBinding(lambda.body, targetId).asRight
 
 private def exprReferencesBinding(expr: Expr, targetId: String): Boolean =
@@ -520,13 +505,13 @@ private def emitCallSiteEnv(
   for
     envStruct <- ClosureEnvironments
       .layout(lambda, state.resolvables)
-      .leftMap(error => CodeGenError(error.message, error.lambda.some))
+      .leftMap(error => CodeGenError(CodeGenReason.ClosureLayout(error), error.lambda.some))
     plan <- envStruct.id
       .flatMap(state.closureEnvironments.get)
-      .toRight(CodeGenError("Missing physical closure environment plan", lambda.some))
+      .toRight(CodeGenError(CodeGenReason.MissingPhysicalEnvironment, lambda.some))
     captureTypes <- plan.runtimeCaptures.traverse { capture =>
       capture.storage.field
-        .toRight(CodeGenError("Missing runtime capture field", lambda.some))
+        .toRight(CodeGenError(CodeGenReason.MissingRuntimeCapture, lambda.some))
         .flatMap(field => getLlvmType(field.typeSpec, state).map(tpe => (capture.capture, tpe)))
     }
     captureValues <- plan.runtimeCaptures.foldLeft(
@@ -551,7 +536,7 @@ private def emitCallSiteEnv(
         .flatMap(DestructionTargets.forEnvironment(_, state.resolvables))
         .flatMap(state.resolvables.lookup)
         .collect { case binding: Bnd => binding }
-        .toRight(CodeGenError("Missing closure environment destructor", lambda.some))
+        .toRight(CodeGenError(CodeGenReason.MissingEnvironmentDestructor, lambda.some))
     }
     result <- emitEnvironmentStorage(
       fnName,
@@ -694,7 +679,7 @@ private def prepareCapturedValue(
       binding <- current.resolvables
         .lookup(id)
         .collect { case value: Bnd => value }
-        .toRight(CodeGenError("Missing capture clone target", capture.ref.some))
+        .toRight(CodeGenError(CodeGenReason.MissingCaptureCloneTarget, capture.ref.some))
       // The capture is already evaluated. Clear its projection and bind both lookup keys to
       // that operand; literal materialization reuses it when ordinary call lowering reads input.
       input     = capture.ref.copy(qualifier = None)
@@ -715,10 +700,7 @@ private def prepareCapturedValue(
 
     case Capture.CapturedConditional(_, witness, id) =>
       if witness.resolvedId.flatMap(scope.get).isEmpty then
-        CodeGenError(
-          "Conditional capture witness is outside its creation scope",
-          witness.some
-        ).asLeft
+        CodeGenError(CodeGenReason.CaptureWitnessOutOfScope, witness.some).asLeft
       else
         compileTerm(witness, state, scope).flatMap: condition =>
           val ownedLabel = s"capture_owned${condition.state.nextRegister}"
@@ -831,7 +813,7 @@ private def compileSelectionRef(
 ): Either[CodeGenError, CompileResult] =
   ref.qualifier match
     case None =>
-      CodeGenError(s"Selection ref missing qualifier for '${ref.name}'", ref.some).asLeft
+      CodeGenError(CodeGenReason.MissingSelectionQualifier(ref), ref.some).asLeft
     case Some(qualifier) =>
       compileTerm(qualifier, state, functionScope).flatMap { qualifierRes =>
         val baseTypeSpec = qualifier.typeSpec
@@ -841,10 +823,7 @@ private def compileSelectionRef(
               case Some(structDef) =>
                 val fieldIndex = structDef.fields.indexWhere(_.name == ref.name)
                 if fieldIndex < 0 then
-                  CodeGenError(
-                    s"Unknown struct field '${ref.name}' for selection",
-                    ref.some
-                  ).asLeft
+                  CodeGenError(CodeGenReason.UnknownSelectionField(ref), ref.some).asLeft
                 else
                   val structTypeE = getLlvmType(baseType, qualifierRes.state)
                   val fieldType   = structDef.fields(fieldIndex).typeSpec
@@ -863,21 +842,12 @@ private def compileSelectionRef(
                           qualifierRes.exitBlock
                         ).asRight
                       case Left(_) =>
-                        CodeGenError(
-                          s"Could not determine type name for selected field '${ref.name}'",
-                          ref.some
-                        ).asLeft
+                        CodeGenError(CodeGenReason.MissingSelectedFieldType(ref), ref.some).asLeft
                   }
               case None =>
-                CodeGenError(
-                  s"Selection base is not a struct for field '${ref.name}'",
-                  ref.some
-                ).asLeft
+                CodeGenError(CodeGenReason.NonStructSelection(ref), ref.some).asLeft
           case None =>
-            CodeGenError(
-              s"Missing type information for selection base '${ref.name}'",
-              ref.some
-            ).asLeft
+            CodeGenError(CodeGenReason.MissingSelectionBaseType(ref), ref.some).asLeft
       }
 
 /** Compiles an expression.
@@ -916,7 +886,7 @@ def compileExpr(
         } =>
       compileUnaryOp(op, arg, state, functionScope)
     case _ =>
-      CodeGenError(s"Invalid expression structure", expr.some).asLeft
+      CodeGenError(CodeGenReason.InvalidExpressionStructure, expr.some).asLeft
   }
 }
 
@@ -1003,7 +973,7 @@ def compileApp(
           .exists(_.signature.paramTypes.size == allArgs.size) =>
       ScopeEntry
         .callable(ref, functionScope)
-        .toRight(CodeGenError("Missing local callable target", ref.some))
+        .toRight(CodeGenError(CodeGenReason.MissingLocalCallableTarget, ref.some))
         .flatMap(compileLocalCallableCall(_, allArgs, state, functionScope))
 
     case ref: Ref
@@ -1013,7 +983,7 @@ def compileApp(
           .exists(_.definition.signature.paramTypes.size == allArgs.size) =>
       state.callableTargetAnalysis
         .target(ref)
-        .toRight(CodeGenError("Missing proven callable target", ref.some))
+        .toRight(CodeGenError(CodeGenReason.MissingProvenCallableTarget, ref.some))
         .flatMap(compileKnownCallableCall(_, ref, allArgs, state, functionScope))
 
     case ref: Ref =>

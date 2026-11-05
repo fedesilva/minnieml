@@ -40,7 +40,7 @@ sealed trait Term extends AstNode, Typeable, FromSource:
   */
 case class ParseTermError(
   source:     SourceOrigin,
-  message:    String,
+  reason:     SyntaxError,
   failedCode: Option[String],
   causes:     Vector[DiagnosticId] = Vector.empty
 ) extends Term,
@@ -49,8 +49,8 @@ case class ParseTermError(
   final val typeAsc:  Option[Type] = None
 
 object ParseTermError:
-  def apply(span: SrcSpan, message: String, failedCode: Option[String]): ParseTermError =
-    new ParseTermError(SourceOrigin.Loc(span), message, failedCode)
+  def apply(span: SrcSpan, reason: SyntaxError, failedCode: Option[String]): ParseTermError =
+    new ParseTermError(SourceOrigin.Loc(span), reason, failedCode)
 
 case class Expr(
   source:   SourceOrigin,

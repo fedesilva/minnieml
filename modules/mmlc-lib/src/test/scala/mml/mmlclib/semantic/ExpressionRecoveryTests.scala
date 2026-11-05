@@ -75,7 +75,7 @@ class ExpressionRecoveryTests extends BaseEffFunSuite:
       assertEquals(scope.params.map(_.id), originalScope.params.map(_.id))
       assertAddition(scope.body, 3, 4, result.module)
       assertEquals(result.errors.count(_.isInstanceOf[SemanticError.InvalidExpressionFound]), 1)
-      assertEquals(result.visibleErrors.map(_.message), Vector("Undefined reference: 'missing'"))
+      assertEquals(result.visibleErrors.map(undefinedValueName), Vector("missing"))
       assertEquals(result.errors.size, 2)
       scope.params.foreach { param =>
         assertEquals(result.module.resolvables.lookup(param.id.get), Some(param))
@@ -94,8 +94,8 @@ class ExpressionRecoveryTests extends BaseEffFunSuite:
 
       assertEquals(initial.errors.size, 0)
       assertEquals(
-        result.errors.map(_.message),
-        Vector("Unexpected term after expression - expected an operator")
+        result.errors.map(expressionReason),
+        Vector(ExpressionProblem.TermWithoutOperator)
       )
       assertEquals(result.visibleErrors, result.errors)
       assertEquals(invalid.originalExpr, originalApplication.arg)
@@ -120,8 +120,8 @@ class ExpressionRecoveryTests extends BaseEffFunSuite:
       val failures = elements.take(2).map(onlyInvalid)
 
       assertEquals(
-        result.errors.map(_.message),
-        Vector.fill(2)("Unexpected term after expression - expected an operator")
+        result.errors.map(expressionReason),
+        Vector.fill(2)(ExpressionProblem.TermWithoutOperator)
       )
       assertEquals(failures.flatMap(_.causes).toVector, result.diagnostics.records.map(_.id))
       assertEquals(failures.flatMap(_.causes).distinct.size, 2)
@@ -145,7 +145,7 @@ class ExpressionRecoveryTests extends BaseEffFunSuite:
       assertEquals(group.size, 1)
       assertAddition(group.head.inner, 2, 3, result.module)
       assertEquals(result.errors.count(_.isInstanceOf[SemanticError.InvalidExpressionFound]), 1)
-      assertEquals(result.visibleErrors.map(_.message), Vector("Undefined reference: 'missing'"))
+      assertEquals(result.visibleErrors.map(undefinedValueName), Vector("missing"))
       assertEquals(invalid.causes, initial.diagnostics.records.map(_.id))
     }
 
@@ -164,7 +164,8 @@ class ExpressionRecoveryTests extends BaseEffFunSuite:
         initial.withModule(ResolvablesIndexer.refresh(initial.module.copy(members = members)))
       )
 
-      assertEquals(result.errors.map(_.message), Vector("Invalid expression"))
+      assertEquals(result.errors.size, 1)
+      assert(result.errors.head.isInstanceOf[SemanticError.InvalidExpressionFound])
       assertEquals(result.visibleErrors, result.errors)
       assertEquals(result.diagnostics.records.map(_.relation), Vector(DiagnosticRelation.Primary))
       assertEquals(

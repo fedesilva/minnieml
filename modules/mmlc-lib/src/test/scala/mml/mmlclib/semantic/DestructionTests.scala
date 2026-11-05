@@ -160,9 +160,16 @@ class DestructionTests extends BaseEffFunSuite:
 
       test(s"missing $kind destructor accumulates errors for every owned native capture") {
         semState(nativeCaptures(annotation, "")).map { result =>
-          val errors = result.errors.filter(_.message.contains("Missing registered destructor"))
+          val errors = result.errors.collect {
+            case SemanticError.InvalidExpression(
+                  _,
+                  reason: DestructionError.MissingRegisteredFieldDestructor,
+                  _
+                ) =>
+              reason
+          }
           assertEquals(errors.size, 2, result.errors.toString)
-          assert(errors.forall(_.message.contains(destructorName)))
+          assertEquals(errors.map(_.name), List.fill(2)(destructorName))
         }
       }
 
@@ -227,7 +234,14 @@ class DestructionTests extends BaseEffFunSuite:
         fn close_handle(h: $param): $result = @metal:ffi;;
       """
       semState(nativeCaptures(", free=close_handle", declaration)).map { state =>
-        val errors = state.errors.filter(_.message.contains("Incompatible destructor signature"))
+        val errors = state.errors.collect {
+          case SemanticError.InvalidExpression(
+                _,
+                reason: DestructionError.IncompatibleSignature,
+                _
+              ) =>
+            reason
+        }
         assertEquals(errors.size, 2, state.errors.toString)
       }
     }
@@ -245,30 +259,32 @@ class DestructionTests extends BaseEffFunSuite:
         List(LiteralUnit(SourceOrigin.Synth, closure.typeSpec)),
         typeSpec = closure.typeSpec
       )
-      val cases = List(
-        closure.copy(operand = wrongOperand) -> "requires a function",
-        closure.copy(targetId = "missing") -> "Missing destructor target",
-        closure.copy(targetId = "stdlib::bnd::println") -> "Incompatible destructor signature",
-        closure.copy(typeSpec = closure.operand.typeSpec) -> "result must be Unit",
-        env.copy(layoutId = "missing") -> "Missing closure environment layout",
-        env.copy(fields = env.fields :+ env.fields.head) -> "Duplicate field cleanup",
-        env.copy(fields = Nil) -> "Missing required field cleanup",
+      val cases: List[(Destruction, ExpressionError => Boolean)] = List(
+        closure.copy(operand = wrongOperand) -> (_ == DestructionError.NonFunctionClosure),
+        closure.copy(targetId = "missing") -> (_ == DestructionError.MissingTarget("missing")),
+        closure.copy(targetId = "stdlib::bnd::println") -> (_ == DestructionError
+          .IncompatibleSignature("stdlib::bnd::println")),
+        closure.copy(typeSpec = closure.operand.typeSpec) -> (_ == DestructionError.NonUnitResult),
+        env.copy(layoutId = "missing") -> (_ == DestructionError.MissingLayout("missing")),
         env.copy(fields =
-          List(FieldCleanup.Value("missing", "missing"))
-        ) -> "Missing destruction field",
-        env.copy(operand = closure.operand) -> "requires RawPtr",
+          env.fields :+ env.fields.head
+        ) -> (_ == DestructionError.DuplicateFieldCleanup),
+        env.copy(fields = Nil) -> (_.isInstanceOf[DestructionError.MissingFieldCleanup]),
+        env.copy(fields = List(FieldCleanup.Value("missing", "missing"))) -> (_ == DestructionError
+          .MissingField("missing")),
+        env.copy(operand = closure.operand) -> (_ == DestructionError.NonPointerDestruction),
         DispatchClosureDestructor(
           env.source,
           wrongOperand,
           env.typeSpec
-        ) -> "Dispatch requires RawPtr",
+        ) -> (_ == DestructionError.NonPointerDispatch),
         env.copy(fields = List(FieldCleanup.Value(env.fields.head.fieldId, "missing"))) ->
-          "Missing destructor target"
+          (_ == DestructionError.MissingTarget("missing"))
       )
-      cases.foreach { (node, message) =>
+      cases.foreach { (node, expected) =>
         assert(
-          DestructionValidator.validate(node, index).exists(_.message.contains(message)),
-          message
+          DestructionValidator.validate(node, index).map(expressionReason).exists(expected),
+          node
         )
       }
       val invalid = closure.copy(operand = wrongOperand, targetId = "missing", typeSpec = None)

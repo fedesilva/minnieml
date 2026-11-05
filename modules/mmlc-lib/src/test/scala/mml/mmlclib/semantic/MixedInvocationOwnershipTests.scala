@@ -94,8 +94,7 @@ class MixedInvocationOwnershipTests extends BaseEffFunSuite:
         assert(
           result.errors.exists {
             case error: SemanticError.InvalidExpression =>
-              error.message ==
-                "Calling this function consumes its environment and requires ownership"
+              error.reason == OwnershipError.CallRequiresOwnership
             case _ => false
           },
           result.errors

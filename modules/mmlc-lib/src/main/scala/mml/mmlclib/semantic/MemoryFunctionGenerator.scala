@@ -68,7 +68,7 @@ object MemoryFunctionGenerator:
               .toRight(
                 SemanticError.InvalidExpression(
                   Expr(field.source, Nil, typeSpec = field.typeSpec.some),
-                  s"Missing destructor for field '${field.name}'",
+                  DestructionError.MissingFieldDestructor(field),
                   "memory-function-generator"
                 )
               )

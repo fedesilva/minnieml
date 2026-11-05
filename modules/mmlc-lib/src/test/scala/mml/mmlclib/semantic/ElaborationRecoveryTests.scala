@@ -5,13 +5,14 @@ import mml.mmlclib.api.FrontEndApi
 import mml.mmlclib.ast.*
 import mml.mmlclib.compiler.CompilerState
 import mml.mmlclib.test.BaseEffFunSuite
+import mml.mmlclib.util.error.print.diagnosticMessage
 
 class ElaborationRecoveryTests extends BaseEffFunSuite:
 
   private def recoveredState(source: String): IO[CompilerState] =
     FrontEndApi.compile(source, "ElaborationRecovery").value.map {
       case Right(state) => state
-      case Left(error) => fail(error.message)
+      case Left(error) => fail(diagnosticMessage(error))
     }
 
   private val makers = """

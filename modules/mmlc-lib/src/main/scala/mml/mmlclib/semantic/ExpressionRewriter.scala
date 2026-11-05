@@ -142,7 +142,7 @@ object ExpressionRewriter:
               .one(
                 SemanticError.DanglingTerms(
                   remaining,
-                  "Unexpected terms outside expression context",
+                  ExpressionProblem.OutsideExpression,
                   phaseName
                 )
               )
@@ -194,7 +194,7 @@ object ExpressionRewriter:
           .one(
             SemanticError.InvalidExpression(
               Expr(source, Nil),
-              "Expected an expression, got empty terms",
+              ExpressionProblem.EmptyExpression,
               phaseName
             )
           )
@@ -242,7 +242,7 @@ object ExpressionRewriter:
                   .one(
                     SemanticError.InvalidExpression(
                       Expr(source, head :: rest),
-                      "Invalid expression structure",
+                      ExpressionProblem.InvalidStructure,
                       phaseName
                     )
                   )
@@ -317,7 +317,7 @@ object ExpressionRewriter:
           .one(
             SemanticError.DanglingTerms(
               List(g),
-              "Unexpected group after expression - expected an operator",
+              ExpressionProblem.GroupWithoutOperator,
               phaseName
             )
           )
@@ -328,7 +328,7 @@ object ExpressionRewriter:
           .one(
             SemanticError.DanglingTerms(
               List(term),
-              "Unexpected term after expression - expected an operator",
+              ExpressionProblem.TermWithoutOperator,
               phaseName
             )
           )
@@ -478,7 +478,7 @@ object ExpressionRewriter:
           .one(
             SemanticError.InvalidExpression(
               group.inner,
-              "Group must resolve to a single expression",
+              ExpressionProblem.InvalidGroup,
               phaseName
             )
           )
@@ -500,7 +500,7 @@ object ExpressionRewriter:
           .one(
             SemanticError.DanglingTerms(
               arg.terms,
-              "These terms cannot be applied to a non-function",
+              ExpressionProblem.NonCallableApplication,
               phaseName
             )
           )

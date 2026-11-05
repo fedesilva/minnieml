@@ -126,7 +126,7 @@ class ExpressionSourceSpanTests extends BaseEffFunSuite:
           assertSpan(source, error, 12, 15, "( )")
           assertEquals(error.typeAsc, None)
           assertEquals(error.failedCode, Some("( )"))
-          assertEquals(error.message, "Tuple must have at least one element")
+          assertEquals(error.reason, SyntaxError.EmptyTuple)
         case other => fail(s"Expected an empty tuple error, found $other")
     }
   }
@@ -239,7 +239,7 @@ class ExpressionSourceSpanTests extends BaseEffFunSuite:
           assertSpan(source, onlyTerm(prefix), 12, 16, "item")
           assertSpan(source, error, 34, 41, "@ bad  ")
           assertEquals(error.failedCode, Some("@ bad  "))
-          assertEquals(error.message, "Invalid expression syntax")
+          assertEquals(error.reason, SyntaxError.InvalidExpressionSyntax)
         case other => fail(s"Expected a preserved prefix and one recovered suffix, found $other")
     }
   }

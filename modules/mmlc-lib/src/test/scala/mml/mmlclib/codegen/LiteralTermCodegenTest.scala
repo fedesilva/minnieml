@@ -3,6 +3,7 @@ package mml.mmlclib.codegen
 import mml.mmlclib.ast.*
 import mml.mmlclib.codegen.emitter.{CodeGenState, compileTerm}
 import mml.mmlclib.test.BaseEffFunSuite
+import mml.mmlclib.util.error.print.diagnosticMessage
 
 class LiteralTermCodegenTest extends BaseEffFunSuite:
 
@@ -13,7 +14,7 @@ class LiteralTermCodegenTest extends BaseEffFunSuite:
 
     compileTerm(trueLit, CodeGenState()) match
       case Left(err) =>
-        fail(s"Expected synthetic bool literal to compile, got error: ${err.message}")
+        fail(s"Expected synthetic bool literal to compile, got error: ${diagnosticMessage(err)}")
       case Right(result) =>
         assertEquals(result.isLiteral, true)
         assertEquals(result.typeName, "Bool")
@@ -21,7 +22,7 @@ class LiteralTermCodegenTest extends BaseEffFunSuite:
 
     compileTerm(falseLit, CodeGenState()) match
       case Left(err) =>
-        fail(s"Expected synthetic bool literal to compile, got error: ${err.message}")
+        fail(s"Expected synthetic bool literal to compile, got error: ${diagnosticMessage(err)}")
       case Right(result) =>
         assertEquals(result.isLiteral, true)
         assertEquals(result.typeName, "Bool")

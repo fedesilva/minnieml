@@ -684,11 +684,11 @@ class OwnershipAnalyzerTests extends BaseEffFunSuite:
         case error: SemanticError.CapturedBorrowedHeapBinding => error.ref
       }
       val contracts = checked.errors.collect { case error: SemanticError.InvalidExpression =>
-        error.msg
+        error.reason
       }
       assertEquals(returned.size, 1, checked.errors.toString)
       assertEquals(captured.size, 0, checked.errors.toString)
-      assertEquals(contracts, List("Callable alternatives must agree on consuming parameters"))
+      assertEquals(contracts, List(OwnershipError.ParameterOwnershipMismatch))
       assertEquals(checked.errors.size, 2, checked.errors.toString)
     }
   }

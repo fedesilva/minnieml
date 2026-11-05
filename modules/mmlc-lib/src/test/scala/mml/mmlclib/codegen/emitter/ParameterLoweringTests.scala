@@ -3,6 +3,7 @@ package mml.mmlclib.codegen.emitter
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.test.BaseEffFunSuite
+import mml.mmlclib.util.error.print.diagnosticMessage
 
 class ParameterLoweringTests extends BaseEffFunSuite:
 
@@ -19,7 +20,7 @@ class ParameterLoweringTests extends BaseEffFunSuite:
   private def value[A](result: Either[CodeGenError, A]): A =
     result match
       case Right(result) => result
-      case Left(error) => fail(error.message)
+      case Left(error) => fail(diagnosticMessage(error))
 
   test("Unit erasure retains source identity and runtime register positions") {
     val params = List(
@@ -86,6 +87,10 @@ class ParameterLoweringTests extends BaseEffFunSuite:
     references.foreach { ref =>
       val error = compileTerm(ref, state).swap.toOption
       assertEquals(error.flatMap(_.node), ref.some)
-      assert(error.exists(_.message.contains("Missing local binding or unresolved reference")))
+      assert(
+        error.exists(
+          _.reason.isInstanceOf[mml.mmlclib.codegen.emitter.CodeGenReason.MissingLocalBinding]
+        )
+      )
     }
   }

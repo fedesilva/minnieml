@@ -43,7 +43,7 @@ case class TargetLayout(specification: String):
 
   def of(llvmType: String, state: CodeGenState): Either[CodeGenError, TypeLayout] =
     def resolve(typ: String, visited: Set[String]): Either[CodeGenError, TypeLayout] =
-      if visited(typ) then CodeGenError(s"Recursive value layout: $typ").asLeft
+      if visited(typ) then CodeGenError(CodeGenReason.RecursiveLayout(typ)).asLeft
       else
         getStructFieldTypes(typ, state) match
           case Some(fields) =>
@@ -59,11 +59,11 @@ case class TargetLayout(specification: String):
         ref.resolvedId.flatMap(state.resolvables.lookupType) match
           case Some(td: TypeDef) =>
             td.typeSpec
-              .toRight(CodeGenError(s"Missing layout for ${td.name}"))
+              .toRight(CodeGenError(CodeGenReason.MissingLayout(td)))
               .flatMap(fromType(_, state))
           case Some(ts: TypeStruct) => fromType(ts, state)
           case Some(ta: TypeAlias) => fromType(ta.typeSpec.getOrElse(ta.typeRef), state)
-          case None => CodeGenError(s"Unresolved layout: ${ref.name}").asLeft
+          case None => CodeGenError(CodeGenReason.UnresolvedLayout(ref)).asLeft
       case ts: TypeStruct =>
         ts.fields.toList
           .traverse(f => fromType(f.typeSpec, state))
@@ -74,7 +74,7 @@ case class TargetLayout(specification: String):
       case _: TypeFn => of("{ ptr, ptr }", state)
       case TypeUnit(_) => scalar("void")
       case np: NativePrimitive => scalar(np.llvmType)
-      case _ => CodeGenError(s"Unsupported storage layout: $typ").asLeft
+      case _ => CodeGenError(CodeGenReason.UnsupportedLayout(typ)).asLeft
 
   private def scalar(typ: String): Either[CodeGenError, TypeLayout] =
     val shape = typ match
@@ -96,7 +96,7 @@ case class TargetLayout(specification: String):
       case _ => none
     shape
       .map { case (size, align) => TypeLayout(typ, alignTo(size, align), align) }
-      .toRight(CodeGenError(s"Unsupported LLVM storage type: $typ"))
+      .toRight(CodeGenError(CodeGenReason.UnsupportedLlvmStorage(typ)))
 
 object TargetLayout:
 

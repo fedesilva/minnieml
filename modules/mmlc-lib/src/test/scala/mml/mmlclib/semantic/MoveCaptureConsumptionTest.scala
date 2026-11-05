@@ -324,7 +324,7 @@ class MoveCaptureConsumptionTest extends BaseEffFunSuite:
         assert(
           result.errors.exists {
             case error: SemanticError.InvalidExpression =>
-              error.msg == "A call-once function requires a consuming parameter"
+              error.reason == OwnershipError.CallOnceRequiresConsuming
             case _ => false
           },
           result.errors

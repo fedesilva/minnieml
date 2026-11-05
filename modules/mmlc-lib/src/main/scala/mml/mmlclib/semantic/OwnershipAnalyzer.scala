@@ -813,7 +813,7 @@ object OwnershipAnalyzer:
       case _ =>
         SemanticError.InvalidExpression(
           value,
-          "An ownership sink cannot receive a value with borrowed ownership",
+          OwnershipError.BorrowedSink,
           PhaseName
         )
 
@@ -821,7 +821,7 @@ object OwnershipAnalyzer:
   private def globalTransferError(value: Expr): SemanticError =
     SemanticError.InvalidExpression(
       value,
-      "A global value cannot transfer ownership; use an explicit ^ copy",
+      OwnershipError.GlobalTransfer,
       PhaseName
     )
 
@@ -1139,8 +1139,6 @@ object OwnershipAnalyzer:
   private def singleTerm(expr: Expr): Option[Term] = expr.terms match
     case List(term) => term.some
     case _ => none
-
-  private val ExpressionShapeMessage = "Ownership analysis requires a single-term expression"
 
   @tailrec
   private def unwrapTerm(term: Term): Term = term match
@@ -1794,7 +1792,7 @@ object OwnershipAnalyzer:
       List(
         SemanticError.InvalidExpression(
           value,
-          "An ownership sink cannot receive a value with borrowed ownership",
+          OwnershipError.BorrowedSink,
           PhaseName
         )
       )
@@ -1873,7 +1871,7 @@ object OwnershipAnalyzer:
       List(
         SemanticError.InvalidExpression(
           value,
-          "A call-once function requires a consuming parameter",
+          OwnershipError.CallOnceRequiresConsuming,
           PhaseName
         )
       )
@@ -2046,7 +2044,7 @@ object OwnershipAnalyzer:
         List(
           SemanticError.InvalidExpression(
             Expr(app.source, List(baseFn)),
-            "Callable alternatives must agree on result ownership",
+            OwnershipError.ResultOwnershipMismatch,
             PhaseName
           )
         )
@@ -2057,7 +2055,7 @@ object OwnershipAnalyzer:
         List(
           SemanticError.InvalidExpression(
             Expr(app.source, List(baseFn)),
-            "Callable alternatives must agree on consuming parameters",
+            OwnershipError.ParameterOwnershipMismatch,
             PhaseName
           )
         )
@@ -2081,7 +2079,7 @@ object OwnershipAnalyzer:
               checked.copy(errors =
                 checked.errors :+ SemanticError.InvalidExpression(
                   Expr(app.source, List(ref)),
-                  "Calling this field consumes its payload and requires an owned aggregate",
+                  OwnershipError.FieldCallRequiresOwnership,
                   PhaseName
                 )
               )
@@ -2115,7 +2113,7 @@ object OwnershipAnalyzer:
                 checked.copy(errors =
                   checked.errors :+ SemanticError.InvalidExpression(
                     Expr(app.source, List(ref)),
-                    "Calling this function consumes its environment and requires ownership",
+                    OwnershipError.CallRequiresOwnership,
                     PhaseName
                   )
                 )
@@ -2495,8 +2493,7 @@ object OwnershipAnalyzer:
                     s,
                     errs :+ SemanticError.InvalidExpression(
                       payload,
-                      "A stored consuming argument requires ownership on every path; " +
-                        "implicit cloning is not allowed",
+                      OwnershipError.StoredArgumentRequiresOwnership,
                       PhaseName
                     ),
                     caps :+ cap
@@ -2506,7 +2503,7 @@ object OwnershipAnalyzer:
                     s,
                     errs :+ SemanticError.InvalidExpression(
                       payload,
-                      "This capture cannot establish ownership for its non-owning alternatives",
+                      OwnershipError.CaptureAlternatives,
                       PhaseName
                     ),
                     caps :+ cap
@@ -2531,7 +2528,7 @@ object OwnershipAnalyzer:
                         s,
                         errs :+ SemanticError.InvalidExpression(
                           payload,
-                          "This type cannot be cloned",
+                          ExpressionProblem.NotCloneable,
                           PhaseName
                         ),
                         caps :+ cap
@@ -2572,7 +2569,7 @@ object OwnershipAnalyzer:
                       s,
                       errs :+ SemanticError.InvalidExpression(
                         Expr(ref.source, List(ref)),
-                        "This type cannot be cloned",
+                        ExpressionProblem.NotCloneable,
                         PhaseName
                       ),
                       caps :+ cap
@@ -2730,7 +2727,7 @@ object OwnershipAnalyzer:
     val shapeErrors = Option
       .when(singleTerm(expr).isEmpty)(
         OwnershipDiagnostic.caused(
-          SemanticError.InvalidExpression(expr, ExpressionShapeMessage, PhaseName),
+          SemanticError.InvalidExpression(expr, OwnershipError.InvalidExpressionShape, PhaseName),
           shapeRoots
         )
       )
@@ -2814,8 +2811,7 @@ object OwnershipAnalyzer:
                     returningOwned.get(CallableIdentity(lambda)).flatMap(_.ownedType).isEmpty =>
                 SemanticError.InvalidExpression(
                   lambda.body,
-                  "Clone must return an independently owned value; " +
-                    "returning its borrowed input is invalid",
+                  OwnershipError.CloneReturnsBorrowed,
                   PhaseName
                 )
             }

@@ -7,7 +7,7 @@ import mml.mmlclib.test.BaseEffFunSuite
 
 class TypeErrorPrinterTests extends BaseEffFunSuite:
 
-  test("UnresolvableType prints as unable to infer type and highlights node") {
+  test("UnresolvableType prints its shared wording and highlights the node") {
     val code =
       """
         fn main() =
@@ -24,7 +24,7 @@ class TypeErrorPrinterTests extends BaseEffFunSuite:
     )
 
     val output = ErrorPrinter.prettyPrintSemanticErrors(List(err), Some(SourceInfo(code)))
-    assert(output.contains("Unable to infer type"))
+    assert(output.contains("Cannot resolve type"))
     assert(output.contains("???"))
   }
 
@@ -38,7 +38,7 @@ class TypeErrorPrinterTests extends BaseEffFunSuite:
       """
     semState(code).map { result =>
       val output = ErrorPrinter.prettyPrintSemanticErrors(result.errors, Some(SourceInfo(code)))
-      assert(output.contains("Invalid function application"))
+      assert(output.contains("Cannot apply Int to Int"))
       assert(!output.contains("function of type 'f'"))
     }
   }

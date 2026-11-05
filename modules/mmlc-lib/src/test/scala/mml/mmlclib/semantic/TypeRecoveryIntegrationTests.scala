@@ -15,6 +15,12 @@ import java.nio.file.Files
 
 class TypeRecoveryIntegrationTests extends BaseEffFunSuite:
 
+  private def recoveryRoot(error: mml.mmlclib.errors.CompilationError): SyntaxError | String =
+    error match
+      case SemanticError.ParseTypeErrorFound(recovered, _) => recovered.reason
+      case SemanticError.UndefinedRef(reference, _, _) => reference.name
+      case other => fail(s"Unexpected recovery diagnostic: $other")
+
   private val source =
     """let broken: wrong = 1;
       |let alias = broken;
@@ -22,7 +28,8 @@ class TypeRecoveryIntegrationTests extends BaseEffFunSuite:
       |let good = 7;
       |let later = good;""".stripMargin
   private val parseMessage = "Parse error in type: Invalid type syntax"
-  private val rootMessages = Vector(parseMessage, "Undefined reference: 'missing'")
+  private val rootReasons: Vector[SyntaxError | String] =
+    Vector(SyntaxError.InvalidTypeSyntax, "missing")
 
   private def binding(module: Module, name: String): Bnd =
     module.members
@@ -71,10 +78,10 @@ class TypeRecoveryIntegrationTests extends BaseEffFunSuite:
       val stamped  = malformed(binding(ingested.module, "broken").typeAsc)
       assertEquals(original.spanOpt, spanOf(source, "wrong ").some)
       assertEquals(original.failedCode, "wrong ".some)
-      assertEquals(original.message, "Invalid type syntax")
+      assertEquals(original.reason, SyntaxError.InvalidTypeSyntax)
       assertEquals(original.causes, Vector.empty)
       assertEquals(stamped.copy(causes = Vector.empty), original)
-      assertEquals(ingested.errors.map(_.message), Vector(parseMessage))
+      assertEquals(ingested.errors.map(syntaxReason), Vector(SyntaxError.InvalidTypeSyntax))
       assertEquals(ingested.diagnostics.records.map(_.relation), Vector(DiagnosticRelation.Primary))
       assertEquals(stamped.causes, ingested.diagnostics.records.map(_.id))
       assertEquals(binding(ingested.module, "later").spanOpt, binding(parsed, "later").spanOpt)
@@ -92,7 +99,7 @@ class TypeRecoveryIntegrationTests extends BaseEffFunSuite:
       val aliasRefs    = TermTraversal.collect(alias.value) { case reference: Ref => reference }
       val laterRefs    = TermTraversal.collect(later.value) { case reference: Ref => reference }
 
-      assertEquals(state.visibleErrors.map(_.message), rootMessages)
+      assertEquals(state.visibleErrors.map(recoveryRoot), rootReasons)
       assert(!state.semanticErrors.exists(_.isInstanceOf[SemanticError.UndefinedTypeRef]))
       assertEquals(aliasRefs.map(_.resolvedId), List(broken.id))
       assert(broken.id.nonEmpty)
@@ -148,7 +155,10 @@ class TypeRecoveryIntegrationTests extends BaseEffFunSuite:
       val boundary = SourceInfo(emptySource).pointAt(emptySource.indexOf(')'))
       assertEquals(errors.head.spanOpt, SrcSpan(boundary, boundary).some)
       assertEquals(errors.head.failedCode, None)
-      assertEquals(empty.visibleErrors.map(_.message), Vector("Parse error in type: Expected type"))
+      assertEquals(
+        empty.visibleErrors.map(syntaxReason),
+        Vector(SyntaxError.ExpectedType)
+      )
   }
 
   test("a malformed function result shares its original root across mirrored annotations") {
@@ -160,7 +170,7 @@ class TypeRecoveryIntegrationTests extends BaseEffFunSuite:
       assert(function.typeAsc.exists(_ eq result))
       assertEquals(result.spanOpt, spanOf(code, "wrong ").some)
       assertEquals(result.failedCode, "wrong ".some)
-      assertEquals(state.visibleErrors.map(_.message), Vector(parseMessage))
+      assertEquals(state.visibleErrors.map(syntaxReason), Vector(SyntaxError.InvalidTypeSyntax))
       assertEquals(result.causes, state.diagnostics.records.map(_.id))
       assertEquals(state.diagnostics.records.size, 1)
       assertEquals(function.params.size, 1)
@@ -214,7 +224,7 @@ class TypeRecoveryIntegrationTests extends BaseEffFunSuite:
         val parseRoots = state.diagnostics.records.collect {
           case record if record.error.isInstanceOf[SemanticError.ParseTypeErrorFound] => record.id
         }
-        assertEquals(state.visibleErrors.map(_.message), rootMessages)
+        assertEquals(state.visibleErrors.map(recoveryRoot), rootReasons)
         assertEquals(parseRoots.size, 1)
         assertEquals(DiagnosticCauses.fromModule(state.module).knownRootsOf(function), parseRoots)
         assert(!availability.isAvailable(function))
@@ -261,7 +271,7 @@ class TypeRecoveryIntegrationTests extends BaseEffFunSuite:
   test("LSP reports the malformed fragment and independent error at their original ranges") {
     compile().map { state =>
       val diagnostics = Diagnostics.fromCompilerState(state)
-      assertEquals(diagnostics.map(_.message), List(parseMessage, "Undefined reference: missing"))
+      assertEquals(diagnostics.map(_.message), List(parseMessage, "Undefined reference: 'missing'"))
       assertEquals(
         diagnostics.map(_.range),
         List("wrong ", "missing").map(fragment => Range.fromSrcSpan(spanOf(source, fragment)))
@@ -283,7 +293,7 @@ class TypeRecoveryIntegrationTests extends BaseEffFunSuite:
       yield
         assertEquals(exit, ExitCode.Error)
         val rendered = messages.mkString("\n")
-        val headers  = List("Type parser error", "Undefined reference 'missing'")
+        val headers  = List("Type parser error", "Undefined reference: 'missing'")
         headers.foreach { header =>
           assertEquals(rendered.linesIterator.count(_.contains(header)), 1, rendered)
         }
@@ -298,7 +308,7 @@ class TypeRecoveryIntegrationTests extends BaseEffFunSuite:
         }
         assert(!rendered.contains("Type mismatch"), rendered)
         assert(!rendered.contains("Invalid expression"), rendered)
-        val expected = rootMessages.mkString("\n").some
+        val expected = Vector(parseMessage, "Undefined reference: 'missing'").mkString("\n").some
         assertEquals(ast.left.toOption, expected)
         assertEquals(ir.left.toOption, expected)
         assertEquals(native.left.toOption, expected)
@@ -315,7 +325,7 @@ class TypeRecoveryIntegrationTests extends BaseEffFunSuite:
         outputExists <- IO.blocking(Files.exists(config.outputDir))
       yield
         assert(state.hasErrors)
-        assertEquals(state.visibleErrors.map(_.message), rootMessages)
+        assertEquals(state.visibleErrors.map(recoveryRoot), rootReasons)
         assert(!validated.canEmitCode)
         assertEquals(validated.diagnostics, state.diagnostics)
         assertEquals(emitted.diagnostics, state.diagnostics)

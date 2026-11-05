@@ -1,5 +1,6 @@
 package mml.mmlclib.semantic
 
+import cats.syntax.option.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.ast.queries.DeclarationQueries
 import mml.mmlclib.compiler.CompilerState
@@ -62,17 +63,18 @@ object DuplicateNameChecker:
         extractLambdaParams(bnd) match
           case Some(params) if hasDuplicateParams(params) =>
             val displayName = DeclarationQueries.sourceName(bnd)
-            val duplicateParamNames =
-              params.groupBy(_.name).filter(_._2.size > 1).keys.mkString(", ")
             errors += SemanticError.DuplicateName(
-              s"$displayName parameters: $duplicateParamNames",
+              displayName,
               params.filter(p => params.count(_.name == p.name) > 1),
-              phaseName
+              phaseName,
+              bnd.some
             )
             InvalidMember(
               source         = bnd.source,
               originalMember = bnd,
-              reason         = s"Duplicate parameter names: $duplicateParamNames"
+              reason = MemberInvalidity.DuplicateParameters(
+                params.filter(p => params.count(_.name == p.name) > 1)
+              )
             )
           case _ => bnd
 

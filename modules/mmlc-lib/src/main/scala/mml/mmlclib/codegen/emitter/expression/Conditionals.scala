@@ -3,6 +3,7 @@ package mml.mmlclib.codegen.emitter.expression
 import mml.mmlclib.ast.*
 import mml.mmlclib.codegen.emitter.{
   CodeGenError,
+  CodeGenReason,
   CodeGenState,
   CompileResult,
   ScopeEntry,
@@ -48,13 +49,15 @@ def compileCond(
     stateWithReservedLabels = condRes.state.withRegister(mergeBB + 1)
 
     // Check if condition result is boolean (from boolean operations) or integer
-    (stateAfterCondition, branchCondition) = compileBranchCondition(
+    condition <- compileBranchCondition(
       condRes,
       cond.cond,
       condOp,
       mergeBB,
       stateWithReservedLabels
     )
+
+    (stateAfterCondition, branchCondition) = condition
 
     // Branch based on condition
     stateAfterBranch = stateAfterCondition.emit(
@@ -85,10 +88,7 @@ def compileCond(
       case Some(typeSpec) => getLlvmType(typeSpec, stateAfterElseBranch)
       case None =>
         Left(
-          CodeGenError(
-            "Missing type information for conditional expression - TypeChecker should have provided this",
-            Some(cond.cond)
-          )
+          CodeGenError(CodeGenReason.MissingConditionType, Some(cond.cond))
         )
 
     finalState = emitMergeBlock(
@@ -115,34 +115,17 @@ private def compileBranchCondition(
   condOp:                  String,
   mergeBB:                 Int,
   stateWithReservedLabels: CodeGenState
-): (CodeGenState, String) =
-  // Boolean operations (and, or, not) have nativeTpl attributes and return i1 type
-  if condRes.register > 0 && !condRes.isLiteral then
-    // Non-literal result - likely from boolean operation, use directly as i1
-    (stateWithReservedLabels, condOp)
+): Either[CodeGenError, (CodeGenState, String)] =
+  if condRes.register > 0 && !condRes.isLiteral then Right((stateWithReservedLabels, condOp))
   else
-    // Literal or other - compare with 0 using actual type from condition
-    val compareReg   = mergeBB
-    val compareState = stateWithReservedLabels
-
-    // Get the actual LLVM type from the condition's typeSpec
-    condExpr.typeSpec match
-      case Some(typeSpec) =>
-        getLlvmType(typeSpec, compareState) match
-          case Right(llvmType) =>
-            val stateAfterCompare =
-              compareState.emit(s"  %$compareReg = icmp ne $llvmType $condOp, 0")
-            (stateAfterCompare, s"%$compareReg")
-          case Left(err) =>
-            // Type resolution failed - this is a compiler bug
-            // FIXME:QA: Exceptions are not acceptable
-            throw new RuntimeException(s"Codegen error: ${err.message}")
-      case None =>
-        // Missing type is a compiler bug - TypeChecker should have provided this
-        // FIXME:QA: Exceptions are not acceptable
-        throw new RuntimeException(
-          "Codegen error: Missing type information for conditional guard - TypeChecker bug"
-        )
+    for
+      typeSpec <- condExpr.typeSpec.toRight(
+        CodeGenError(CodeGenReason.MissingConditionType, Some(condExpr))
+      )
+      llvmType <- getLlvmType(typeSpec, stateWithReservedLabels)
+    yield
+      val next = stateWithReservedLabels.emit(s"  %$mergeBB = icmp ne $llvmType $condOp, 0")
+      (next, s"%$mergeBB")
 
 /** Emits the merge block with optional phi node. */
 private def emitMergeBlock(

@@ -4,6 +4,7 @@ import cats.data.EitherT
 import cats.effect.{ExitCode, IO, IOApp}
 import cats.syntax.all.*
 import mml.mmlclib.compiler.{CompilerConfig, CompilerState, ParsingErrorChecker}
+import mml.mmlclib.util.error.print.diagnosticMessage
 
 import java.lang.management.ManagementFactory
 import java.nio.charset.StandardCharsets.UTF_8
@@ -78,7 +79,7 @@ object ParserBaseline extends IOApp:
 
   private def consume(result: ParserResult): Long =
     result.fold(
-      error => error.message.length.toLong,
+      error => diagnosticMessage(error).length.toLong,
       module => module.members.size.toLong + module.spanOpt.fold(0L)(_.end.index.toLong)
     )
 

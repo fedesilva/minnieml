@@ -4,6 +4,7 @@ import cats.effect.IO
 import cats.syntax.all.*
 import mml.mmlclib.compiler.CompilerConfig
 import mml.mmlclib.test.BaseEffFunSuite
+import mml.mmlclib.util.error.print.diagnosticMessage
 
 import java.nio.file.{Files, Path}
 import scala.jdk.CollectionConverters.*
@@ -50,7 +51,7 @@ class AsanInstrumentationTests extends BaseEffFunSuite:
       triple <- LlvmToolchain.queryLocalTriple.map(_.getOrElse(fail("Missing native target")))
       target <- ClangTarget
         .resolve(directory, LlvmToolchain.clangFlags(config, triple))
-        .map(_.fold(error => fail(error.message), identity))
+        .map(_.fold(error => fail(diagnosticMessage(error)), identity))
       path <- IO.blocking {
         Files.writeString(
           directory.resolve("probe.ll"),
@@ -150,7 +151,7 @@ class AsanInstrumentationTests extends BaseEffFunSuite:
           triple <- LlvmToolchain.queryLocalTriple.map(_.getOrElse(fail("Missing native target")))
           target <- ClangTarget
             .resolve(directory, LlvmToolchain.clangFlags(config, triple))
-            .map(_.fold(error => fail(error.message), identity))
+            .map(_.fold(error => fail(diagnosticMessage(error)), identity))
           path <- IO.blocking(Files.writeString(directory.resolve("scope.c"), cSource))
           _ <- commandNotFailed(
             List(target.executable.toString) ++ target.flags ++ List(
@@ -214,7 +215,7 @@ class AsanInstrumentationTests extends BaseEffFunSuite:
         triple <- LlvmToolchain.queryLocalTriple.map(_.getOrElse(fail("Missing native target")))
         target <- ClangTarget
           .resolve(directory, LlvmToolchain.clangFlags(config, triple))
-          .map(_.fold(error => fail(error.message), identity))
+          .map(_.fold(error => fail(diagnosticMessage(error)), identity))
         legacyPath <- IO.blocking {
           val name = LlvmToolchain.runtimeCacheFilename(
             triple,

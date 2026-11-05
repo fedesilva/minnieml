@@ -44,7 +44,10 @@ class TypeRecoveryTests extends BaseEffFunSuite:
       Some(SrcSpan(SourceInfo(source).pointAt(start), SourceInfo(source).pointAt(end)))
     )
     assertEquals(error.failedCode, Option.when(expected.nonEmpty)(expected))
-    assertEquals(error.message, if expected.isEmpty then "Expected type" else "Invalid type syntax")
+    assertEquals(
+      error.reason,
+      if expected.isEmpty then SyntaxError.ExpectedType else SyntaxError.InvalidTypeSyntax
+    )
 
   private def parseClean(source: String): IO[Module] =
     parseNotFailed(source).map { module =>

@@ -9,10 +9,6 @@ enum ParserError extends CompilationError:
   case Failure(msg: String)
   case Unknown(msg: String)
 
-  def message: String = this match
-    case Failure(msg) => msg
-    case Unknown(msg) => msg
-
 type ParserResult = Either[ParserError, Module]
 
 /** Entry points for parsing full MML source files into a top-level [[Module]].

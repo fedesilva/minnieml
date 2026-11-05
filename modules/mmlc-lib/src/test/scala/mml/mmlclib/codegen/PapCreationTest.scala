@@ -4,7 +4,7 @@ import cats.data.NonEmptyList
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.codegen.emitter.expression.compileIndirectCall
-import mml.mmlclib.codegen.emitter.{CodeGenState, compileExpr}
+import mml.mmlclib.codegen.emitter.{CodeGenReason, CodeGenState, compileExpr}
 import mml.mmlclib.test.BaseEffFunSuite
 
 class PapCreationTest extends BaseEffFunSuite:
@@ -42,8 +42,8 @@ class PapCreationTest extends BaseEffFunSuite:
         compileIndirectCall(callee, arguments, call, CodeGenState(), Map.empty, compileExpr)
       assertEquals(result.left.toOption.flatMap(_.node), call.some)
       assertEquals(
-        result.left.toOption.map(_.message),
-        s"Indirect call 'callee' argument count: expected 2, received $count".some
+        result.left.toOption.map(_.reason),
+        CodeGenReason.IndirectCallArity(callee, 2, count).some
       )
     }
 

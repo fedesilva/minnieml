@@ -65,7 +65,7 @@ class BindingRecoveryTests extends BaseEffFunSuite:
           body.terms match
             case (prefix: Expr) :: (error: ParseTermError) :: Nil =>
               assertEquals(integers(prefix), List(1L))
-              assertEquals(error.message, "Invalid expression syntax")
+              assertEquals(error.reason, SyntaxError.InvalidExpressionSyntax)
               assertError(source, error, source.indexOf('@'), source.indexOf(';'))
             case other => fail(s"Expected retained expression and terminal error: $other")
           assertEquals(integers(values(1).value), List(7L))
@@ -80,7 +80,7 @@ class BindingRecoveryTests extends BaseEffFunSuite:
           val values = bindings(module)
           assertEquals(values.size, 2)
           val error = errors(values.head.value).head
-          assertEquals(error.message, "Expected '='")
+          assertEquals(error.reason, SyntaxError.ExpectedToken("="))
           val bodyStart =
             if source.startsWith("fn") then source.indexOf("x + 1") else source.indexOf('1')
           assertError(source, error, bodyStart, bodyStart)
@@ -98,7 +98,7 @@ class BindingRecoveryTests extends BaseEffFunSuite:
     parseNotFailed(source).map { module =>
       val value = bindings(module).head
       assert(value.typeAsc.exists(_.isInstanceOf[ParseTypeError]))
-      assert(errors(value.value).exists(_.message == "Expected '='"))
+      assert(errors(value.value).exists(_.reason == SyntaxError.ExpectedToken("=")))
       assertEquals(bindings(module).size, 2)
     }
   }
@@ -115,7 +115,7 @@ class BindingRecoveryTests extends BaseEffFunSuite:
       assertEquals(binding.typeAsc, None)
       assertEquals(value.typeSpec, None)
       val error = errors(value.body).head
-      assertEquals(error.message, "Invalid parameter list")
+      assertEquals(error.reason, SyntaxError.InvalidParameterList)
       assertError(source, error, source.indexOf(','), source.indexOf(')'))
     }
   }
@@ -156,7 +156,7 @@ class BindingRecoveryTests extends BaseEffFunSuite:
     parseRecovered(source, 1).map { module =>
       val value = bindings(module).head
       assertEquals(TermTraversal.collect(value.value) { case lambda: Lambda => lambda }, Nil)
-      assertEquals(errors(value.value).map(_.message), List("Expected '('"))
+      assertEquals(errors(value.value).map(_.reason), List(SyntaxError.ExpectedToken("(")))
       assertEquals(integers(value.value), List(1L))
     }
   }
@@ -169,7 +169,7 @@ class BindingRecoveryTests extends BaseEffFunSuite:
         assertEquals(values.size, 2)
         assertEquals(references(lambda(values.head).body).map(_.name), List("x"))
         val found = errors(values.head.value)
-        assertEquals(found.map(_.message), List.fill(rootCount)("Expected ';'"))
+        assertEquals(found.map(_.reason), List.fill(rootCount)(SyntaxError.ExpectedToken(";")))
         found.foreach(error =>
           assertError(source, error, source.indexOf("/*"), source.indexOf("/*"))
         )
@@ -183,7 +183,10 @@ class BindingRecoveryTests extends BaseEffFunSuite:
     val source = "fn example(): Int = let 123invalid = 1; 2;;"
     parseRecovered(source, 1).map { module =>
       val error = errors(bindings(module).head.value).head
-      assertEquals(error.message, "Invalid identifier '123invalid'")
+      assertEquals(
+        error.reason,
+        SyntaxError.InvalidIdentifier("123invalid", IdentifierKind.Binding, false)
+      )
       val start = source.indexOf("123invalid")
       assertError(source, error, start, start + "123invalid".length)
       assertEquals(integers(bindings(module).head.value), List(2L, 1L))

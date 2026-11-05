@@ -5,6 +5,7 @@ import cats.syntax.all.*
 import mml.mmlclib.compiler.CompilerConfig
 import mml.mmlclib.test.BaseEffFunSuite
 import mml.mmlclib.test.llvm.ClosureAssertions
+import mml.mmlclib.util.error.print.diagnosticMessage
 
 import java.nio.file.{Files, Path}
 import scala.jdk.CollectionConverters.*
@@ -211,7 +212,7 @@ class TemplateFunctionCodegenTests extends BaseEffFunSuite with ClosureAssertion
           triple <- LlvmToolchain.queryLocalTriple.map(_.getOrElse(fail("Missing native target")))
           target <- ClangTarget
             .resolve(directory, LlvmToolchain.clangFlags(config, triple))
-            .map(_.fold(error => fail(error.message), identity))
+            .map(_.fold(error => fail(diagnosticMessage(error)), identity))
           input <- IO.blocking(Files.writeString(directory.resolve("exports.ll"), ir))
           result <- LlvmToolchain.compile(input, config, triple.some, target)
           _ = assertEquals(result._1, Right(0))

@@ -146,7 +146,8 @@ class OwnershipExpressionTests extends BaseEffFunSuite:
     """).map { state =>
       val original  = body(state.module)
       val malformed = original.copy(terms = original.terms ++ original.terms)
-      val prior = SemanticError.InvalidExpression(malformed, "Retained frontend error", "frontend")
+      val prior =
+        SemanticError.InvalidExpression(malformed, ExpressionProblem.InvalidStructure, "frontend")
       val (diagnostics, roots) = state.diagnostics.emit(prior)
       val invalid = original.copy(terms =
         List(

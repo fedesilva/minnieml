@@ -176,10 +176,10 @@ class TypeResolverNativeStructTests extends BaseEffFunSuite:
       val errors = fields.collect { case error: UndefinedTypeError => error }
 
       assertEquals(
-        resolved.errors.map(_.message),
+        resolved.errors.map(undefinedTypeName),
         Vector(
-          "Undefined type: 'MissingFirst'",
-          "Undefined type: 'MissingLast'"
+          "MissingFirst",
+          "MissingLast"
         )
       )
       assertEquals(errors.map(_.originalType), List(originalFields.head, originalFields.last))

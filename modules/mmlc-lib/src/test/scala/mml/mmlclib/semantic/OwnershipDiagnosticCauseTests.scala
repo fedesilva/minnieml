@@ -301,14 +301,14 @@ class OwnershipDiagnosticCauseTests extends BaseEffFunSuite:
     records(state) {
       case error: SemanticError.InvalidExpression
           if error.phase == "ownership-analyzer" &&
-            error.msg == "Ownership analysis requires a single-term expression" =>
+            error.reason == OwnershipError.InvalidExpressionShape =>
         error
     }
 
   for evidence <- List("known", "missing", "unknown") do
     test(s"only the invalid payload's own proven roots explain its shape failure: $evidence") {
       beforeOwnership.map { initial =>
-        val prior = SemanticError.InvalidEntryPoint("Original frontend failure", SourceOrigin.Synth)
+        val prior = SemanticError.InvalidEntryPoint(EntryPointError.NotFound(SourceOrigin.Synth))
         val (diagnostics, roots) = initial.diagnostics.emit(prior)
         val ownRoots = evidence match
           case "known" => roots
@@ -337,7 +337,7 @@ class OwnershipDiagnosticCauseTests extends BaseEffFunSuite:
 
   test("a known outer failure does not hide an independent nested shape error") {
     beforeOwnership.map { initial =>
-      val prior = SemanticError.InvalidEntryPoint("Outer frontend failure", SourceOrigin.Synth)
+      val prior = SemanticError.InvalidEntryPoint(EntryPointError.NotFound(SourceOrigin.Synth))
       val (diagnostics, roots) = initial.diagnostics.emit(prior)
       val input = replaceBody(initial.copy(diagnostics = diagnostics)) { original =>
         val malformed = original.copy(terms = original.terms ++ original.terms)

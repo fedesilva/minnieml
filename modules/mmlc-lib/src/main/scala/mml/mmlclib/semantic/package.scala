@@ -18,19 +18,6 @@ enum UnresolvableTypeContext derives CanEqual:
   case Argument
   case Function
 
-private[semantic] def showType(t: Type): String = t match
-  case TypeRef(_, name, _, _) => name
-  case ts: TypeStruct => ts.name
-  case TypeFn(_, params, ret) =>
-    s"(${params.toList.map(showType).mkString(", ")}) -> ${showType(ret)}"
-  case TypeUnit(_) => "Unit"
-  case TypeGroup(_, types) => s"(${types.map(showType).mkString(", ")})"
-  case TypeTuple(_, elems) => s"(${elems.map(showType).mkString(", ")})"
-  case NativePrimitive(_, llvm, _, _) => llvm
-  case NativePointer(_, llvm, _, _) => s"*$llvm"
-  case TypeVariable(_, name) => name
-  case _ => t.getClass.getSimpleName
-
 enum TypeError extends CompilationError:
   // Function and Operator Definition Errors
   case MissingParameterType(param: FnParam, decl: Decl & Resolvable, phase: String)
@@ -65,11 +52,10 @@ enum TypeError extends CompilationError:
   // General Type Errors
   case UnresolvableType(node: Typeable, context: Option[UnresolvableTypeContext], phase: String)
   case IncompatibleTypes(
-    node:    AstNode,
-    type1:   Type,
-    type2:   Type,
-    context: String,
-    phase:   String
+    node:  AstNode,
+    type1: Type,
+    type2: Type,
+    phase: String
   )
   case ConflictingLambdaParamInference(
     param:     FnParam,
@@ -80,55 +66,6 @@ enum TypeError extends CompilationError:
   case UninferrableLambdaParam(param: FnParam, phase: String)
   case UntypedHoleInBinding(bindingName: String, source: SourceOrigin, phase: String)
 
-  // TODO:   Why not define this within the members?
-  def message: String = this match
-    case MissingParameterType(param, _, _) =>
-      s"Missing type annotation for parameter '${param.name}'"
-    case MissingReturnType(decl, _) =>
-      s"Missing return type for '${decl.name}'"
-    case RecursiveFunctionMissingReturnType(decl, _) =>
-      s"Recursive function '${decl.name}' requires explicit return type"
-    case MissingOperatorParameterType(param, _, _) =>
-      s"Missing type annotation for operator parameter '${param.name}'"
-    case MissingOperatorReturnType(decl, _) =>
-      s"Missing return type for operator '${decl.name}'"
-    case TypeMismatch(_, expected, actual, _, expectedBy) =>
-      val ctx = expectedBy.map(by => s" (expected by $by)").getOrElse("")
-      s"Type mismatch: expected ${showType(expected)}, got ${showType(actual)}$ctx"
-    case UndersaturatedApplication(_, expected, actual, _) =>
-      s"Too few arguments: expected $expected, got $actual"
-    case OversaturatedApplication(_, expected, actual, _) =>
-      s"Too many arguments: expected $expected, got $actual"
-    case InvalidApplication(_, fnType, argType, _) =>
-      s"Cannot apply ${showType(fnType)} to ${showType(argType)}"
-    case InvalidSelection(ref, baseType, _) =>
-      s"Cannot select '${ref.name}' from ${showType(baseType)}"
-    case UnknownField(ref, _, _) =>
-      s"Unknown field '${ref.name}' in struct"
-    case ConditionalBranchTypeMismatch(_, trueType, falseType, _) =>
-      s"Conditional branches have different types: ${showType(trueType)} vs ${showType(falseType)}"
-    case ConditionalBranchTypeUnknown(_, _) =>
-      "Cannot determine type of conditional branches"
-    case UnresolvableType(_, context, _) =>
-      context match
-        case Some(UnresolvableTypeContext.NamedValue(name)) =>
-          s"Cannot resolve type for '$name'"
-        case Some(UnresolvableTypeContext.Argument) =>
-          "Cannot resolve type for argument"
-        case Some(UnresolvableTypeContext.Function) =>
-          "Cannot resolve function type"
-        case None =>
-          "Cannot resolve type"
-    case IncompatibleTypes(_, type1, type2, ctx, _) =>
-      s"Incompatible types in $ctx: ${showType(type1)} and ${showType(type2)}"
-    case ConflictingLambdaParamInference(param, firstType, nextType, _) =>
-      s"Conflicting types inferred for lambda parameter '${param.name}': " +
-        s"${showType(firstType)} vs ${showType(nextType)}. Add a type annotation."
-    case UninferrableLambdaParam(param, _) =>
-      s"Cannot infer type for lambda parameter '${param.name}'. Add a type annotation."
-    case UntypedHoleInBinding(name, _, _) =>
-      s"Typed hole in '$name' requires type annotation"
-
 enum SemanticError extends CompilationError:
   case UndefinedRef(ref: Ref, member: Member, phase: String)
   case UndefinedTypeRef(typeRef: TypeRef, member: Member, phase: String)
@@ -138,9 +75,14 @@ enum SemanticError extends CompilationError:
     member:     Member,
     phase:      String
   )
-  case DuplicateName(name: String, duplicates: List[Resolvable], phase: String)
-  case InvalidExpression(expr: Expr, msg: String, phase: String)
-  case DanglingTerms(terms: List[Term], msg: String, phase: String)
+  case DuplicateName(
+    name:           String,
+    duplicates:     List[Resolvable],
+    phase:          String,
+    parameterOwner: Option[Bnd] = None
+  )
+  case InvalidExpression(expr: Expr, reason: ExpressionError, phase: String)
+  case DanglingTerms(terms: List[Term], reason: ExpressionError, phase: String)
   case MemberErrorFound(error: ParsingMemberError, phase: String)
   case ParsingIdErrorFound(error: ParsingIdError, phase: String)
   case ParseTermErrorFound(error: ParseTermError, phase: String)
@@ -148,7 +90,7 @@ enum SemanticError extends CompilationError:
   case InvalidExpressionFound(invalidExpr: mml.mmlclib.ast.InvalidExpression, phase: String)
   case TypeCheckingError(error: TypeError)
   case ProtocolErrorFound(error: ProtocolError, phase: String)
-  case InvalidEntryPoint(msg: String, source: SourceOrigin)
+  case InvalidEntryPoint(error: EntryPointError)
   case VisibilityViolation(ref: Ref, decl: Resolvable, phase: String)
   // Ownership errors
   /** The use site and moved storage identity are independent of retained dependency evidence. */
@@ -168,64 +110,6 @@ enum SemanticError extends CompilationError:
   case CapturedBorrowedHeapBinding(ref: Ref, phase: String)
   case CapturedMovedHeapBinding(ref: Ref, movedAt: SourceOrigin, phase: String)
   case BorrowClosureEscapeViaReturn(lambda: Lambda, phase: String)
-
-  def message: String = this match
-    case UndefinedRef(ref, _, _) =>
-      s"Undefined reference: '${ref.name}'"
-    case UndefinedTypeRef(typeRef, _, _) =>
-      s"Undefined type: '${typeRef.name}'"
-    case AmbiguousTypeRef(typeRef, _, _, _) =>
-      s"Ambiguous type: '${typeRef.name}'"
-    case DuplicateName(name, _, _) =>
-      s"Duplicate definition: '$name'"
-    case InvalidExpression(_, msg, _) =>
-      msg
-    case DanglingTerms(_, msg, _) =>
-      msg
-    case MemberErrorFound(error, _) =>
-      s"Parse error in member: ${error.message}"
-    case ParsingIdErrorFound(error, _) =>
-      s"Parse error in identifier: ${error.message}"
-    case ParseTermErrorFound(error, _) =>
-      s"Parse error in expression: ${error.message}"
-    case ParseTypeErrorFound(error, _) =>
-      s"Parse error in type: ${error.message}"
-    case InvalidExpressionFound(_, _) =>
-      "Invalid expression"
-    case TypeCheckingError(error) =>
-      error.message
-    case ProtocolErrorFound(error, _) =>
-      error.message
-    case InvalidEntryPoint(msg, _) =>
-      msg
-    case VisibilityViolation(ref, decl, _) =>
-      s"'${ref.name}' is not visible here (declared in '${decl.name}')"
-    case error: UseAfterMove =>
-      error.movedAt.spanOpt match
-        case Some(span) =>
-          s"Use of '${error.ref.name}' after move at ${span.start.line}:${span.start.col}"
-        case None =>
-          s"Use of '${error.ref.name}' after move"
-    case ConsumingParamNotLastUse(param, ref, _) =>
-      s"Consuming parameter '${param.name}' must be the last use of '${ref.name}'"
-    case BorrowedValuePassedToConsumingParam(param, ref, _) =>
-      s"Cannot pass borrowed value '${ref.name}' to consuming parameter '${param.name}'"
-    case PartialApplicationWithConsuming(_, param, _) =>
-      s"Cannot partially apply function with consuming parameter '${param.name}'"
-    case ConditionalOwnershipMismatch(_, _) =>
-      "Conditional branches have different ownership states"
-    case BorrowEscapeViaReturn(ref, _) =>
-      s"Cannot return borrowed value '${ref.name}' from a function that returns a heap type"
-    case CapturedBorrowedHeapBinding(ref, _) =>
-      s"Cannot capture borrowed heap binding '${ref.name}' in a closure"
-    case CapturedMovedHeapBinding(ref, movedAt, _) =>
-      movedAt.spanOpt match
-        case Some(span) =>
-          s"Cannot capture moved heap binding '${ref.name}' in a closure; it was already moved at ${span.start.line}:${span.start.col}"
-        case None =>
-          s"Cannot capture moved heap binding '${ref.name}' in a closure"
-    case BorrowClosureEscapeViaReturn(_, _) =>
-      "Cannot return a borrow-capturing closure; use ~{ ... } for a move closure"
 
 /** Generate a stable ID for stdlib members */
 private def stdlibId(declSegment: String, name: String): Option[String] =

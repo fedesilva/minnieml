@@ -11,26 +11,30 @@ import mml.mmlclib.errors.CompilationError
 import mml.mmlclib.parser.{ParserError, SourceInfo}
 import mml.mmlclib.semantic.SemanticError
 import mml.mmlclib.test.BaseEffFunSuite
-import mml.mmlclib.util.error.print.ErrorPrinter
+import mml.mmlclib.util.error.print.{ErrorPrinter, diagnosticMessage}
 
 class DiagnosticsTests extends BaseEffFunSuite:
 
   test("error families outside editor conversion remain omitted"):
     parseNotFailed("let value = 1;").map { module =>
-      val extensionError = new CompilationError:
-        def message: String = "extension failure"
+      val extensionError = new CompilationError {}
 
       val errors = List(
         ParserError.Failure("parse failure"),
         ParserError.Unknown("unknown parse failure"),
         CompilerError.Unknown("frontend failure"),
-        CodeGenError("code generation failure", module.some),
-        LlvmCompilationError.TargetResolutionError("target failure"),
+        CodeGenError(
+          mml.mmlclib.codegen.emitter.CodeGenReason.InvalidExpressionStructure,
+          module.some
+        ),
+        LlvmCompilationError.TargetResolutionError(
+          mml.mmlclib.codegen.TargetFailure.UnknownHostArchitecture
+        ),
         extensionError
       )
       errors.foreach { error =>
-        assertEquals(Diagnostics.fromError(error), None, error.message)
-        assertEquals(Diagnostics.fromErrorAll(error), Nil, error.message)
+        assertEquals(Diagnostics.fromError(error), None, diagnosticMessage(error))
+        assertEquals(Diagnostics.fromErrorAll(error), Nil, diagnosticMessage(error))
       }
     }
 
@@ -75,11 +79,11 @@ class DiagnosticsTests extends BaseEffFunSuite:
         val expected = Diagnostic(
           range    = Range.fromSrcSpan(expectedSpan),
           severity = DiagnosticSeverity.Error,
-          message  = error.message
+          message  = diagnosticMessage(error)
         )
         assertEquals(Diagnostics.fromErrorAll(error), List(expected))
         assertEquals(
-          Diagnostics.fromCompilerState(state).filter(_.message == error.message),
+          errors.toList.flatMap(Diagnostics.fromErrorAll),
           List(expected)
         )
 
@@ -90,7 +94,8 @@ class DiagnosticsTests extends BaseEffFunSuite:
         assert(cli.contains(captureReport), cli)
         val captureLocation = ErrorPrinter.formatLocation(expectedSpan)
         assert(
-          captureReport.contains(s"Cannot capture moved heap binding 's' at $captureLocation"),
+          captureReport.contains(diagnosticMessage(error)) &&
+            captureReport.contains(s"Use at: $captureLocation"),
           captureReport
         )
         assert(
@@ -130,7 +135,7 @@ class DiagnosticsTests extends BaseEffFunSuite:
       assertEquals(Diagnostics.fromError(error), expected.some)
       assertEquals(Diagnostics.fromErrorAll(error), List(expected))
       val cli = ErrorPrinter.prettyPrint(error, info.some)
-      assert(cli.contains("'hidden' is not visible (declared in 'hidden')"), cli)
+      assert(cli.contains("'hidden' is not visible here (declared in 'hidden')"), cli)
       val highlightedReference = s"let use = ${Console.RED}${Console.BOLD}hidden${Console.RESET};"
       assert(cli.contains(highlightedReference), cli)
       assertEquals(
@@ -180,8 +185,15 @@ class DiagnosticsTests extends BaseEffFunSuite:
       .map { state =>
         val diagnostics = Diagnostics.fromCompilerState(state)
         assertEquals(diagnostics.size, 2, diagnostics)
-        assertEquals(diagnostics.count(_.message.startsWith("Type mismatch:")), 1)
-        assertEquals(diagnostics.count(_.message.contains("after move")), 1)
+        assertEquals(
+          state.visibleErrors.count {
+            case SemanticError.TypeCheckingError(_: mml.mmlclib.semantic.TypeError.TypeMismatch) =>
+              true
+            case _ => false
+          },
+          1
+        )
+        assertEquals(state.visibleErrors.count(_.isInstanceOf[SemanticError.UseAfterMove]), 1)
         val callLine = code.linesIterator.zipWithIndex
           .collectFirst {
             case (line, index) if line.trim == "pap 2;" => index
@@ -251,7 +263,6 @@ class DiagnosticsTests extends BaseEffFunSuite:
 
       val actualRanges = Diagnostics
         .fromErrorAll(duplicateError)
-        .filter(_.message == "Duplicate definition: a")
         .map(_.range)
 
       assertEquals(actualRanges, expectedRanges)

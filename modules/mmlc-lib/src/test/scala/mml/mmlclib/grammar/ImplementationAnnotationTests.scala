@@ -42,7 +42,7 @@ class ImplementationAnnotationTests extends BaseEffFunSuite:
       }
       assertEquals(errors.size, 1, source)
       val error = errors.head
-      assertEquals(error.message, "Invalid expression syntax")
+      assertEquals(error.reason, SyntaxError.InvalidExpressionSyntax)
       assertEquals(error.failedCode, Some(source.substring(errorStart, errorEnd)))
       assertEquals(error.spanOpt, Some(SrcSpan(info.pointAt(errorStart), info.pointAt(errorEnd))))
       assertEquals(state.diagnostics.records.size, 1)
@@ -80,8 +80,8 @@ class ImplementationAnnotationTests extends BaseEffFunSuite:
       assertEquals(diagnostic.relation, DiagnosticRelation.Primary, source)
       assertEquals(error.causes, Vector(diagnostic.id), source)
       assertEquals(
-        state.visibleErrors.map(_.message),
-        Vector("Parse error in type: Invalid type syntax")
+        state.visibleErrors.map(syntaxReason),
+        Vector(SyntaxError.InvalidTypeSyntax)
       )
 
       val bindings = state.module.members.collect { case binding: Bnd => binding }

@@ -134,7 +134,7 @@ class PapOwnershipTest extends BaseEffFunSuite:
       assert(
         result.errors.exists {
           case error: SemanticError.InvalidExpression =>
-            error.msg == "An ownership sink cannot receive a value with borrowed ownership"
+            error.reason == OwnershipError.BorrowedSink
           case _ => false
         },
         result.errors

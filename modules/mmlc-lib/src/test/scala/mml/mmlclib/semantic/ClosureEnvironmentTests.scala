@@ -95,8 +95,13 @@ class ClosureEnvironmentTests extends BaseEffFunSuite:
     )
     module.copy(members = module.members :+ binding)
 
-  private def messages(state: CompilerState): List[String] =
-    state.semanticErrors.toList.map(_.message)
+  private def reasons(state: CompilerState): List[ExpressionError | ClosureEnvironmentReason] =
+    state.semanticErrors.toList.map {
+      case SemanticError.InvalidExpression(_, ExpressionProblem.ClosureLayout(error), _) =>
+        error.reason
+      case SemanticError.InvalidExpression(_, reason, _) => reason
+      case other => fail(s"Expected a closure failure, got $other")
+    }
 
   test("nested environments preserve capture ownership by layout identity despite equal names") {
     semNotFailed(source).map { module =>
@@ -121,7 +126,7 @@ class ClosureEnvironmentTests extends BaseEffFunSuite:
         case member => member
       })
       val result = rewrite(clearCleanup(renamed))
-      assertEquals(messages(result), Nil)
+      assertEquals(reasons(result), Nil)
       val expected = destructors(module)
       val actual   = destructors(result.module)
       assertEquals(actual.keySet, expected.keySet)
@@ -168,8 +173,8 @@ class ClosureEnvironmentTests extends BaseEffFunSuite:
       val input  = appendOccurrence(clearCleanup(module), conflicting)
       val result = rewrite(input)
       assertEquals(
-        messages(result),
-        List(s"Conflicting closure environment metadata: ${layoutId(original)}")
+        reasons(result),
+        List(ClosureEnvironmentReason.ConflictingMetadata(layoutId(original)))
       )
       assertEquals(destructors(result.module)(layoutId(original)).fields, Nil)
       assert(destructors(result.module).exists { (id, node) =>
@@ -179,8 +184,15 @@ class ClosureEnvironmentTests extends BaseEffFunSuite:
         result.module,
         CallableTargetAnalysis.analyze(result.module)
       )
-      assertEquals(plan.left.toOption.map(_.message), messages(result).headOption)
-      assertEquals(messages(rewrite(input.copy(members = input.members.reverse))), messages(result))
+      assertEquals(
+        plan.left.toOption.map { error =>
+          error.reason match
+            case mml.mmlclib.codegen.emitter.CodeGenReason.ClosureLayout(error) => error.reason
+            case other => fail(s"Expected a retained closure failure, got $other")
+        },
+        reasons(result).headOption
+      )
+      assertEquals(reasons(rewrite(input.copy(members = input.members.reverse))), reasons(result))
     }
   }
 
@@ -196,8 +208,8 @@ class ClosureEnvironmentTests extends BaseEffFunSuite:
       })
       val result = rewrite(appendOccurrence(clearCleanup(module), conflicting))
       assertEquals(
-        messages(result),
-        List(s"Conflicting closure environment metadata: ${layoutId(original)}")
+        reasons(result),
+        List(ClosureEnvironmentReason.ConflictingMetadata(layoutId(original)))
       )
       assertEquals(destructors(result.module)(layoutId(original)).fields, Nil)
     }
@@ -271,7 +283,7 @@ class ClosureEnvironmentTests extends BaseEffFunSuite:
           List(scenario.original, scenario.original.copy()),
           module.resolvables
         )
-        assertEquals(compatible.errors.map(_.message), Nil, scenario.name)
+        assertEquals(compatible.errors, Nil, scenario.name)
         assertEquals(compatible.byId.keySet, Set(id), scenario.name)
 
         val conflicting = ClosureEnvironments.analyze(
@@ -279,8 +291,8 @@ class ClosureEnvironmentTests extends BaseEffFunSuite:
           module.resolvables
         )
         assertEquals(
-          conflicting.errors.map(_.message),
-          List(s"Conflicting closure environment metadata: $id"),
+          conflicting.errors.map(_.reason),
+          List(ClosureEnvironmentReason.ConflictingMetadata(id)),
           scenario.name
         )
         assertEquals(conflicting.byId.keySet, Set.empty[String], scenario.name)
@@ -299,7 +311,7 @@ class ClosureEnvironmentTests extends BaseEffFunSuite:
       assert(expected.fields.nonEmpty)
       assert(expected.borrowedFields.nonEmpty)
       val result = rewrite(appendOccurrence(clearCleanup(module), original.copy()))
-      assertEquals(messages(result), Nil)
+      assertEquals(reasons(result), Nil)
       destructors(module).foreach { (id, expected) =>
         assertEquals(destructors(result.module)(id).fields, expected.fields)
         assertEquals(destructors(result.module)(id).borrowedFields, expected.borrowedFields)
@@ -313,7 +325,11 @@ class ClosureEnvironmentTests extends BaseEffFunSuite:
       assert(ids.size >= 2)
       val absent    = ids.head
       val shortened = ids(1)
-      val cleared   = clearCleanup(module)
+      val shortenedOwner = lambdas(module)
+        .find(l => layoutId(l) == shortened)
+        .getOrElse(fail("Expected shortened layout owner"))
+      val captureCount = shortenedOwner.captures.size
+      val cleared      = clearCleanup(module)
       val input = cleared.copy(members = cleared.members.flatMap {
         case layout: TypeStruct if layout.id.contains(absent) => Nil
         case layout: TypeStruct if layout.id.contains(shortened) =>
@@ -322,13 +338,17 @@ class ClosureEnvironmentTests extends BaseEffFunSuite:
       })
       val result = rewrite(input)
       assertEquals(
-        messages(result).toSet,
-        Set(
-          s"Missing closure environment layout: $absent",
-          s"Closure environment capture count mismatch: $shortened"
+        reasons(result).toSet,
+        Set[ExpressionError | ClosureEnvironmentReason](
+          ClosureEnvironmentReason.MissingLayout(absent),
+          ClosureEnvironmentReason.CaptureCountMismatch(
+            shortened,
+            captureCount + 1,
+            captureCount
+          )
         )
       )
-      assertEquals(messages(result).size, 2)
+      assertEquals(reasons(result).size, 2)
       List(absent, shortened).foreach { id =>
         assertEquals(destructors(result.module)(id).fields, Nil)
       }
@@ -340,7 +360,7 @@ class ClosureEnvironmentTests extends BaseEffFunSuite:
       val original = lambdas(module).head
       val missing  = original.copy(meta = original.meta.map(_.copy(envLayoutId = None)))
       val result   = rewrite(appendOccurrence(module, missing))
-      assertEquals(messages(result), List("Capturing lambda missing environment layout identity"))
+      assertEquals(reasons(result), List(ClosureEnvironmentReason.MissingIdentity))
     }
   }
 
@@ -362,10 +382,12 @@ class ClosureEnvironmentTests extends BaseEffFunSuite:
       }))
       val result = rewrite(input)
       assertEquals(
-        messages(result).toSet,
-        orphaned.map(id => s"Missing move-lambda metadata for layout: $id")
+        reasons(result).toSet,
+        orphaned.map[ExpressionError | ClosureEnvironmentReason](id =>
+          DestructionError.MissingMoveMetadata(id)
+        )
       )
-      assertEquals(messages(result).size, orphaned.size)
+      assertEquals(reasons(result).size, orphaned.size)
       val actual = destructors(result.module)
       orphaned.foreach(id => assertEquals(actual(id).fields, Nil))
       assert(actual.exists { (id, node) => !orphaned.contains(id) && node.fields.nonEmpty })
@@ -384,8 +406,8 @@ class ClosureEnvironmentTests extends BaseEffFunSuite:
       }
       val result = rewrite(input)
       assertEquals(
-        messages(result),
-        List(s"Destructor refers to a borrowed closure environment: $borrowedId")
+        reasons(result),
+        List(DestructionError.BorrowedEnvironment(borrowedId))
       )
       assertEquals(destructors(result.module)(borrowedId).fields, Nil)
     }

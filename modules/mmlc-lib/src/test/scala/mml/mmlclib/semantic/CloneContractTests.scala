@@ -41,7 +41,7 @@ class CloneContractTests extends BaseEffFunSuite:
       val operand = Expr(SourceOrigin.Synth, Nil, typeSpec = stringType.some)
       assertEquals(
         CloneCalls.build(operand, stringType, index, "clone-test", rejected),
-        Left(SemanticError.InvalidExpression(operand, "This type cannot be cloned", "clone-test"))
+        Left(SemanticError.InvalidExpression(operand, ExpressionProblem.NotCloneable, "clone-test"))
       )
     }
 
@@ -91,7 +91,7 @@ class CloneContractTests extends BaseEffFunSuite:
     """).map { state =>
       assert(state.errors.exists {
         case SemanticError.InvalidExpression(_, message, _) =>
-          message.contains("Clone must return an independently owned value")
+          message == OwnershipError.CloneReturnsBorrowed
         case _ => false
       })
     }

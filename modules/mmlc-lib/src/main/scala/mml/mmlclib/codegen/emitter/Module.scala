@@ -30,7 +30,7 @@ def emitModule(
   sanitizeAddress:  Boolean
 ): Either[CodeGenError, EmitResult] = {
   if targetAbi == TargetAbi.Default && targetTriple.nonEmpty then
-    return CodeGenError(s"Unsupported target C ABI: $targetTriple").asLeft
+    return CodeGenError(CodeGenReason.UnsupportedTargetAbi(targetTriple)).asLeft
 
   val targets = CallableTargetAnalysis.analyze(module)
   val locals  = LocalCallableAnalysis.analyze(module, targets)
@@ -121,9 +121,7 @@ private def emitPlannedModule(
         val errors = fieldResults.collect { case Left(err) => err }
         if errors.nonEmpty then
           Left(
-            CodeGenError(
-              s"Failed to resolve struct fields: ${errors.map(_.message).mkString(", ")}"
-            )
+            CodeGenError(CodeGenReason.StructFieldErrors(errors))
           )
         else
           val llvmFields  = fieldResults.collect { case Right((_, t)) => t }
@@ -273,7 +271,7 @@ private def emitBndLambda(
   val fnTypeE = bnd.typeSpec
     .collect { case t: TypeFn => t }
     .toRight(
-      CodeGenError(s"Missing function type specification for '${fnName}'", Some(bnd))
+      CodeGenError(CodeGenReason.MissingFunctionType(bnd), Some(bnd))
     )
 
   fnTypeE.flatMap { fnType =>
@@ -347,10 +345,7 @@ private def emitValueBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError
             case Some(typeSpec) => getLlvmType(typeSpec, newState)
             case None =>
               Left(
-                CodeGenError(
-                  s"Missing type specification for string literal in binding '${bnd.name}'",
-                  Some(bnd)
-                )
+                CodeGenError(CodeGenReason.MissingStringBindingType(bnd), Some(bnd))
               )
           }
           llvmTypeE.map { llvmType =>
@@ -364,10 +359,7 @@ private def emitValueBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError
             case Some(typeSpec) => getLlvmType(typeSpec, state)
             case None =>
               Left(
-                CodeGenError(
-                  s"Missing type specification for int literal in binding '${bnd.name}'",
-                  Some(bnd)
-                )
+                CodeGenError(CodeGenReason.MissingIntBindingType(bnd), Some(bnd))
               )
           }
           llvmTypeE.map { llvmType =>
@@ -380,10 +372,7 @@ private def emitValueBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError
             case Some(typeSpec) => getLlvmType(typeSpec, state)
             case None =>
               Left(
-                CodeGenError(
-                  s"Missing type specification for bool literal in binding '${bnd.name}'",
-                  Some(bnd)
-                )
+                CodeGenError(CodeGenReason.MissingBoolBindingType(bnd), Some(bnd))
               )
           }
           llvmTypeE.map { llvmType =>
@@ -405,7 +394,7 @@ private def emitValueBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError
               case Some(typeSpec) => getLlvmType(typeSpec, origState)
               case None =>
                 Left(
-                  CodeGenError(s"Missing type specification for binding '${bnd.name}'", Some(bnd))
+                  CodeGenError(CodeGenReason.MissingBindingType(bnd), Some(bnd))
                 )
             }
 
@@ -446,7 +435,7 @@ private def emitValueBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError
         val llvmTypeE = bnd.typeSpec match {
           case Some(typeSpec) => getLlvmType(typeSpec, origState)
           case None =>
-            Left(CodeGenError(s"Missing type specification for binding '${bnd.name}'", Some(bnd)))
+            Left(CodeGenError(CodeGenReason.MissingBindingType(bnd), Some(bnd)))
         }
 
         llvmTypeE.flatMap { llvmType =>

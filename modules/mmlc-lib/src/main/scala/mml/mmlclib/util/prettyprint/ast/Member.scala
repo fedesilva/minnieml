@@ -55,13 +55,13 @@ def prettyPrintMember(
     case ParsingMemberError(span, message, failedCode) =>
       val spanStr = if showSourceSpans then printSourceOrigin(span) else ""
       s"${indentStr}MemberError $spanStr\n" +
-        s"""${indentStr}  "$message"""".stripMargin +
+        s"""${indentStr}  "${mml.mmlclib.util.error.print.syntaxMessage(message)}"""".stripMargin +
         failedCode.map(code => s"\n${indentStr}  $code").getOrElse("")
 
     case ParsingIdError(span, message, failedCode, invalidId) =>
       val spanStr = if showSourceSpans then printSourceOrigin(span) else ""
       s"${indentStr}IdError $spanStr\n" +
-        s"""${indentStr}  "$message"""".stripMargin +
+        s"""${indentStr}  "${mml.mmlclib.util.error.print.syntaxMessage(message)}"""".stripMargin +
         failedCode.map(code => s"\n${indentStr}  $code").getOrElse("")
 
     case bnd: Bnd =>
@@ -159,7 +159,8 @@ def prettyPrintMember(
     case inv: InvalidMember =>
       val spanStr = if showSourceSpans then printSourceOrigin(inv.source) else ""
       s"${indentStr}InvalidMember $spanStr\n" +
-        s"""${indentStr}  reason: "${inv.reason}"\n""" +
+        s"""${indentStr}  reason: "${mml.mmlclib.util.error.print
+            .memberInvalidityMessage(inv.reason)}"\n""" +
         s"${indentStr}  original:\n" +
         prettyPrintMember(inv.originalMember, indent + 2, showSourceSpans, showTypes)
   }

@@ -2,7 +2,11 @@ package mml.mmlclib.semantic
 
 import mml.mmlclib.lsp.Diagnostics
 import mml.mmlclib.test.BaseEffFunSuite
-import mml.mmlclib.util.error.print.SemanticErrorPrinter
+import mml.mmlclib.util.error.print.{
+  SemanticErrorPrinter,
+  diagnosticMessage,
+  protocolAlternativeDescription
+}
 
 class ProtocolAlternativeDiagnosticTests extends BaseEffFunSuite:
 
@@ -10,7 +14,7 @@ class ProtocolAlternativeDiagnosticTests extends BaseEffFunSuite:
     checkDiagnostic("protocol Choice 'T = fn choose(value: 'T): 'T; ; let selected = choose;") {
       case error @ ProtocolError.InsufficientTypeInformation(_, alternatives) =>
         assertEquals(alternatives, Nil)
-        assert(!error.message.contains("Alternatives:"))
+        assert(!diagnosticMessage(error).contains("Alternatives:"))
       case other => fail(s"Expected insufficient information, got $other")
     }
 
@@ -43,9 +47,9 @@ class ProtocolAlternativeDiagnosticTests extends BaseEffFunSuite:
     checkDiagnostic(source) {
       case error @ ProtocolError.InsufficientTypeInformation(_, alternatives) =>
         assertEquals(alternatives.flatMap(_.protocolName), List("Choice5", "Choice6"))
-        assert(error.message.contains("Alternatives:"))
+        assert(diagnosticMessage(error).contains("Alternatives:"))
         assertEquals(
-          alternatives.map(_.description),
+          alternatives.map(protocolAlternativeDescription(_)),
           List(
             "Choice5.choose: (Bool) -> Int",
             "Choice6.choose: (Bool) -> Int"
@@ -75,7 +79,7 @@ class ProtocolAlternativeDiagnosticTests extends BaseEffFunSuite:
       result.visibleErrors match
         case Vector(error @ SemanticError.ProtocolErrorFound(protocolError, _)) =>
           val diagnostic = Diagnostics.fromError(error).getOrElse(fail("Expected LSP diagnostic"))
-          assertEquals(diagnostic.message, protocolError.message)
+          assertEquals(diagnostic.message, diagnosticMessage(protocolError))
           val cli = SemanticErrorPrinter.prettyPrint(List(error))
           choiceDescriptions(12).foreach { description =>
             assert(cli.contains(description))
@@ -99,9 +103,9 @@ class ProtocolAlternativeDiagnosticTests extends BaseEffFunSuite:
     count:        Int
   ): Unit =
     val expected = choiceDescriptions(count)
-    assertEquals(alternatives.map(_.description), expected)
+    assertEquals(alternatives.map(protocolAlternativeDescription(_)).sorted, expected)
     assertEquals(
-      error.message.linesIterator.drop(1).toList,
+      diagnosticMessage(error).linesIterator.drop(1).toList,
       "Alternatives:" :: expected.map(description => s"  $description")
     )
 

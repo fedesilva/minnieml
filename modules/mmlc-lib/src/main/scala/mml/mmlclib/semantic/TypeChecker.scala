@@ -569,7 +569,7 @@ object TypeChecker:
         case literal: LiteralInt if literal.value < Int.MinValue || literal.value > Int.MaxValue =>
           SemanticError.InvalidExpression(
             Expr(literal.source, List(literal)),
-            "Integer literal is outside the Int32 range",
+            ExpressionProblem.IntegerOutOfRange,
             phaseName
           )
       }
@@ -1131,7 +1131,6 @@ object TypeChecker:
             }
         }
       }
-      .sortBy(_.description)
 
   /** Context-dependent probe errors are provisional: an expected lambda or hole type may resolve
     * them. Independent argument errors are emitted once when no selection can be committed.

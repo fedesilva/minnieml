@@ -3,7 +3,7 @@ package mml.mmlclib.compiler
 import mml.mmlclib.ast.*
 import mml.mmlclib.codegen.{CompilationMode, EntryPoint}
 import mml.mmlclib.errors.CompilerWarning
-import mml.mmlclib.semantic.SemanticError
+import mml.mmlclib.semantic.{EntryPointError, SemanticError}
 
 object PreCodegenValidator:
 
@@ -37,18 +37,12 @@ object PreCodegenValidator:
         entryPoint match
           case None =>
             state.addError(
-              SemanticError.InvalidEntryPoint(
-                "No entry point 'main' found for binary compilation",
-                state.module.source
-              )
+              SemanticError.InvalidEntryPoint(EntryPointError.NotFound(state.module.source))
             )
           case Some((bnd, _)) =>
             if bnd.visibility != Visibility.Public then
               state.addError(
-                SemanticError.InvalidEntryPoint(
-                  "Entry point 'main' must be declared 'pub'",
-                  bnd.source
-                )
+                SemanticError.InvalidEntryPoint(EntryPointError.NotPublic(bnd))
               )
             else
               bnd.typeSpec match
@@ -59,17 +53,11 @@ object PreCodegenValidator:
                       state.withEntryPoint(mangledMain)
                     case _ =>
                       state.addError(
-                        SemanticError.InvalidEntryPoint(
-                          "Entry point 'main' must have a return type of 'Unit', 'Int32', or 'Int64'",
-                          bnd.source
-                        )
+                        SemanticError.InvalidEntryPoint(EntryPointError.InvalidReturnType(bnd))
                       )
                 case None =>
                   state.addError(
-                    SemanticError.InvalidEntryPoint(
-                      "Entry point 'main' must have a return type of 'Unit', 'Int32', or 'Int64'",
-                      bnd.source
-                    )
+                    SemanticError.InvalidEntryPoint(EntryPointError.InvalidReturnType(bnd))
                   )
       case _ => state
 

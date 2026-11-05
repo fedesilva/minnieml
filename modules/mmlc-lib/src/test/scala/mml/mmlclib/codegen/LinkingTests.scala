@@ -5,6 +5,7 @@ import cats.syntax.all.*
 import mml.mmlclib.ast.LinkEntry
 import mml.mmlclib.compiler.{CompilerConfig, IngestStage}
 import mml.mmlclib.test.BaseEffFunSuite
+import mml.mmlclib.util.error.print.diagnosticMessage
 
 import java.nio.file.{Files, Path}
 import scala.jdk.CollectionConverters.*
@@ -66,7 +67,7 @@ class LinkingTests extends BaseEffFunSuite:
           )
           target <- ClangTarget
             .resolve(directory, LlvmToolchain.clangFlags(CompilerConfig.default, triple))
-            .map(_.fold(error => fail(error.message), identity))
+            .map(_.fold(error => fail(diagnosticMessage(error)), identity))
           source <- IO.blocking {
             Files.writeString(
               directory.resolve("library.c"),
@@ -187,7 +188,7 @@ class LinkingTests extends BaseEffFunSuite:
         missing <- fixture.compile(List("mml_missing_fixture"))
         _ = assert(
           missing._1.left.exists {
-            case LlvmCompilationError.CommandExecutionError(_, diagnostic, _) =>
+            case LlvmCompilationError.CommandExecutionError(_, _, diagnostic, _) =>
               diagnostic.contains("mml_missing_fixture")
             case _ => false
           },
@@ -199,7 +200,7 @@ class LinkingTests extends BaseEffFunSuite:
         unresolved <- fixture.compile(List("mmlfixture"))
         _ = assert(
           unresolved._1.left.exists {
-            case LlvmCompilationError.CommandExecutionError(_, diagnostic, _) =>
+            case LlvmCompilationError.CommandExecutionError(_, _, diagnostic, _) =>
               diagnostic.contains("missing_symbol")
             case _ => false
           },

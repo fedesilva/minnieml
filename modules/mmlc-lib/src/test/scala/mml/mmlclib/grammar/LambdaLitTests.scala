@@ -248,7 +248,7 @@ class LambdaLitTests extends BaseEffFunSuite:
       }
       assertEquals(state.diagnostics.records.size, 1)
       assertEquals(errors.size, 1)
-      assertEquals(errors.head.message, "Expected expression")
+      assertEquals(errors.head.reason, SyntaxError.ExpectedExpression)
       assertEquals(errors.head.failedCode, None)
       val point = SourceInfo(source).pointAt(source.indexOf('}'))
       assertEquals(errors.head.spanOpt, Some(SrcSpan(point, point)))
@@ -277,7 +277,7 @@ class LambdaLitTests extends BaseEffFunSuite:
       }
       assertEquals(state.diagnostics.records.size, 1)
       assertEquals(errors.size, 1)
-      assertEquals(errors.head.message, "Invalid expression syntax")
+      assertEquals(errors.head.reason, SyntaxError.InvalidExpressionSyntax)
       assertEquals(errors.head.failedCode, Some("-> x "))
       val info = SourceInfo(source)
       assertEquals(

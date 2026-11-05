@@ -65,7 +65,7 @@ def compileBinding(bnd: Bnd, state: CodeGenState): Either[CodeGenError, CodeGenS
           }
       }
     case Some(Left(err)) => Left(err)
-    case None => Left(CodeGenError(s"Type annotation missing for binding '${bnd.name}'", Some(bnd)))
+    case None => Left(CodeGenError(CodeGenReason.MissingBindingAnnotation(bnd), Some(bnd)))
 
 /** Compiles a Bnd(Lambda) into LLVM IR function.
   *
@@ -100,10 +100,7 @@ def compileBndLambda(
         )
       case None =>
         // Pattern not recognized - emit warning and fall back to regular codegen
-        val warning = CompilerWarning.TailRecPatternUnsupported(
-          bnd.name,
-          "tail recursion pattern not recognized, falling back to standard recursion"
-        )
+        val warning          = CompilerWarning.TailRecPatternUnsupported(bnd)
         val stateWithWarning = state.addWarning(warning)
         compileRegularLambda(
           bnd,
@@ -252,10 +249,12 @@ private def compileRegularLambda(
 
       case List(native: NativeImpl) =>
         for
-          tpl <- native.nativeTpl.toRight(CodeGenError("Missing function template", native.some))
+          tpl <- native.nativeTpl.toRight(
+            CodeGenError(CodeGenReason.MissingFunctionTemplate, native.some)
+          )
           fnType <- bnd.typeSpec
             .flatMap(resolveToTypeFn(_, state.resolvables))
-            .toRight(CodeGenError("Missing template function type", bnd.some))
+            .toRight(CodeGenError(CodeGenReason.MissingTemplateFunctionType, bnd.some))
           typeName <- getNominalTypeName(fnType.returnType)
           result <- compileFunctionWithTemplate(
             tpl,
@@ -289,25 +288,19 @@ private def compileStructConstructor(
     case Some(TypeScheme(_, _, bodyType: TypeFn)) => Right(bodyType.returnType)
     case Some(other) =>
       Left(
-        CodeGenError(
-          s"Expected function type for constructor, got ${other.getClass.getSimpleName}",
-          Some(bnd)
-        )
+        CodeGenError(CodeGenReason.NonFunctionConstructor(other), Some(bnd))
       )
     case None =>
-      Left(CodeGenError(s"Missing type specification for constructor '${bnd.name}'", Some(bnd)))
+      Left(CodeGenError(CodeGenReason.MissingConstructorType(bnd), Some(bnd)))
 
   returnTypeE.flatMap { returnTypeSpec =>
     resolveTypeStruct(returnTypeSpec, state.resolvables) match
       case None =>
-        Left(CodeGenError(s"Constructor return type is not a struct", Some(bnd)))
+        Left(CodeGenError(CodeGenReason.NonStructConstructorResult, Some(bnd)))
       case Some(structDef) =>
         if structDef.fields.size != lambda.params.size then
           Left(
-            CodeGenError(
-              s"Constructor parameter count does not match struct fields for '${structDef.name}'",
-              Some(bnd)
-            )
+            CodeGenError(CodeGenReason.ConstructorParameterCount(structDef), Some(bnd))
           )
         else
           getLlvmType(returnTypeSpec, state).flatMap { structLlvmType =>
@@ -322,10 +315,7 @@ private def compileStructConstructor(
                   functionScope.get(param.name) match
                     case None =>
                       Left(
-                        CodeGenError(
-                          s"Missing constructor parameter '${param.name}' in scope",
-                          Some(param)
-                        )
+                        CodeGenError(CodeGenReason.MissingConstructorParameter(param), Some(param))
                       )
                     case Some(entry) =>
                       ScopeEntry.materialize(entry, currentState).flatMap { value =>
@@ -482,10 +472,7 @@ private def validateBorrowClosureStatement(
           rejectBorrowClosureCaptureOfLoopLocal(lambda, activeClosures)
             .map(_ => activeClosures + bindingName)
         case None =>
-          CodeGenError(
-            "Borrow closure on a loopified path must be bound to a local name before use",
-            lambda.some
-          ).asLeft
+          CodeGenError(CodeGenReason.UnboundLoopBorrowClosure, lambda.some).asLeft
     case None =>
       statement.bindingName match
         case Some(bindingName) =>
@@ -505,10 +492,7 @@ private def rejectBorrowClosureCaptureOfLoopLocal(
   activeBorrowRef(lambda.body, activeClosures, lambdaScopedNames(lambda))
     .orElse(lambda.captures.iterator.map(_.ref).find(ref => activeClosures.contains(ref.name)))
     .map { ref =>
-      CodeGenError(
-        "Borrow closure on a loopified path cannot capture another loop-local borrow closure",
-        ref.some
-      ).asLeft
+      CodeGenError(CodeGenReason.NestedLoopBorrowClosure, ref.some).asLeft
     }
     .getOrElse(Right(()))
 
@@ -570,20 +554,14 @@ private def validateTermAgainstBorrowClosures(
             _ <- validateExprAgainstBorrowClosures(app.arg, activeClosures, shadowedNames)
           yield ()
     case ref: Ref if activeClosures.contains(ref.name) && !shadowedNames.contains(ref.name) =>
-      CodeGenError(
-        "Borrow closure on a loopified path may survive across iterations; use ~{...} or keep it iteration-local",
-        ref.some
-      ).asLeft
+      CodeGenError(CodeGenReason.EscapingLoopBorrowClosure, ref.some).asLeft
     case ref: Ref =>
       ref.qualifier match
         case Some(qualifier) =>
           validateTermAgainstBorrowClosures(qualifier, activeClosures, shadowedNames)
         case None => Right(())
     case lambda: Lambda if lambda.captures.nonEmpty && !lambda.isMove =>
-      CodeGenError(
-        "Borrow closure on a loopified path must stay iteration-local; add ~{...} or restructure",
-        lambda.some
-      ).asLeft
+      CodeGenError(CodeGenReason.NonLocalLoopBorrowClosure, lambda.some).asLeft
     case lambda: Lambda =>
       validateExprAgainstBorrowClosures(
         lambda.body,
@@ -614,10 +592,7 @@ private def validateCalleeAgainstBorrowClosures(
 ): Either[CodeGenError, Unit] =
   callee match
     case ref: Ref if activeClosures.contains(ref.name) && !shadowedNames.contains(ref.name) =>
-      CodeGenError(
-        "Borrow closure on a loopified path must be called directly, not forwarded as a value",
-        ref.some
-      ).asLeft
+      CodeGenError(CodeGenReason.ForwardedLoopBorrowClosure, ref.some).asLeft
     case ref: Ref =>
       ref.qualifier match
         case Some(qualifier) =>
@@ -751,10 +726,7 @@ private[emitter] def compileTailRecursiveLambda(
       _ <- validateLoopifiedBorrowClosures(body)
       _ <-
         if entryAbi == TailRecEntryAbi.PlainDirect && captureInfo.nonEmpty then
-          CodeGenError(
-            "Plain direct tail-recursive functions cannot load captures from a closure env",
-            lambda.some
-          ).asLeft
+          CodeGenError(CodeGenReason.CapturingDirectTailRecursion, lambda.some).asLeft
         else ().asRight
       captureCount       = captureInfo.fold(0)(_._2.size)
       captureFieldOffset = if lambda.isMove then 1 else 0
@@ -926,10 +898,7 @@ private def compileBranchCondition(
       }
     case None =>
       Left(
-        CodeGenError(
-          "Missing type information for tail-recursive condition",
-          Some(cond)
-        )
+        CodeGenError(CodeGenReason.MissingTailRecursiveConditionType, Some(cond))
       )
 
 private def compileTailRecArgs(
@@ -970,7 +939,7 @@ private def compileBoundStatements(
             (result.state, scope, result.exitBlock.orElse(prevExitBlock))
 
         case (None, Some(_)) =>
-          CodeGenError("Ownership witness requires a value binding", expr.some).asLeft
+          CodeGenError(CodeGenReason.OwnershipWitnessWithoutBinding, expr.some).asLeft
 
         case (Some(param), None) =>
           compileLocalBindingValue(param, expr, currentState, currentScope, compileExpr).map {
@@ -999,7 +968,7 @@ private def mmlTypeNameToLlvm(typeName: String): Either[CodeGenError, String] =
     case "Int8" | "Byte" | "Word" | "Char" => Right("i8")
     case "Float" => Right("float")
     case "Double" => Right("double")
-    case _ => Left(CodeGenError(s"Unknown MML type name '$typeName'"))
+    case _ => Left(CodeGenError(CodeGenReason.UnknownNominalType(typeName)))
 
 private def replacePlaceholders(
   state:        CodeGenState,

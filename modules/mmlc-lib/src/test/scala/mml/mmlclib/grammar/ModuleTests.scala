@@ -108,7 +108,7 @@ class ModuleTests extends BaseEffFunSuite:
         case SemanticError.ParseTermErrorFound(error, _) => error
       }
       assertEquals(parsingErrors.length, 1)
-      assertEquals(parsingErrors.head.message, "Expected ';'")
+      assertEquals(parsingErrors.head.reason, SyntaxError.ExpectedToken(";"))
       assertEquals(parsingErrors.head.failedCode, None)
       val point = SourceInfo(source).pointAt(source.indexOf("pub"))
       assertEquals(parsingErrors.head.spanOpt, Some(SrcSpan(point, point)))
@@ -139,9 +139,9 @@ class ModuleTests extends BaseEffFunSuite:
       assertEquals(state.diagnostics.records.size, 2)
       assertEquals(
         state.errors.collect { case SemanticError.ParseTermErrorFound(error, _) =>
-          error.message
+          error.reason
         }.toSet,
-        Set("Expected expression", "Expected ';'")
+        Set(SyntaxError.ExpectedExpression, SyntaxError.ExpectedToken(";"))
       )
     }
   }

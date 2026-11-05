@@ -44,7 +44,7 @@ object StructDestructorBodyGenerator:
         .toRight(
           SemanticError.InvalidExpression(
             operand,
-            "Missing registered destructor for struct field",
+            DestructionError.MissingStructFieldDestructor,
             "struct-destructor-bodies"
           )
         )

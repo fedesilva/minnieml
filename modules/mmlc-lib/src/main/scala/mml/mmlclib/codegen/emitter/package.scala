@@ -238,7 +238,9 @@ def emitFunctionDeclaration(name: String, returnType: String, params: List[Strin
   s"declare $returnType @$name($paramString) #0"
 
 /** Represents an error that occurred during code generation. */
-case class CodeGenError(message: String, node: Option[AstNode] = None) extends CompilationError
+/** An emitter failure retains its typed reason and the offending source node when available. */
+case class CodeGenError(reason: CodeGenReason, node: Option[AstNode] = None)
+    extends CompilationError
 
 /** Align offset to the given alignment boundary. */
 def alignTo(offset: Int, alignment: Int): Int =
@@ -768,7 +770,7 @@ def nativeTypeToLlvmDef(
       val errors = fieldResults.collect { case Left(err) => err }
       if errors.nonEmpty then
         Left(
-          CodeGenError(s"Failed to resolve struct fields: ${errors.map(_.message).mkString(", ")}")
+          CodeGenError(CodeGenReason.StructFieldErrors(errors))
         )
       else
         val llvmFields = fieldResults.collect { case Right((_, t)) => t }
@@ -802,7 +804,7 @@ def getLlvmType(
                 case _: NativeStruct => Right(s"%struct.$name") // Use %struct. prefix
             case _ =>
               // Non-native types cannot be translated to LLVM yet
-              Left(CodeGenError(s"Cannot determine LLVM type for non-native type: $name"))
+              Left(CodeGenError(CodeGenReason.NonNativeType(name)))
         case Some(typeAlias: TypeAlias) =>
           // Use the computed typeSpec if available, otherwise follow the typeRef
           typeAlias.typeSpec match
@@ -812,9 +814,7 @@ def getLlvmType(
           Right(s"%struct.$name")
         case _ =>
           Left(
-            CodeGenError(
-              s"Unresolved type reference: $name (TypeRef with no resolvedId - probably typechecker bug)"
-            )
+            CodeGenError(CodeGenReason.UnresolvedType(name))
           )
     case TypeUnit(_) =>
       Right("void")
@@ -825,7 +825,7 @@ def getLlvmType(
       // Direct pointer type (shouldn't normally happen at this level)
       Right(s"${ptr.llvmType}*")
     case _: NativeStruct =>
-      Left(CodeGenError("Unexpected inline native struct"))
+      Left(CodeGenError(CodeGenReason.InlineNativeStruct))
     case ts: TypeStruct =>
       Right(s"%struct.${ts.name}")
     case _: TypeFn =>
@@ -834,8 +834,5 @@ def getLlvmType(
     case other =>
       // No LLVM type mapping for this TypeSpec
       Left(
-        CodeGenError(
-          s"No LLVM type mapping for TypeSpec: ${other.getClass.getSimpleName}",
-          Some(other)
-        )
+        CodeGenError(CodeGenReason.MissingLlvmTypeMapping(other), Some(other))
       )

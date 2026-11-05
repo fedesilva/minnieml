@@ -3,18 +3,20 @@ package mml.mmlclib.errors
 import mml.mmlclib.ast.{SourceOrigin, SrcSpan}
 import mml.mmlclib.compiler.{CompilerConfig, CompilerState}
 import mml.mmlclib.parser.SourceInfo
-import mml.mmlclib.semantic.SemanticError
 import mml.mmlclib.test.BaseEffFunSuite
 
 class DiagnosticStoreTests extends BaseEffFunSuite:
 
-  private def failure(message: String): CompilationError =
-    SemanticError.InvalidEntryPoint(message, SourceOrigin.Synth)
+  private case class FixtureError(subject: String, source: SourceOrigin = SourceOrigin.Synth)
+      extends CompilationError:
+    def message: String = "Diagnostic store fixture"
+
+  private def failure(subject: String): CompilationError = FixtureError(subject)
 
   test("diagnostic occurrences keep original payloads and emission order") {
     val source                  = SourceInfo("bad")
     val origin                  = SourceOrigin.Loc(SrcSpan(source.pointAt(0), source.pointAt(3)))
-    val firstError              = SemanticError.InvalidEntryPoint("Same message and source", origin)
+    val firstError              = FixtureError("Repeated failure", origin)
     val secondError             = failure("Independent failure")
     val (first, firstRoots)     = DiagnosticStore().emit(firstError)
     val (second, repeatedRoots) = first.emit(firstError)

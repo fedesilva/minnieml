@@ -23,6 +23,7 @@ import mml.mmlclib.compiler.{CodegenStage, CompilerConfig, CompilerState}
 import mml.mmlclib.parser.SourceInfo
 import mml.mmlclib.semantic.*
 import mml.mmlclib.test.llvm.LlvmAssertions
+import mml.mmlclib.util.error.print.diagnosticMessage
 import mml.mmlclib.util.prettyprint.ast.prettyPrintAst
 import munit.CatsEffectSuite
 
@@ -32,6 +33,37 @@ import scala.sys.process.{Process, ProcessLogger}
 
 /** Base trait for effectful tests; adds common MML specific assertions. */
 trait BaseEffFunSuite extends CatsEffectSuite with LlvmAssertions:
+
+  /** Extract one recovered syntax failure, rejecting any other diagnostic family. */
+  protected def syntaxReason(
+    error: mml.mmlclib.errors.CompilationError
+  ): mml.mmlclib.ast.SyntaxError =
+    error match
+      case SemanticError.MemberErrorFound(error, _) => error.reason
+      case SemanticError.ParsingIdErrorFound(error, _) => error.reason
+      case SemanticError.ParseTermErrorFound(error, _) => error.reason
+      case SemanticError.ParseTypeErrorFound(error, _) => error.reason
+      case other => fail(s"Expected a syntax failure, got $other")
+
+  /** Extract an expression failure without allowing another family to disappear from assertions. */
+  protected def expressionReason(error: mml.mmlclib.errors.CompilationError): ExpressionError =
+    error match
+      case SemanticError.InvalidExpression(_, reason, _) => reason
+      case SemanticError.DanglingTerms(_, reason, _) => reason
+      case other => fail(s"Expected an expression failure, got $other")
+
+  /** Names identify unresolved references because those references have no declaration identity. */
+  protected def undefinedTypeName(error: mml.mmlclib.errors.CompilationError): String = error match
+    case SemanticError.UndefinedTypeRef(ref, _, _) => ref.name
+    case other => fail(s"Expected an undefined type, got $other")
+
+  protected def ambiguousTypeName(error: mml.mmlclib.errors.CompilationError): String = error match
+    case SemanticError.AmbiguousTypeRef(ref, _, _, _) => ref.name
+    case other => fail(s"Expected an ambiguous type, got $other")
+
+  protected def undefinedValueName(error: mml.mmlclib.errors.CompilationError): String = error match
+    case SemanticError.UndefinedRef(ref, _, _) => ref.name
+    case other => fail(s"Expected an undefined reference, got $other")
 
   /** Inspect the declared instance association, independently of compiler clone selection. */
   protected def cloneBindingFor(
@@ -197,8 +229,13 @@ trait BaseEffFunSuite extends CatsEffectSuite with LlvmAssertions:
   /** Assert success through the compiler's shared toolchain command execution. */
   protected def commandNotFailed(command: List[String], workingDir: Path): IO[Unit] =
     LlvmToolchain
-      .executeCommand(command, "Fixture command failed", workingDir, verbose = false)
-      .map(_.fold(error => fail(error.message), code => assertEquals(code, 0)))
+      .executeCommand(
+        command,
+        mml.mmlclib.codegen.ToolOperation.Invoke,
+        workingDir,
+        verbose = false
+      )
+      .map(_.fold(error => fail(diagnosticMessage(error)), code => assertEquals(code, 0)))
 
   /** Assert a fixture's exit code, optional stdout, and diagnostic text on stderr. */
   protected def programExits(

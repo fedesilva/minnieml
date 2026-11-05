@@ -2,7 +2,7 @@ package mml.mmlclib.codegen.emitter.tbaa
 
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
-import mml.mmlclib.codegen.emitter.{CodeGenError, CodeGenState, getNominalTypeName}
+import mml.mmlclib.codegen.emitter.{CodeGenError, CodeGenReason, CodeGenState, getNominalTypeName}
 
 object TbaaEmitter:
 
@@ -38,9 +38,7 @@ object TbaaEmitter:
       _ <- Either.cond(
         fieldIndex < fieldLayout.size,
         (),
-        CodeGenError(
-          s"Field index $fieldIndex out of bounds for struct '$structName' (has ${fieldLayout.size} fields)"
-        )
+        CodeGenError(CodeGenReason.FieldIndexOutOfBounds(fieldIndex, structName, fieldLayout.size))
       )
     yield
       val (s2, tag) = state.getTbaaFieldAccessTag(structName, fieldLayout, fieldIndex)
@@ -59,9 +57,7 @@ object TbaaEmitter:
               case Some(ns: NativeStruct) => Right((name, ns.fields))
               case other =>
                 Left(
-                  CodeGenError(
-                    s"Type '$name' is not a struct (got ${other.map(_.getClass.getSimpleName)})"
-                  )
+                  CodeGenError(CodeGenReason.NonStructType(name, other))
                 )
           case Some(ts: TypeStruct) =>
             Right((name, ts.fields.toList.map(f => f.name -> f.typeSpec)))
@@ -70,11 +66,11 @@ object TbaaEmitter:
               case Some(spec) => resolveStructFields(spec, resolvables)
               case None => resolveStructFields(ta.typeRef, resolvables)
           case None =>
-            Left(CodeGenError(s"Unresolved type reference '$name'"))
+            Left(CodeGenError(CodeGenReason.UnresolvedStructType(name)))
       case ts: TypeStruct =>
         Right((ts.name, ts.fields.toList.map(f => f.name -> f.typeSpec)))
       case other =>
-        Left(CodeGenError(s"Expected struct type, got ${other.getClass.getSimpleName}"))
+        Left(CodeGenError(CodeGenReason.ExpectedStructType(other)))
 
   /** Ensure a TBAA struct node exists for a TypeDef with NativeStruct. This is called during module
     * initialization to register all struct types, ensuring types like IntArray and StringArray have

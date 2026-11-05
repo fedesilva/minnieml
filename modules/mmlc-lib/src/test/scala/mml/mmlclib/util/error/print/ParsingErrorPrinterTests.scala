@@ -6,9 +6,10 @@ import mml.mmlclib.ast.queries.TypeQueries
 import mml.mmlclib.compiler.{Compilation, CompilerConfig}
 import mml.mmlclib.errors.DiagnosticRelation
 import mml.mmlclib.parser.SourceInfo
-import mml.mmlclib.semantic.{DiagnosticCauses, SemanticError, ValueAvailability}
+import mml.mmlclib.semantic.{DiagnosticCauses, ExpressionProblem, SemanticError, ValueAvailability}
 import mml.mmlclib.test.BaseEffFunSuite
 import mml.mmlclib.test.ast.TXExprInt
+import mml.mmlclib.util.error.print.diagnosticMessage
 
 class ParsingErrorPrinterTests extends BaseEffFunSuite:
 
@@ -39,18 +40,18 @@ class ParsingErrorPrinterTests extends BaseEffFunSuite:
         val info  = SourceInfo(code)
         assertEquals(span, SrcSpan(info.pointAt(start), info.pointAt(start + "123invalid".length)))
         assertEquals(
-          diagnostic.message,
+          diagnosticMessage(diagnostic),
           "Parse error in expression: Invalid identifier '123invalid'"
         )
 
         val sourceInfo = SourceInfo(code)
         val output     = ErrorPrinter.prettyPrintSemanticErrors(visible, sourceInfo.some)
-        assert(output.contains(error.message), output)
+        assert(output.contains(diagnosticMessage(error)), output)
         assert(output.contains(ErrorPrinter.formatLocation(span)), output)
         assert(output.contains(sourceInfo.slice(span.start.index, span.end.index)), output)
 
         val withoutSource = SemanticErrorPrinter.prettyPrint(visible)
-        assert(withoutSource.contains(error.message), withoutSource)
+        assert(withoutSource.contains(diagnosticMessage(error)), withoutSource)
         assert(withoutSource.contains(LocationPrinter.printSpan(span)), withoutSource)
         assert(withoutSource.contains("\n123invalid"), withoutSource)
       }
@@ -71,7 +72,7 @@ class ParsingErrorPrinterTests extends BaseEffFunSuite:
       val errors = List(
         SemanticError.DanglingTerms(
           recovered,
-          "Unexpected term after expression - expected an operator",
+          ExpressionProblem.TermWithoutOperator,
           "printer-fixture"
         )
       )
@@ -148,7 +149,7 @@ class ParsingErrorPrinterTests extends BaseEffFunSuite:
       )
       assertEquals(application.source, originalApplication.source)
       assertEquals(error.source, originalError.source)
-      assertEquals(error.message, originalError.message)
+      assertEquals(diagnosticMessage(error), diagnosticMessage(originalError))
       assertEquals(error.failedCode, originalError.failedCode)
       assertEquals(error.causes, Vector(parserRoot.id))
       application.fn match
@@ -166,7 +167,7 @@ class ParsingErrorPrinterTests extends BaseEffFunSuite:
         Vector.empty
       )
       assertEquals(
-        state.visibleErrors.map(_.message),
+        state.visibleErrors.map(diagnosticMessage),
         Vector(
           "Parse error in expression: Invalid identifier '123invalid'",
           "Unexpected term after expression - expected an operator"

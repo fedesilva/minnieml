@@ -8,7 +8,16 @@ case class ClosureEnvironment(layout: TypeStruct, lambda: Lambda):
   def captureFields: List[(Field, Capture)] =
     layout.fields.toList.drop(headerSize).zip(lambda.captures)
 
-case class ClosureEnvironmentError(lambda: Lambda, message: String)
+/** A failed closure layout requirement and the lambda whose captures supply the evidence. */
+case class ClosureEnvironmentError(lambda: Lambda, reason: ClosureEnvironmentReason)
+
+enum ClosureEnvironmentReason:
+  case MissingIdentity
+  case MissingLayout(id: String)
+  case ConflictingMetadata(id: String)
+
+  /** Both counts include all layout fields, including the destructor header for move closures. */
+  case CaptureCountMismatch(id: String, expected: Int, actual: Int)
 
 /** Only unambiguous, shape-checked associations enter the environment index. */
 case class ClosureEnvironments(
@@ -22,7 +31,7 @@ object ClosureEnvironments:
     lambda.meta
       .flatMap(_.envLayoutId)
       .toRight(
-        ClosureEnvironmentError(lambda, "Capturing lambda missing environment layout identity")
+        ClosureEnvironmentError(lambda, ClosureEnvironmentReason.MissingIdentity)
       )
 
   private def sameCapture(left: Capture, right: Capture): Boolean =
@@ -50,7 +59,7 @@ object ClosureEnvironments:
           case struct: TypeStruct if struct.id.contains(id) =>
             struct
         }
-        .toRight(ClosureEnvironmentError(lambda, s"Missing closure environment layout: $id"))
+        .toRight(ClosureEnvironmentError(lambda, ClosureEnvironmentReason.MissingLayout(id)))
     yield struct
 
   /** Repeated occurrences may share a layout only when their capture contracts agree. */
@@ -73,14 +82,21 @@ object ClosureEnvironments:
           _ <- Either.cond(
             !conflict,
             (),
-            ClosureEnvironmentError(lambda, s"Conflicting closure environment metadata: $id")
+            ClosureEnvironmentError(lambda, ClosureEnvironmentReason.ConflictingMetadata(id))
           )
           struct <- layout(lambda, index)
           environment = ClosureEnvironment(struct, lambda)
           _ <- Either.cond(
             struct.fields.size == lambda.captures.size + environment.headerSize,
             (),
-            ClosureEnvironmentError(lambda, s"Closure environment capture count mismatch: $id")
+            ClosureEnvironmentError(
+              lambda,
+              ClosureEnvironmentReason.CaptureCountMismatch(
+                id,
+                lambda.captures.size + environment.headerSize,
+                struct.fields.size
+              )
+            )
           )
         yield id -> environment
 

@@ -119,8 +119,8 @@ class RecursiveCallableOwnershipTests extends BaseEffFunSuite:
     parseNotFailed(source).flatMap(_ => semState(source)).map { result =>
       val errors = result.errors.collect { case error: SemanticError.InvalidExpression => error }
       assertEquals(
-        errors.map(_.msg),
-        List("Callable alternatives must agree on consuming parameters")
+        errors.map(_.reason),
+        List(OwnershipError.ParameterOwnershipMismatch)
       )
       assertEquals(result.errors.size, 1, result.errors.toString)
       assertEquals(
@@ -147,8 +147,8 @@ class RecursiveCallableOwnershipTests extends BaseEffFunSuite:
     parseNotFailed(source).flatMap(_ => semState(source)).map { result =>
       val errors = result.errors.collect { case error: SemanticError.InvalidExpression => error }
       assertEquals(
-        errors.map(_.msg),
-        List("Callable alternatives must agree on consuming parameters")
+        errors.map(_.reason),
+        List(OwnershipError.ParameterOwnershipMismatch)
       )
       assertEquals(result.errors.size, 1, result.errors.toString)
       assertEquals(errors.head.expr.spanOpt.map(_.start.index), Some(source.indexOf(use)))

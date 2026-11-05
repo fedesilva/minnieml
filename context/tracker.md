@@ -21,14 +21,6 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 
 ## Active Tasks
 
-### Typed compiler diagnostics
-
-- **Tracker:** [Typed compiler errors and shared diagnostic rendering](tasks/typed-compiler-diagnostics.md)
-- **Status:** design
-- **Current focus:** After protocol work: typed error payloads, shared presentation-side message
-  templates and substitutions, and removal of message-based error discrimination.
-
-
 ### Protocol navigation
 
 - **Tracker:** [Extend LSP navigation for protocols](tasks/lsp-protocol-navigation.md)

@@ -1,8 +1,6 @@
 package mml.mmlclib.codegen
 
-import cats.effect.IO
 import mml.mmlclib.api.FrontEndApi
-import mml.mmlclib.compiler.CodegenStage
 import mml.mmlclib.test.BaseEffFunSuite
 
 class NativeTypeEmissionTest extends BaseEffFunSuite:
@@ -28,44 +26,16 @@ class NativeTypeEmissionTest extends BaseEffFunSuite:
       };
     """
 
-    FrontEndApi.compile(source, "Test").value.flatMap {
+    FrontEndApi.compile(source, "Test").value.map {
       case Right(state) =>
-        if state.errors.nonEmpty then
-          IO(
-            assert(
-              state.errors.exists(_.toString.contains("UndefinedTypeRef")) ||
-                state.errors.exists(_.toString.contains("UndefinedType"))
-            )
-          )
-        else
-          // If compilation succeeded, let's try codegen to see if it fails there
-          val validated = CodegenStage.validate(state)
-          if validated.hasErrors then
-            IO(
-              assert(
-                validated.errors.exists(_.toString.contains("Unresolved type reference")) ||
-                  validated.errors.exists(_.toString.contains("UndefinedType"))
-              )
-            )
-          else
-            CodegenStage.emitIrOnly(validated).map { codegenState =>
-              codegenState.llvmIr match
-                case Some(_) =>
-                  fail("Expected codegen to fail with undefined type reference")
-                case None =>
-                  assert(
-                    codegenState.errors.exists(_.toString.contains("Unresolved type reference")) ||
-                      codegenState.errors.exists(_.toString.contains("UndefinedType"))
-                  )
-            }
-      case Left(error) =>
-        // Expected - the semantic phase should catch undefined types
-        IO(
-          assert(
-            error.toString.contains("UndefinedTypeRef") ||
-              error.toString.contains("UndefinedType")
-          )
-        )
+        val errors = state.visibleErrors.collect {
+          case error: mml.mmlclib.semantic.SemanticError.UndefinedTypeRef => error
+        }
+        assertEquals(errors.size, 1)
+        assertEquals(errors.head.typeRef.name, "UndefinedType")
+        assertEquals(state.visibleErrors.size, 1)
+        assertEquals(state.llvmIr, None)
+      case Left(error) => fail(s"Expected retained frontend state, got $error")
     }
   }
 

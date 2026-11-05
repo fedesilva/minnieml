@@ -4,6 +4,7 @@ import cats.effect.IO
 import cats.syntax.all.*
 import mml.mmlclib.compiler.CompilerConfig
 import mml.mmlclib.test.BaseEffFunSuite
+import mml.mmlclib.util.error.print.diagnosticMessage
 
 import java.nio.file.attribute.FileTime
 import java.nio.file.{Files, Path}
@@ -46,7 +47,7 @@ class ClangTargetTests extends BaseEffFunSuite:
   private def resolve(dir: Path, flags: List[String] = Nil): IO[ClangTarget] =
     ClangTarget.resolveWithClang(dir.resolve("clang"), dir, flags).map {
       case Right(target) => target
-      case Left(error) => fail(error.message)
+      case Left(error) => fail(diagnosticMessage(error))
     }
 
   test("probe attributes follow the probe function's group and preserve disabled features") {
@@ -128,7 +129,7 @@ class ClangTargetTests extends BaseEffFunSuite:
         _ <- IO.blocking(Files.writeString(dir.resolve("fail"), ""))
         result <- ClangTarget.resolveWithClang(dir.resolve("clang"), dir, Nil)
         _ = result match
-          case Left(LlvmCompilationError.CommandExecutionError(_, message, code)) =>
+          case Left(LlvmCompilationError.CommandExecutionError(_, _, message, code)) =>
             assertEquals(code, 1)
             assert(message.contains("unsupported target"), message)
           case other => fail(s"Expected Clang diagnostic, got $other")
@@ -229,8 +230,7 @@ class ClangTargetTests extends BaseEffFunSuite:
     ).foreach { case (target, host) =>
       LlvmToolchain.validateNativeCpu(target, host) match
         case Left(LlvmCompilationError.TargetResolutionError(message)) =>
-          assert(message.contains("--cpu native"), message)
-          assert(message.contains(target) && message.contains(host), message)
+          assertEquals(message, TargetFailure.NativeCpuArchitectureMismatch(target, host))
         case other => fail(s"Expected native CPU diagnostic, got $other")
     }
   }

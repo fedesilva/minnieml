@@ -504,11 +504,14 @@ class TypeUtilsTests extends BaseEffFunSuite:
       .empty(module, mml.mmlclib.parser.SourceInfo(""), mml.mmlclib.compiler.CompilerConfig.default)
     val result = MemoryFunctionGenerator.rewriteModule(state)
     val missing = result.semanticErrors.collect {
-      case SemanticError.InvalidExpression(_, message, "memory-function-generator")
-          if message == "Missing destructor for field 'payload'" =>
-        message
+      case SemanticError.InvalidExpression(
+            _,
+            DestructionError.MissingFieldDestructor(field),
+            "memory-function-generator"
+          ) =>
+        field
     }
-    assertEquals(missing.size, 1)
+    assertEquals(missing, Vector(struct.fields.head))
   }
 
   test("explicit native destructors can name stdlib bindings without borrowing clone contracts") {
@@ -529,7 +532,7 @@ class TypeUtilsTests extends BaseEffFunSuite:
     val failures = List[Type](
       UndefinedTypeError(synthetic, written),
       AmbiguousTypeError(synthetic, written, List(heap)),
-      ParseTypeError(synthetic, "invalid type", None)
+      ParseTypeError(synthetic, SyntaxError.InvalidTypeSyntax, None)
     )
     failures.foreach { tpe =>
       assertEquals(TypeQueries.declaration(tpe, index), none[ResolvableType])

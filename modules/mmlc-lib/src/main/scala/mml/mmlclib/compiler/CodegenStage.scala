@@ -135,7 +135,7 @@ object CodegenStage:
               state
                 .addError(
                   LlvmCompilationError.TemporaryFileCreationError(
-                    s"Error writing LLVM IR to file: ${err.getMessage}"
+                    mml.mmlclib.codegen.FileFailure.WriteIr(path.toString, err.getMessage)
                   )
                 )
                 .withCanEmitCode(false)

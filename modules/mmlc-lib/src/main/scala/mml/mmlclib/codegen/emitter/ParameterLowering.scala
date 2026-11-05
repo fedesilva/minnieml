@@ -43,8 +43,7 @@ private[emitter] case class ParameterLowering(parameters: List[LoweredParameter]
     scope((0 until runtimeCount).toList)
 
   def scope(registers: List[Int]): Either[CodeGenError, Map[String, ScopeEntry]] =
-    if registers.size != runtimeCount then
-      CodeGenError("Parameter register count does not match runtime parameter count").asLeft
+    if registers.size != runtimeCount then CodeGenError(CodeGenReason.ParameterRegisterCount).asLeft
     else
       val runtimeRegisters = sourceIndices.zip(registers).toMap
       parameters
@@ -54,7 +53,7 @@ private[emitter] case class ParameterLowering(parameters: List[LoweredParameter]
             tpe <- param.typeSpec
               .orElse(param.typeAsc)
               .toRight(
-                CodeGenError(s"Missing type information for parameter '${param.name}'", param.some)
+                CodeGenError(CodeGenReason.MissingParameterType(param), param.some)
               )
             entry <- runtimeRegisters.get(lowered.sourceIndex) match
               case Some(register) =>
@@ -75,10 +74,7 @@ private[emitter] object ParameterLowering:
     val types =
       if lambda.params.isEmpty && paramTypes == List("void") then Nil else paramTypes
     if lambda.params.size != types.size then
-      CodeGenError(
-        "Source parameter count does not match lowered parameter types",
-        lambda.some
-      ).asLeft
+      CodeGenError(CodeGenReason.ParameterTypeCount, lambda.some).asLeft
     else
       val parameters =
         lambda.params.zip(types).zipWithIndex.map { case ((parameter, llvmType), sourceIndex) =>

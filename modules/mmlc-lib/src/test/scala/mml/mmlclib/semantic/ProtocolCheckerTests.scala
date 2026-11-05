@@ -497,7 +497,7 @@ class ProtocolCheckerTests extends BaseEffFunSuite:
       val result = ProtocolChecker.rewriteModule(initial)
 
       result.errors match
-        case Vector(SemanticError.DuplicateName(_, duplicates, _)) =>
+        case Vector(SemanticError.DuplicateName(_, duplicates, _, _)) =>
           assertEquals(
             duplicates.collect { case param: FnParam => param.source },
             original.map(_.source)
@@ -526,7 +526,7 @@ class ProtocolCheckerTests extends BaseEffFunSuite:
       val result = ProtocolChecker.rewriteModule(initial)
 
       result.errors match
-        case Vector(SemanticError.DuplicateName(_, duplicates, _)) =>
+        case Vector(SemanticError.DuplicateName(_, duplicates, _, _)) =>
           assertEquals(
             duplicates.collect { case param: FnParam => param.source },
             original.map(_.source)
@@ -829,7 +829,7 @@ class ProtocolCheckerTests extends BaseEffFunSuite:
 
       assertEquals(result.errors, initial.errors)
       result.errors match
-        case Vector(SemanticError.DuplicateName(_, duplicates, _)) =>
+        case Vector(SemanticError.DuplicateName(_, duplicates, _, _)) =>
           assertEquals(
             duplicates.collect { case protocol: Protocol => protocol.source },
             original.map(_.source)
@@ -976,7 +976,8 @@ class ProtocolCheckerTests extends BaseEffFunSuite:
     semVisibleState(source).map { result =>
       result.errors match
         case List(SemanticError.ProtocolErrorFound(error: ProtocolError.MissingMember, _)) =>
-          assertEquals(error.message, "Instance of protocol 'Pair' is missing member 'second'")
+          assertEquals(error.signature.meta.originalName, "second")
+          assertEquals(error.instance.protocol.nameNode.value, "Pair")
           val span = error.source.spanOpt.get
           assertEquals(
             source.substring(span.start.index, span.end.index),
@@ -1077,7 +1078,10 @@ class ProtocolCheckerTests extends BaseEffFunSuite:
     semVisibleState(source).map { result =>
       result.errors match
         case List(SemanticError.ProtocolErrorFound(error: ProtocolError.DuplicateSignature, _)) =>
-          assertEquals(error.message, "Duplicate protocol signature 'identity'")
+          assertEquals(error.signature.meta.originalName, "identity")
+          assert(error.signature.source.isFromSource)
+          assert(error.first.source.isFromSource)
+          assertNotEquals(error.signature.source, error.first.source)
           val span = error.source.spanOpt.get
           assertEquals(
             source.substring(span.start.index, span.end.index),
@@ -1100,7 +1104,10 @@ class ProtocolCheckerTests extends BaseEffFunSuite:
     semVisibleState(source).map { result =>
       result.errors match
         case List(SemanticError.ProtocolErrorFound(error: ProtocolError.DuplicateSignature, _)) =>
-          assertEquals(error.message, "Duplicate protocol signature 'identity'")
+          assertEquals(error.signature.meta.originalName, "identity")
+          assert(error.signature.source.isFromSource)
+          assert(error.first.source.isFromSource)
+          assertNotEquals(error.signature.source, error.first.source)
         case other => fail(s"Expected only the duplicate signature, got $other")
 
       val index = result.module.resolvables
@@ -1141,7 +1148,10 @@ class ProtocolCheckerTests extends BaseEffFunSuite:
     semVisibleState(source).map { result =>
       result.errors match
         case List(SemanticError.ProtocolErrorFound(error: ProtocolError.DuplicateSignature, _)) =>
-          assertEquals(error.message, "Duplicate protocol signature '<&>'")
+          assertEquals(error.signature.meta.originalName, "<&>")
+          assert(error.signature.source.isFromSource)
+          assert(error.first.source.isFromSource)
+          assertNotEquals(error.signature.source, error.first.source)
         case other => fail(s"Expected only the duplicate operator signature, got $other")
 
       val index = result.module.resolvables
@@ -1159,7 +1169,14 @@ class ProtocolCheckerTests extends BaseEffFunSuite:
     semVisibleState(source).map { result =>
       result.errors match
         case List(SemanticError.ProtocolErrorFound(error: ProtocolError.DuplicateInstance, _)) =>
-          assertEquals(error.message, "Duplicate instance of protocol 'Num' for Int")
+          assertEquals(error.instance.protocol.nameNode.value, "Num")
+          assertEquals(
+            ProtocolRegistry.typeKey(error.instance.concreteType, result.module.resolvables),
+            ProtocolRegistry.typeKey(
+              typeReference("Int", result.module.resolvables),
+              result.module.resolvables
+            )
+          )
           val span = error.source.spanOpt.get
           assertEquals(
             source.substring(span.start.index, span.end.index),
@@ -1181,7 +1198,7 @@ class ProtocolCheckerTests extends BaseEffFunSuite:
     """
     semVisibleState(source).map { result =>
       result.errors match
-        case List(SemanticError.DuplicateName("Num", duplicates, _)) =>
+        case List(SemanticError.DuplicateName("Num", duplicates, _, _)) =>
           val declarations = duplicates.collect { case protocol: Protocol => protocol }
           assertEquals(declarations.size, 2)
           assertEquals(declarations.count(_.source.spanOpt.nonEmpty), 1)

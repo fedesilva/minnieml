@@ -454,7 +454,12 @@ class DiagnosticCausesTests extends BaseEffFunSuite:
   }
 
   test("an unstamped parser failure cannot borrow a companion failure's proof") {
-    val stamped    = ParseTermError(source, "Invalid identifier", Some("123name"), secondRoots)
+    val stamped = ParseTermError(
+      source,
+      SyntaxError.InvalidIdentifier("123name", IdentifierKind.Binding, false),
+      Some("123name"),
+      secondRoots
+    )
     val unstamped  = stamped.copy(causes = Vector.empty)
     val context    = DiagnosticCauses.empty
     val complete   = Tuple(source, NonEmptyList.of(failed(firstRoots), expr(stamped)))

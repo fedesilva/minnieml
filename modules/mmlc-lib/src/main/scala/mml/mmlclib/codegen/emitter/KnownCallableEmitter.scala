@@ -42,7 +42,7 @@ private[emitter] def compileKnownCallableValue(
 ): Either[CodeGenError, CompileResult] =
   state.knownCallableEntries
     .get(targetId)
-    .toRight(CodeGenError("Missing known callable entry"))
+    .toRight(CodeGenError(CodeGenReason.MissingKnownCallableEntry))
     .flatMap { entry =>
       entry.definition.binding match
         case Some(binding) =>
@@ -109,7 +109,7 @@ private[emitter] def compileKnownCallableCall(
   for
     entry <- state.knownCallableEntries
       .get(targetId)
-      .toRight(CodeGenError("Missing known callable entry", callee.some))
+      .toRight(CodeGenError(CodeGenReason.MissingKnownCallableEntry, callee.some))
     evaluated <- compileArgs(args, state, scope, compileExpr)
     environment <-
       if entry.needsEnvironment then

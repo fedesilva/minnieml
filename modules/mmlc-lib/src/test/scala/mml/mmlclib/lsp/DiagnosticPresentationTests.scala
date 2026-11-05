@@ -8,7 +8,7 @@ import mml.mmlclib.errors.DiagnosticRelation
 import mml.mmlclib.parser.SourceInfo
 import mml.mmlclib.semantic.{SemanticError, TypeError}
 import mml.mmlclib.test.BaseEffFunSuite
-import mml.mmlclib.util.error.print.ErrorPrinter
+import mml.mmlclib.util.error.print.{ErrorPrinter, diagnosticMessage}
 
 import java.nio.file.Files
 
@@ -38,7 +38,7 @@ class DiagnosticPresentationTests extends BaseEffFunSuite:
       expectedSpans <- originalSpans
       state <- compile(CompilerConfig.default)
     yield
-      assertEquals(state.visibleErrors.map(_.message), rootMessages)
+      assertEquals(state.visibleErrors.map(diagnosticMessage), rootMessages)
       assert(state.errors.size > state.visibleErrors.size)
       val consequences = state.diagnostics.records.filter { record =>
         record.relation match
@@ -47,7 +47,7 @@ class DiagnosticPresentationTests extends BaseEffFunSuite:
       }
       assert(consequences.nonEmpty)
       val primary = state.diagnostics.records.filter(_.relation == DiagnosticRelation.Primary)
-      assertEquals(primary.map(_.error.message), rootMessages)
+      assertEquals(primary.map(record => diagnosticMessage(record.error)), rootMessages)
       assertEquals(
         primary.map(_.error).collect { case error: SemanticError.UndefinedRef =>
           error.ref.spanOpt
@@ -57,7 +57,10 @@ class DiagnosticPresentationTests extends BaseEffFunSuite:
       assert(consequences.forall(_.causes.forall(id => primary.exists(_.id == id))))
 
       val lsp = Diagnostics.fromCompilerState(state)
-      assertEquals(lsp.map(_.message), rootNames.map(name => s"Undefined reference: $name").toList)
+      assertEquals(
+        lsp.map(_.message),
+        rootNames.map(name => s"Undefined reference: '$name'").toList
+      )
       assertEquals(lsp.map(_.range), expectedSpans.map(Range.fromSrcSpan).toList)
       assert(lsp.forall(_.severity == DiagnosticSeverity.Error))
 
@@ -92,7 +95,7 @@ class DiagnosticPresentationTests extends BaseEffFunSuite:
         assertEquals(exit, ExitCode.Error)
         assert(!outputExists)
         val rendered = messages.mkString("\n")
-        val headers  = rootNames.map(name => s"Undefined reference '$name'")
+        val headers  = rootNames.map(name => s"Undefined reference: '$name'")
         headers.foreach { header =>
           assertEquals(rendered.linesIterator.count(_.contains(header)), 1, rendered)
         }
@@ -127,7 +130,7 @@ class DiagnosticPresentationTests extends BaseEffFunSuite:
         exit <- CompilerApi.processAstOnly(path, config, text => output.update(_ :+ text))
         messages <- output.get
       yield
-        assertEquals(state.visibleErrors.map(_.message), Vector(message))
+        assertEquals(state.visibleErrors.map(diagnosticMessage), Vector(message))
         val roots = state.diagnostics.records.filter(_.relation == DiagnosticRelation.Primary)
         assertEquals(roots.size, 1)
         val root = roots.head
@@ -150,9 +153,13 @@ class DiagnosticPresentationTests extends BaseEffFunSuite:
 
         assertEquals(exit, ExitCode.Error)
         val rendered = messages.mkString("\n")
-        assertEquals(rendered.linesIterator.count(_.contains("Type mismatch at")), 1, rendered)
+        assertEquals(
+          rendered.linesIterator.count(_.contains("Type mismatch: expected Int, got String at")),
+          1,
+          rendered
+        )
         assert(
-          rendered.contains("Type mismatch at [2:5]-[2:18]: expected 'Int', got 'String'"),
+          rendered.contains("Type mismatch: expected Int, got String at [2:5]-[2:18]"),
           rendered
         )
         val highlighted = s"${Console.RED}${Console.BOLD}b: Int = \"2\";${Console.RESET}"

@@ -4,6 +4,11 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-11-05
 
+- Represent compiler failures with typed reasons and structured context across parsing, semantics,
+  ownership, closures, code generation, and tool execution. Share message wording across CLI,
+  editor diagnostics, and plain API output while preserving nested errors and source evidence.
+  Distinguish missing tools, process-start failures, and unsuccessful exits without matching text.
+
 - Execute the custom path selected by `run --output`, including relative filenames and paths
   containing spaces. Share executable-path selection with linking to avoid launching stale
   default outputs, while preserving default naming and explicit-target suffixes.

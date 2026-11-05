@@ -1,6 +1,7 @@
 package mml.mmlclib.codegen.emitter
 
 import mml.mmlclib.ast.*
+import mml.mmlclib.util.error.print.diagnosticMessage
 import munit.FunSuite
 
 class FunctionEmitterBorrowClosureValidatorTest extends FunSuite:
@@ -33,7 +34,7 @@ class FunctionEmitterBorrowClosureValidatorTest extends FunSuite:
 
     validateLoopifiedBorrowClosures(body) match
       case Left(err) =>
-        fail(s"Expected direct lambda invocation to validate, got: ${err.message}")
+        fail(s"Expected direct lambda invocation to validate, got: ${diagnosticMessage(err)}")
       case Right(_) =>
         ()
   }

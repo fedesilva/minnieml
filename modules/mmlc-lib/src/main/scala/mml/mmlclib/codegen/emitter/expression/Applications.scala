@@ -4,6 +4,7 @@ import cats.syntax.all.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.codegen.emitter.{
   CodeGenError,
+  CodeGenReason,
   CodeGenState,
   CompileResult,
   LocalBindingResult,
@@ -50,11 +51,7 @@ def compileLambdaApp(
       argRes <- compileExpr(allArgs.head, state, functionScope)
       bodyRes <- compileExpr(lambda.body, argRes.state, functionScope)
     yield bodyRes.copy(exitBlock = bodyRes.exitBlock.orElse(argRes.exitBlock))
-  else
-    CodeGenError(
-      "Immediate lambda application requires a nullary or unary lambda and one argument",
-      lambda.some
-    ).asLeft
+  else CodeGenError(CodeGenReason.ImmediateLambdaArity, lambda.some).asLeft
 
 /** Chooses the scope entry for a let binding before compiling its continuation. Planned lambdas
   * emit a plain entry; aliases reuse an existing target without constructing a closure. Other
@@ -150,10 +147,7 @@ def compileNativeOp(
     case List(operandArg) =>
       compileUnaryNativeOp(fnRef, tpl, operandArg, state, functionScope, compileExpr)
     case _ =>
-      CodeGenError(
-        s"Native operator called with wrong number of arguments: ${allArgs.length}",
-        app.some
-      ).asLeft
+      CodeGenError(CodeGenReason.NativeOperatorArity(allArgs.length), app.some).asLeft
 
 private def compileBinaryNativeOp(
   fnRef:         Ref,
@@ -175,10 +169,7 @@ private def compileBinaryNativeOp(
     llvmType <- leftArg.typeSpec match
       case Some(typeSpec) => getLlvmType(typeSpec, rightRes.state)
       case None =>
-        CodeGenError(
-          s"Missing type information for binary operator operand",
-          leftArg.some
-        ).asLeft
+        CodeGenError(CodeGenReason.MissingBinaryOperandType, leftArg.some).asLeft
 
     instruction = substituteTemplate(tpl, llvmType, List(leftOp, rightOp))
     line        = s"  %$resultReg = $instruction"
@@ -187,10 +178,7 @@ private def compileBinaryNativeOp(
     typeName <- getMmlTypeForOp(fnRef) match
       case Some(t) => t.asRight
       case None =>
-        CodeGenError(
-          s"Could not determine return type for binary operator '${fnRef.name}'",
-          fnRef.some
-        ).asLeft
+        CodeGenError(CodeGenReason.MissingBinaryReturnType(fnRef), fnRef.some).asLeft
   yield CompileResult(
     resultReg,
     finalState,
@@ -216,10 +204,7 @@ private def compileUnaryNativeOp(
     llvmType <- operandArg.typeSpec match
       case Some(typeSpec) => getLlvmType(typeSpec, operandRes.state)
       case None =>
-        CodeGenError(
-          s"Missing type information for unary operator operand",
-          operandArg.some
-        ).asLeft
+        CodeGenError(CodeGenReason.MissingUnaryOperandType, operandArg.some).asLeft
 
     instruction = substituteTemplate(tpl, llvmType, List(operandOp))
     line        = s"  %$resultReg = $instruction"
@@ -228,10 +213,7 @@ private def compileUnaryNativeOp(
     typeName <- getMmlTypeForOp(fnRef) match
       case Some(t) => t.asRight
       case None =>
-        CodeGenError(
-          s"Could not determine return type for unary operator '${fnRef.name}'",
-          fnRef.some
-        ).asLeft
+        CodeGenError(CodeGenReason.MissingUnaryReturnType(fnRef), fnRef.some).asLeft
   yield CompileResult(resultReg, finalState, false, typeName, exitBlock = operandRes.exitBlock)
 
 /** Checks if all arguments are unit literals. */
@@ -291,16 +273,17 @@ private[emitter] def compileCallableCall(
   resultType: Option[Type],
   state:      CodeGenState
 ): Either[CodeGenError, CompileResult] =
-  resultType.toRight(CodeGenError("Missing callable result type", fnRef.some)).flatMap { tpe =>
-    for
-      llvmType <- getLlvmType(tpe, state)
-      typeName <- getNominalTypeName(tpe)
-      result <- getFunctionTemplate(fnRef.resolvedId.flatMap(state.resolvables.lookup)) match
-        case Some(tpl) =>
-          compileFunctionWithTemplate(tpl, args, llvmType, typeName, state)
-        case None =>
-          compileStandardCall(fnRef, args, llvmType, typeName, state)
-    yield result
+  resultType.toRight(CodeGenError(CodeGenReason.MissingCallableResultType, fnRef.some)).flatMap {
+    tpe =>
+      for
+        llvmType <- getLlvmType(tpe, state)
+        typeName <- getNominalTypeName(tpe)
+        result <- getFunctionTemplate(fnRef.resolvedId.flatMap(state.resolvables.lookup)) match
+          case Some(tpl) =>
+            compileFunctionWithTemplate(tpl, args, llvmType, typeName, state)
+          case None =>
+            compileStandardCall(fnRef, args, llvmType, typeName, state)
+      yield result
   }
 
 /** Evaluates arguments once in source order, threading their effects through the returned state.
@@ -331,10 +314,7 @@ private[emitter] def compileArgs(
                 ).asRight
               case Left(err) => err.asLeft
           case None =>
-            CodeGenError(
-              s"Missing type information for function argument - TypeChecker should have provided this",
-              arg.some
-            ).asLeft
+            CodeGenError(CodeGenReason.MissingArgumentType, arg.some).asLeft
       }
     case (Left(err), _) => err.asLeft
   }
@@ -442,10 +422,7 @@ private def compileStaticNullEnvClosureCall(
           typeName
         ).asRight
       case None =>
-        CodeGenError(
-          s"Could not determine MML type for static closure call result",
-          app.some
-        ).asLeft
+        CodeGenError(CodeGenReason.MissingStaticClosureResultType, app.some).asLeft
 
 private def sanitizeLabelPart(raw: String): String =
   raw.replace("%", "reg").replaceAll("[^A-Za-z0-9_\\.]", "_")
@@ -496,17 +473,14 @@ def compileIndirectCall(
     .flatMap(resolveToTypeFn(_, state.resolvables))
     .map(_.paramTypes.length)
   val arityCheck = expectedArity.filter(_ != allArgs.size).fold(().asRight[CodeGenError]) { arity =>
-    CodeGenError(
-      s"Indirect call '${fnRef.name}' argument count: expected $arity, received ${allArgs.size}",
-      app.some
-    ).asLeft[Unit]
+    CodeGenError(CodeGenReason.IndirectCallArity(fnRef, arity, allArgs.size), app.some).asLeft[Unit]
   }
 
   for
     _ <- arityCheck
     args <- compileArgs(allArgs, state, functionScope, compileExpr)
     fnReturnType <- app.typeSpec
-      .toRight(CodeGenError(s"Missing return type for indirect call '${fnRef.name}'", app.some))
+      .toRight(CodeGenError(CodeGenReason.MissingIndirectReturnType(fnRef), app.some))
       .flatMap(getLlvmType(_, args.state))
     callee <- resolveIndirectCallee(fnRef, args.state, functionScope, compileExpr)
     closure          = callee.operandStr
@@ -573,10 +547,7 @@ def compileIndirectCall(
                   exitBlock = exitBlock
                 ).asRight
               case None =>
-                CodeGenError(
-                  s"Could not determine MML type for indirect call result",
-                  app.some
-                ).asLeft
+                CodeGenError(CodeGenReason.MissingIndirectResultType, app.some).asLeft
   yield result
 
 /** Uses ordinary reference emission so identity checks, field loads, and on-demand adapters also

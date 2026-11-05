@@ -4,6 +4,7 @@ import cats.effect.{ExitCode, IO, IOApp, Resource}
 import cats.syntax.all.*
 import mml.mmlclib.api.CompilerApi
 import mml.mmlclib.compiler.CompilerConfig
+import mml.mmlclib.util.error.print.diagnosticMessage
 import upickle.default.{Writer, write}
 
 import java.nio.file.{Files, Path}
@@ -88,7 +89,7 @@ object FrontendCorpus extends IOApp:
           relativePath,
           if state.hasErrors then Outcome.Diagnostics else Outcome.Clean,
           state.errors.size,
-          state.visibleErrors.map(error => relativeMessage(error.message, root))
+          state.visibleErrors.map(error => relativeMessage(diagnosticMessage(error), root))
         )
     }
 

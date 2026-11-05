@@ -117,7 +117,7 @@ fn read(box: BoxAlias): Int = box.value;;"""
   test("name recovery retains the first declaration even when a later alias reaches a struct"):
     fixture.map { fixture =>
       val failed = fixture.alias.copy(
-        typeRef  = ParseTypeError(SourceOrigin.Synth, "Incomplete type", None),
+        typeRef  = ParseTypeError(SourceOrigin.Synth, SyntaxError.InvalidTypeSyntax, None),
         typeSpec = None
       )
       val owner = TypeRef(SourceOrigin.Synth, fixture.alias.name)

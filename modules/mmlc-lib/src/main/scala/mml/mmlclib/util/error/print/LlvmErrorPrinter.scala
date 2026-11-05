@@ -25,23 +25,4 @@ object LlvmErrorPrinter:
     * @return
     *   A human-readable error message
     */
-  private def prettyPrintSingle(error: LlvmCompilationError): String = error match
-    case LlvmCompilationError.TemporaryFileCreationError(message) =>
-      s"Failed to create temporary file: $message"
-    case LlvmCompilationError.UnsupportedOperatingSystem(osName) =>
-      s"Unsupported operating system: $osName"
-    case LlvmCompilationError.UnsupportedArchitecture(archName) =>
-      s"Unsupported architecture: $archName"
-    case LlvmCompilationError.CommandExecutionError(command, errorMessage, exitCode) =>
-      s"Command execution failed (exit code $exitCode): $command\n$errorMessage"
-    case LlvmCompilationError.ExecutableRunError(path, exitCode) =>
-      s"Executable run failed (exit code $exitCode): $path"
-    case LlvmCompilationError.LlvmNotInstalled(missingTools) =>
-      s"LLVM tools not installed: ${missingTools.mkString(", ")}"
-    case LlvmCompilationError.RuntimeResourceError(message) =>
-      s"MML runtime resource error: $message"
-    case LlvmCompilationError.TripleResolutionError(message) =>
-      s"Target triple resolution failed: $message"
-
-    case LlvmCompilationError.TargetResolutionError(message) =>
-      s"Target attributes resolution failed: $message"
+  private def prettyPrintSingle(error: LlvmCompilationError): String = toolchainMessage(error)

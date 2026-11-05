@@ -4,6 +4,7 @@ import cats.effect.{IO, Resource}
 import cats.syntax.all.*
 import mml.mmlclib.compiler.CompilerConfig
 import mml.mmlclib.test.BaseEffFunSuite
+import mml.mmlclib.util.error.print.diagnosticMessage
 
 import java.nio.file.{Files, Path}
 import scala.jdk.CollectionConverters.*
@@ -37,7 +38,7 @@ class MixedOwnershipCodegenTests extends BaseEffFunSuite:
         triple <- LlvmToolchain.queryLocalTriple.map(_.getOrElse(fail("Missing target")))
         target <- ClangTarget
           .resolve(directory, LlvmToolchain.clangFlags(config, triple))
-          .map(_.fold(error => fail(error.message), identity))
+          .map(_.fold(error => fail(diagnosticMessage(error)), identity))
         path <- IO.blocking(Files.writeString(directory.resolve("MixedOwnership.ll"), ir))
         _ <- commandNotFailed(List("llvm-as", path.toString, "-o", "/dev/null"), directory)
         compiled <- LlvmToolchain.compile(path, config, triple.some, target)

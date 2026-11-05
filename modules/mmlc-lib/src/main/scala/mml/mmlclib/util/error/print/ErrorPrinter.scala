@@ -48,7 +48,7 @@ object ErrorPrinter:
     case SemanticError.UndefinedRef(ref, _, _) => startPosOf(ref)
     case SemanticError.UndefinedTypeRef(typeRef, _, _) => startPosOf(typeRef)
     case SemanticError.AmbiguousTypeRef(typeRef, _, _, _) => startPosOf(typeRef)
-    case SemanticError.DuplicateName(_, duplicates, _) =>
+    case SemanticError.DuplicateName(_, duplicates, _, _) =>
       duplicates
         .collect { case d: FromSource => d }
         .flatMap(spanOf)
@@ -66,7 +66,7 @@ object ErrorPrinter:
         .minOption
         .getOrElse((Int.MaxValue, Int.MaxValue))
     case SemanticError.InvalidExpressionFound(invalidExpr, _) => startPosOf(invalidExpr)
-    case SemanticError.InvalidEntryPoint(_, source) => startPosOf(source)
+    case SemanticError.InvalidEntryPoint(error) => startPosOf(error.source)
     case SemanticError.ProtocolErrorFound(error, _) => startPosOf(error.source)
     case error: SemanticError.UseAfterMove => startPosOf(error.source)
     case SemanticError.ConsumingParamNotLastUse(_, ref, _) => startPosOf(ref)
@@ -112,7 +112,7 @@ object ErrorPrinter:
           node match
             case fs: FromSource => startPosOf(fs)
             case _ => (Int.MaxValue, Int.MaxValue)
-        case mml.mmlclib.semantic.TypeError.IncompatibleTypes(node, _, _, _, _) =>
+        case mml.mmlclib.semantic.TypeError.IncompatibleTypes(node, _, _, _) =>
           startPosOf(node.asInstanceOf[FromSource])
         case mml.mmlclib.semantic.TypeError.ConflictingLambdaParamInference(param, _, _, _) =>
           startPosOf(param)
@@ -167,97 +167,98 @@ object ErrorPrinter:
 
       case _ => "" // No special AST info for other error types
 
+    val semantic = error
     val baseMessage = error match
-      case SemanticError.DuplicateName(name, duplicates, phase) =>
+      case SemanticError.DuplicateName(_, duplicates, phase, _) =>
         val locations = duplicates
           .collect { case d: FromSource => d }
           .flatMap(spanOf)
           .map(formatLocation)
           .mkString(", ")
 
-        s"${Console.RED}Duplicate name '$name' defined at: $locations${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+        s"${Console.RED}${semanticErrorMessage(semantic)} defined at: $locations${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case SemanticError.UndefinedRef(ref, member, phase) =>
-        s"${Console.RED}Undefined reference '${ref.name}' at ${locationOf(ref)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+        s"${Console.RED}${semanticErrorMessage(semantic)} at ${locationOf(ref)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case SemanticError.UndefinedTypeRef(typeRef, member, phase) =>
-        s"${Console.RED}Undefined type reference '${typeRef.name}' at ${locationOf(typeRef)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+        s"${Console.RED}${semanticErrorMessage(semantic)} at ${locationOf(typeRef)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case SemanticError.AmbiguousTypeRef(typeRef, candidates, _, phase) =>
         val locations = candidates.collect { case candidate: FromSource => locationOf(candidate) }
-        s"${Console.RED}Ambiguous type reference '${typeRef.name}' at ${locationOf(typeRef)}: " +
+        s"${Console.RED}${semanticErrorMessage(semantic)} at ${locationOf(typeRef)}: " +
           s"candidates at ${locations.mkString(", ")}${Console.RESET}\n" +
           s"${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case SemanticError.InvalidExpression(expr, message, phase) =>
-        s"${Console.RED}Invalid expression at ${locationOf(expr)}: $message${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+        s"${Console.RED}Invalid expression at ${locationOf(expr)}: ${expressionMessage(message)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case SemanticError.MemberErrorFound(error, phase) =>
         val location = locationOf(error)
-        s"${Console.RED}Parser error at $location: ${error.message}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+        s"${Console.RED}Parser error at $location: ${diagnosticMessage(error)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case SemanticError.ParsingIdErrorFound(error, phase) =>
         val location = locationOf(error)
-        s"${Console.RED}Invalid identifier at $location: ${error.message}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+        s"${Console.RED}Invalid identifier at $location: ${diagnosticMessage(error)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case SemanticError.ParseTermErrorFound(error, phase) =>
         val location = locationOf(error)
-        s"${Console.RED}Parser error at $location: ${error.message}${Console.RESET}\n" +
+        s"${Console.RED}Parser error at $location: ${diagnosticMessage(error)}${Console.RESET}\n" +
           s"${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case SemanticError.ParseTypeErrorFound(error, phase) =>
         val location = locationOf(error)
-        s"${Console.RED}Type parser error at $location: ${error.message}${Console.RESET}\n" +
+        s"${Console.RED}Type parser error at $location: ${diagnosticMessage(error)}${Console.RESET}\n" +
           s"${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case SemanticError.DanglingTerms(terms, message, phase) =>
         val locations = terms.collect { case fs: FromSource => locationOf(fs) }.mkString(", ")
-        s"${Console.RED}$message at $locations${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+        s"${Console.RED}${expressionMessage(message)} at $locations${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case SemanticError.InvalidExpressionFound(invalidExpr, phase) =>
         s"${Console.RED}Invalid expression found at ${locationOf(invalidExpr)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
-      case SemanticError.InvalidEntryPoint(message, source) =>
-        val location = locationOf(source)
-        s"${Console.RED}$message at $location${Console.RESET}"
+      case SemanticError.InvalidEntryPoint(error) =>
+        val location = locationOf(error.source)
+        s"${Console.RED}${entryPointMessage(error)} at $location${Console.RESET}"
 
       case SemanticError.ProtocolErrorFound(error, phase) =>
         val location = locationOf(error.source)
-        s"${Console.RED}${error.message} at $location${Console.RESET}\n" +
+        s"${Console.RED}${diagnosticMessage(error)} at $location${Console.RESET}\n" +
           s"${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case SemanticError.VisibilityViolation(ref, decl, phase) =>
-        s"${Console.RED}'${ref.name}' is not visible (declared in '${decl.name}')${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+        s"${Console.RED}${semanticErrorMessage(semantic)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case error: SemanticError.UseAfterMove =>
-        val use  = s"Use of '${error.ref.name}' after move at ${locationOf(error.source)}"
+        val use  = s"${semanticErrorMessage(semantic)}\nUse at: ${locationOf(error.source)}"
         val move = s"Moved at: ${locationOf(error.movedAt)}, Phase: ${error.phase}"
         s"${Console.RED}$use${Console.RESET}\n${Console.YELLOW}$move${Console.RESET}"
 
       case SemanticError.ConsumingParamNotLastUse(param, ref, phase) =>
-        s"${Console.RED}Consuming parameter '${param.name}' must be the last use of '${ref.name}' at ${locationOf(ref)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+        s"${Console.RED}${semanticErrorMessage(semantic)} at ${locationOf(ref)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case SemanticError.BorrowedValuePassedToConsumingParam(param, ref, phase) =>
-        s"${Console.RED}Cannot pass borrowed value '${ref.name}' to consuming parameter '${param.name}' at ${locationOf(ref)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+        s"${Console.RED}${semanticErrorMessage(semantic)} at ${locationOf(ref)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case SemanticError.PartialApplicationWithConsuming(fn, param, phase) =>
         val location = locationOf(fn)
-        s"${Console.RED}Cannot partially apply function with consuming parameter '${param.name}' at $location${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+        s"${Console.RED}${semanticErrorMessage(semantic)} at $location${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case SemanticError.ConditionalOwnershipMismatch(cond, phase) =>
-        s"${Console.RED}Conditional branches have different ownership states at ${locationOf(cond)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+        s"${Console.RED}${semanticErrorMessage(semantic)} at ${locationOf(cond)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case SemanticError.BorrowEscapeViaReturn(ref, phase) =>
-        s"${Console.RED}Cannot return borrowed value '${ref.name}' at ${locationOf(ref)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+        s"${Console.RED}${semanticErrorMessage(semantic)} at ${locationOf(ref)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case SemanticError.CapturedBorrowedHeapBinding(ref, phase) =>
-        s"${Console.RED}Cannot capture borrowed heap binding '${ref.name}' at ${locationOf(ref)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+        s"${Console.RED}${semanticErrorMessage(semantic)} at ${locationOf(ref)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case SemanticError.CapturedMovedHeapBinding(ref, movedAt, phase) =>
-        s"${Console.RED}Cannot capture moved heap binding '${ref.name}' at ${locationOf(ref)}${Console.RESET}\n${Console.YELLOW}Moved at: ${locationOf(movedAt)}, Phase: $phase${Console.RESET}"
+        s"${Console.RED}${semanticErrorMessage(semantic)}\nUse at: ${locationOf(ref)}${Console.RESET}\n${Console.YELLOW}Moved at: ${locationOf(movedAt)}, Phase: $phase${Console.RESET}"
 
       case SemanticError.BorrowClosureEscapeViaReturn(lambda, phase) =>
-        s"${Console.RED}Cannot return borrow-capturing closure at ${locationOf(lambda)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+        s"${Console.RED}${semanticErrorMessage(semantic)} at ${locationOf(lambda)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case SemanticError.TypeCheckingError(error) =>
         // Delegate to SemanticErrorPrinter to avoid duplication
@@ -293,7 +294,7 @@ object ErrorPrinter:
     else
       val messages = errors.map { err =>
         val baseMessage =
-          s"${Console.RED}Code generation error: ${err.message}${Console.RESET}\n${Console.YELLOW}Phase: Code Generation${Console.RESET}"
+          s"${Console.RED}Code generation error: ${diagnosticMessage(err)}${Console.RESET}\n${Console.YELLOW}Phase: Code Generation${Console.RESET}"
 
         val snippetAndLocation =
           (err.node.collect { case fs: FromSource => fs }.flatMap(spanOf), sourceInfo) match
@@ -315,21 +316,4 @@ object ErrorPrinter:
     errors.map(prettyPrintLlvmError).mkString("\n")
 
   /** Pretty print a LLVM compilation error */
-  private def prettyPrintLlvmError(error: LlvmCompilationError): String = error match
-    case LlvmCompilationError.TemporaryFileCreationError(msg) =>
-      s"Failed to create temporary file: $msg"
-    case LlvmCompilationError.UnsupportedOperatingSystem(os) => s"Unsupported operating system: $os"
-    case LlvmCompilationError.UnsupportedArchitecture(arch) => s"Unsupported architecture: $arch"
-    case LlvmCompilationError.CommandExecutionError(cmd, msg, code) =>
-      s"Command execution failed (exit code $code): $cmd\n$msg"
-    case LlvmCompilationError.ExecutableRunError(path, code) =>
-      s"Executable run failed (exit code $code): $path"
-    case LlvmCompilationError.LlvmNotInstalled(tools) =>
-      s"LLVM tools not installed: ${tools.mkString(", ")}"
-    case LlvmCompilationError.RuntimeResourceError(msg) =>
-      s"MML runtime resource error: $msg"
-    case LlvmCompilationError.TripleResolutionError(msg) =>
-      s"Target triple resolution failed: $msg"
-
-    case LlvmCompilationError.TargetResolutionError(msg) =>
-      s"Target attributes resolution failed: $msg"
+  private def prettyPrintLlvmError(error: LlvmCompilationError): String = toolchainMessage(error)

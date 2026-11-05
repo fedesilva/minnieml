@@ -66,7 +66,10 @@ class ParsingErrorCheckerTests extends BaseEffFunSuite:
         assertEquals(result.errors.size, failedNames.size, result.errors)
         assertEquals(errors.map(_.failedCode).toList, failedNames.map(_.some))
         errors.zip(failedNames).foreach { (error, name) =>
-          assertEquals(error.message, s"Invalid identifier '$name'")
+          assertEquals(
+            error.reason,
+            SyntaxError.InvalidIdentifier(name, IdentifierKind.Binding, false)
+          )
           assertEquals(error.spanOpt, tokenSpan(code, name).some)
         }
         assertEquals(recoveredTree(result.module), recoveredTree(module))
@@ -149,7 +152,10 @@ class ParsingErrorCheckerTests extends BaseEffFunSuite:
       }
       assertEquals(errors.size, 1)
       val error = errors.head
-      assertEquals(error.message, "Invalid identifier '123invalid'")
+      assertEquals(
+        error.reason,
+        SyntaxError.InvalidIdentifier("123invalid", IdentifierKind.Binding, false)
+      )
       assertEquals(error.failedCode, "123invalid".some)
 
       val span = error.spanOpt.getOrElse(fail("Expected nested error source span"))
@@ -191,7 +197,7 @@ class ParsingErrorCheckerTests extends BaseEffFunSuite:
       """
 
     justParse(code).map { module =>
-      val existing = SemanticError.InvalidEntryPoint("existing diagnostic", SourceOrigin.Synth)
+      val existing = SemanticError.InvalidEntryPoint(EntryPointError.NotFound(SourceOrigin.Synth))
       val state = CompilerState
         .empty(module, SourceInfo(code), CompilerConfig.default)
         .addError(existing)
@@ -236,7 +242,10 @@ class ParsingErrorCheckerTests extends BaseEffFunSuite:
       }
       nestedErrors match
         case List(error) =>
-          assertEquals(error.message, "Invalid identifier '123invalid'")
+          assertEquals(
+            error.reason,
+            SyntaxError.InvalidIdentifier("123invalid", IdentifierKind.Binding, false)
+          )
           assertEquals(error.failedCode, "123invalid".some)
 
           val span = error.spanOpt.getOrElse(fail("Expected local function source span"))
@@ -254,7 +263,10 @@ class ParsingErrorCheckerTests extends BaseEffFunSuite:
       val errors = result.errors.collect { case SemanticError.ParseTermErrorFound(error, _) =>
         error
       }
-      assertEquals(errors.map(_.message), List("Expected expression", "Expected '='"))
+      assertEquals(
+        errors.map(_.reason),
+        List(SyntaxError.ExpectedExpression, SyntaxError.ExpectedToken("="))
+      )
       assertEquals(result.errors.size, 2, result.errors)
       val point = SourceInfo(code).pointAt(code.indexOf(';', code.indexOf("let a")))
       assertEquals(errors.map(_.spanOpt), List.fill(2)(SrcSpan(point, point).some))
@@ -281,8 +293,11 @@ class ParsingErrorCheckerTests extends BaseEffFunSuite:
       val memberErrors = result.errors.collect { case SemanticError.MemberErrorFound(error, _) =>
         error
       }
-      assertEquals(componentErrors.map(_.message), List("Expected expression", "Expected '='"))
-      assertEquals(memberErrors.map(_.message), List("Failed to parse member"))
+      assertEquals(
+        componentErrors.map(_.reason),
+        List(SyntaxError.ExpectedExpression, SyntaxError.ExpectedToken("="))
+      )
+      assertEquals(memberErrors.map(_.reason), List(SyntaxError.InvalidMemberSyntax))
       assertEquals(memberErrors.map(_.failedCode), List("bnd noLet = 5;".some))
       assertEquals(result.errors.size, 3, result.errors)
       assert(result.module.members.exists {
@@ -297,7 +312,8 @@ class ParsingErrorCheckerTests extends BaseEffFunSuite:
       val binding = module.members
         .collectFirst { case binding: Bnd => binding }
         .getOrElse(fail("Expected value binding"))
-      val error = ParseTermError(binding.value.source, "Malformed term", "1".some)
+      val error =
+        ParseTermError(binding.value.source, SyntaxError.InvalidExpressionSyntax, "1".some)
       val recovered = module.copy(members =
         List(
           binding.copy(value = binding.value.copy(terms = List(error, error)))

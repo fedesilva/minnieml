@@ -257,8 +257,8 @@ class CallStageOwnershipTests extends BaseEffFunSuite:
       """).map { result =>
         val errors = result.errors.collect { case error: SemanticError.InvalidExpression => error }
         assertEquals(
-          errors.map(_.msg),
-          List("Calling this function consumes its environment and requires ownership")
+          errors.map(_.reason),
+          List(OwnershipError.CallRequiresOwnership)
         )
         assertEquals(result.errors.size, 1, result.errors.toString)
       }
@@ -407,7 +407,7 @@ class CallStageOwnershipTests extends BaseEffFunSuite:
       result <- semState(source)
     yield
       val errors = result.errors.collect { case error: SemanticError.InvalidExpression => error }
-      assertEquals(errors.map(_.msg), List("A call-once function requires a consuming parameter"))
+      assertEquals(errors.map(_.reason), List(OwnershipError.CallOnceRequiresConsuming))
       assertEquals(result.errors.size, 1, result.errors.toString)
       val argument = errors.head.expr
       val expected = source.indexOf("p 1;")
@@ -485,8 +485,8 @@ class CallStageOwnershipTests extends BaseEffFunSuite:
       """).map { result =>
         val errors = result.errors.collect { case error: SemanticError.InvalidExpression => error }
         assertEquals(
-          errors.map(_.msg),
-          List("Callable alternatives must agree on consuming parameters")
+          errors.map(_.reason),
+          List(OwnershipError.ParameterOwnershipMismatch)
         )
         assertEquals(result.errors.size, 1, result.errors.toString)
       }
@@ -540,8 +540,8 @@ class CallStageOwnershipTests extends BaseEffFunSuite:
             error
           }
           assertEquals(
-            errors.map(_.msg),
-            List("Callable alternatives must agree on consuming parameters")
+            errors.map(_.reason),
+            List(OwnershipError.ParameterOwnershipMismatch)
           )
           assertEquals(result.errors.size, 1, result.errors.toString)
           val call =
@@ -592,8 +592,8 @@ class CallStageOwnershipTests extends BaseEffFunSuite:
       """).map { result =>
         val errors = result.errors.collect { case error: SemanticError.InvalidExpression => error }
         assertEquals(
-          errors.map(_.msg),
-          List("Callable alternatives must agree on result ownership")
+          errors.map(_.reason),
+          List(OwnershipError.ResultOwnershipMismatch)
         )
         assertEquals(result.errors.size, 1, result.errors.toString)
       }

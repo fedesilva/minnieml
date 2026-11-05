@@ -86,12 +86,12 @@ private[emitter] def compileOwnershipResult(
           )
 
         case _ =>
-          CodeGenError("Ownership result requires an immediate unary scope", app.some).asLeft
+          CodeGenError(CodeGenReason.InvalidOwnershipScope, app.some).asLeft
 
     case List(cond: Cond) => compileOwnershipConditional(cond, state, scope)
     case List(group: TermGroup) => compileOwnershipResult(group.inner, state, scope)
     case List(inner: Expr) => compileOwnershipResult(inner, state, scope)
-    case _ => CodeGenError("Missing ownership result at scope exit", expr.some).asLeft
+    case _ => CodeGenError(CodeGenReason.MissingOwnershipResult, expr.some).asLeft
 
 private def compileOwnershipConditional(
   cond:  Cond,
@@ -102,7 +102,7 @@ private def compileOwnershipConditional(
     condition <- compileExpr(cond.cond, state, scope)
     valueType <- cond.typeSpec
       .orElse(cond.ifTrue.typeSpec)
-      .toRight(CodeGenError("Missing ownership result type", cond.some))
+      .toRight(CodeGenError(CodeGenReason.MissingOwnershipResultType, cond.some))
       .flatMap(getLlvmType(_, condition.state))
     thenLabel  = s"owns_then${condition.state.nextRegister}"
     elseLabel  = s"owns_else${condition.state.nextRegister + 1}"

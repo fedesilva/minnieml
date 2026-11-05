@@ -3,10 +3,18 @@ package mml.mmlclib.parser
 import cats.effect.{ExitCode, IO, IOApp}
 import mml.mmlclib.ast.*
 import mml.mmlclib.compiler.{CompilerConfig, CompilerState, ParsingErrorChecker}
+import mml.mmlclib.util.error.print.diagnosticMessage
 import upickle.default.{ReadWriter, write}
 
 /** Child entry point for parser outcomes and the deadline harness's blocking control. */
 object ParserDeadlineProbe extends IOApp:
+
+  /** The missing grammar item reported by a truncated conditional. Token text crosses the child
+    * process boundary so the parent can distinguish a missing keyword from a missing terminator.
+    */
+  enum MissingSyntax derives ReadWriter:
+    case Expression
+    case Token(value: String)
 
   enum Structure derives ReadWriter:
     case Binding(value: List[Structure])
@@ -14,7 +22,11 @@ object ParserDeadlineProbe extends IOApp:
     case Bool(value: Boolean)
     case Integer(value: Long)
     case UnitValue(location: Option[(Int, Int)])
-    case ParseError(location: Option[(Int, Int)], message: String, failedCode: Option[String])
+    case ParseError(
+      location:   Option[(Int, Int)],
+      reason:     MissingSyntax,
+      failedCode: Option[String]
+    )
     case Unexpected
 
   case class ConditionalOutcome(members: List[Structure], diagnosticCount: Int) derives ReadWriter
@@ -35,7 +47,13 @@ object ParserDeadlineProbe extends IOApp:
         )
 
       case error: ParseTermError =>
-        List(Structure.ParseError(location, error.message, error.failedCode))
+        val summary = error.reason match
+          case SyntaxError.ExpectedExpression =>
+            Structure.ParseError(location, MissingSyntax.Expression, error.failedCode)
+          case SyntaxError.ExpectedToken(token) =>
+            Structure.ParseError(location, MissingSyntax.Token(token), error.failedCode)
+          case _ => Structure.Unexpected
+        List(summary)
 
       case literal: LiteralBool => List(Structure.Bool(literal.value))
       case literal: LiteralInt => List(Structure.Integer(literal.value))
@@ -47,7 +65,7 @@ object ParserDeadlineProbe extends IOApp:
       val (info, result) = Parser.parseModuleWithInfo(source, "DeadlineProbe")
 
       result match
-        case Left(error) => (11, s"fatal parse failure: ${error.message}")
+        case Left(error) => (11, s"fatal parse failure: ${diagnosticMessage(error)}")
 
         case Right(module) =>
           val state = ParsingErrorChecker.checkModule(

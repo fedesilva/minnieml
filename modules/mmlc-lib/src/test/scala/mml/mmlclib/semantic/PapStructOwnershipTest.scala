@@ -49,7 +49,7 @@ class PapStructOwnershipTest extends BaseEffFunSuite:
         assert(
           state.errors.exists {
             case error: SemanticError.InvalidExpression =>
-              error.message.contains("global value")
+              error.reason == OwnershipError.GlobalTransfer
             case _ => false
           },
           state.errors
@@ -274,7 +274,7 @@ class PapStructOwnershipTest extends BaseEffFunSuite:
       assert(
         state.errors.exists {
           case error: SemanticError.InvalidExpression =>
-            error.toString.contains("Callable alternatives must agree on result ownership")
+            error.reason == OwnershipError.ResultOwnershipMismatch
           case _ => false
         },
         state.errors
@@ -301,7 +301,7 @@ class PapStructOwnershipTest extends BaseEffFunSuite:
       assert(
         state.errors.exists {
           case error: SemanticError.InvalidExpression =>
-            error.toString.contains("Callable alternatives must agree on consuming parameters")
+            error.reason == OwnershipError.ParameterOwnershipMismatch
           case _ => false
         },
         state.errors

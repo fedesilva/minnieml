@@ -81,7 +81,7 @@ object LocalBindings:
       .toRight(
         SemanticError.InvalidExpression(
           Expr(param.source, List(parameterRef(param))),
-          s"Missing binding identity for '${param.name}'",
+          ExpressionProblem.MissingBindingIdentity(param),
           "local-construction"
         )
       )

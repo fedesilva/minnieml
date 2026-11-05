@@ -12,8 +12,8 @@ private[emitter] def compileCallableValue(
   val binding = ref.resolvedId.flatMap(state.resolvables.lookup).collect { case bnd: Bnd => bnd }
 
   for
-    bnd <- binding.toRight(CodeGenError("Missing callable binding", ref.some))
-    id <- bnd.id.toRight(CodeGenError("Missing callable binding identity", ref.some))
+    bnd <- binding.toRight(CodeGenError(CodeGenReason.MissingCallableBinding, ref.some))
+    id <- bnd.id.toRight(CodeGenError(CodeGenReason.MissingCallableIdentity, ref.some))
     entry <- state.callableEntries.get(id) match
       case Some(name) => (state, name).asRight[CodeGenError]
       case None =>
@@ -22,7 +22,7 @@ private[emitter] def compileCallableValue(
             for
               signature <- bnd.typeSpec
                 .flatMap(resolveToTypeFn(_, state.resolvables))
-                .toRight(CodeGenError("Missing callable signature", ref.some))
+                .toRight(CodeGenError(CodeGenReason.MissingCallableSignature, ref.some))
               returnType <- getLlvmType(signature.returnType, state)
               paramTypes <- signature.paramTypes.traverse(getLlvmType(_, state))
               (allocated, name) = state.allocAnonFnName
@@ -39,7 +39,7 @@ private[emitter] def compileCallableValue(
                 compileCallableCall(ref, args, signature.returnType.some, bodyState)
               }
             yield (emitted, name)
-          case _ => CodeGenError("Expected an emitted callable", ref.some).asLeft
+          case _ => CodeGenError(CodeGenReason.ExpectedEmittedCallable, ref.some).asLeft
     (nextState, name) = entry
   yield CompileResult(
     0,

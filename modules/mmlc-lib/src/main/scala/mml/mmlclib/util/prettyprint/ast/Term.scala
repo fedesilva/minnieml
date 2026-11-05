@@ -258,7 +258,7 @@ def prettyPrintTerm(
     case ParseTermError(sp, message, failedCode, _) =>
       val spanStr = if showSourceSpans then printSourceOrigin(sp) else ""
       s"${indentStr}ParseTermError $spanStr\n" +
-        s"""${indentStr}  "$message"""" +
+        s"""${indentStr}  "${mml.mmlclib.util.error.print.syntaxMessage(message)}"""" +
         failedCode.map(code => s"\n${indentStr}  $code").getOrElse("")
 
     case inv: InvalidExpression =>

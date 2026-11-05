@@ -105,7 +105,7 @@ class TypeResolverTests extends BaseEffFunSuite:
       val ascription = unresolvedType(result.typeAsc)
       val cachedType = unresolvedType(result.typeSpec)
 
-      assertEquals(resolved.errors.map(_.message), Vector("Undefined type: 'Missing'"))
+      assertEquals(resolved.errors.map(undefinedTypeName), Vector("Missing"))
       assertEquals(ascription.causes, resolved.diagnostics.records.map(_.id))
       assertEquals(cachedType.causes, ascription.causes)
       assertEquals(cachedType.originalType, ascription.originalType)
@@ -404,11 +404,11 @@ class TypeResolverTests extends BaseEffFunSuite:
       assertEquals(failures.map(_.originalType), originalTypes)
       assertEquals(failures.map(_.source), originalTypes.map(_.source))
       assertEquals(
-        resolved.errors.map(_.message),
+        resolved.errors.map(undefinedTypeName),
         Vector(
-          "Undefined type: 'MissingA'",
-          "Undefined type: 'MissingBody'",
-          "Undefined type: 'MissingResult'"
+          "MissingA",
+          "MissingBody",
+          "MissingResult"
         )
       )
       assertEquals(failures.flatMap(_.causes), resolved.diagnostics.records.map(_.id))
@@ -441,7 +441,7 @@ class TypeResolverTests extends BaseEffFunSuite:
       val last     = unresolvedType(Some(struct.fields.last.typeSpec))
       val failures = Vector(first, last)
 
-      assertEquals(resolved.errors.map(_.message), Vector.fill(2)("Undefined type: 'Missing'"))
+      assertEquals(resolved.errors.map(undefinedTypeName), Vector.fill(2)("Missing"))
       assertEquals(failures.flatMap(_.causes), resolved.diagnostics.records.map(_.id))
       assertEquals(failures.flatMap(_.causes).distinct.size, 2)
       assertEquals(first.originalType, original.fields.head.typeSpec)
@@ -485,7 +485,7 @@ class TypeResolverTests extends BaseEffFunSuite:
       assertEquals(error.originalType, original.typeAsc.get)
       assertEquals(error.source, original.typeAsc.get.source)
       assertEquals(error.candidates, candidates)
-      assertEquals(resolved.errors.map(_.message), Vector("Ambiguous type: 'Choice'"))
+      assertEquals(resolved.errors.map(ambiguousTypeName), Vector("Choice"))
       assertEquals(error.causes, resolved.diagnostics.records.map(_.id))
       resolved.errors.head match
         case diagnostic: SemanticError.AmbiguousTypeRef =>
@@ -494,7 +494,7 @@ class TypeResolverTests extends BaseEffFunSuite:
         case other => fail(s"Expected ambiguity diagnostic, got $other")
       assertEquals(
         Diagnostics.fromCompilerState(resolved).map(_.message),
-        List("Ambiguous type: Choice")
+        List("Ambiguous type: 'Choice'")
       )
       assertEquals(
         Diagnostics.fromCompilerState(resolved).map(_.range),
@@ -520,7 +520,7 @@ class TypeResolverTests extends BaseEffFunSuite:
       val error     = unresolvedType(Some(failed.typeRef))
       val targetIds = aliases.tail.map(alias => resolvedTypeId(alias.typeSpec, resolved.module))
 
-      assertEquals(resolved.errors.map(_.message), Vector("Undefined type: 'Missing'"))
+      assertEquals(resolved.errors.map(undefinedTypeName), Vector("Missing"))
       assertEquals(error.causes, resolved.diagnostics.records.map(_.id))
       assertEquals(failed.typeSpec, None)
       assertEquals(targetIds.distinct.size, 1)
@@ -553,7 +553,7 @@ class TypeResolverTests extends BaseEffFunSuite:
       val second  = unresolvedType(binding.value.terms.head.typeAsc)
 
       assertEquals(first.originalType, second.originalType)
-      assertEquals(result.errors.map(_.message), Vector.fill(2)("Undefined type: 'Missing'"))
+      assertEquals(result.errors.map(undefinedTypeName), Vector.fill(2)("Missing"))
       assertEquals((first.causes ++ second.causes).distinct.size, 2)
     }
 
@@ -572,7 +572,7 @@ class TypeResolverTests extends BaseEffFunSuite:
         case error: UndefinedTypeError => error
       }
 
-      assertEquals(result.errors.map(_.message), Vector("Undefined type: 'Missing'"))
+      assertEquals(result.errors.map(undefinedTypeName), Vector("Missing"))
       assertEquals(written.size, 1)
       assertEquals(cached.size, 1)
       assertEquals(written.head.causes, result.diagnostics.records.map(_.id))

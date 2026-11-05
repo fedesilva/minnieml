@@ -6,6 +6,7 @@ import mml.mmlclib.codegen.emitter.*
 import mml.mmlclib.codegen.emitter.abis.{AbiValue, NativeAbiPlan}
 import mml.mmlclib.compiler.CompilerConfig
 import mml.mmlclib.test.BaseEffFunSuite
+import mml.mmlclib.util.error.print.diagnosticMessage
 
 import java.nio.file.{Files, Path}
 import scala.concurrent.duration.*
@@ -98,7 +99,7 @@ abstract class AggregateAbiFixture extends BaseEffFunSuite:
     }
 
   protected def plan(ret: String, params: List[String], state: CodeGenState): NativeAbiPlan =
-    NativeAbiPlan.classify(ret, params, state).fold(e => fail(e.message), identity)
+    NativeAbiPlan.classify(ret, params, state).fold(e => fail(diagnosticMessage(e)), identity)
 
   protected def fixtureIr(triple: String, attributes: TargetAttributes): String =
     val initial = CodeGenState(
@@ -145,7 +146,7 @@ class AggregateAbiTests extends AggregateAbiFixture:
         for
           target <- ClangTarget
             .resolve(directory, List("-target", triple))
-            .map(_.fold(e => fail(e.message), identity))
+            .map(_.fold(e => fail(diagnosticMessage(e)), identity))
           _ <- IO.blocking {
             Files.writeString(directory.resolve("fixture.c"), cSource)
             Files.writeString(directory.resolve("caller.ll"), fixtureIr(triple, target.attributes))
@@ -196,7 +197,7 @@ class AggregateAbiTests extends AggregateAbiFixture:
         for
           target <- ClangTarget
             .resolve(directory, List("-target", triple))
-            .map(_.fold(e => fail(e.message), identity))
+            .map(_.fold(e => fail(diagnosticMessage(e)), identity))
           _ <- IO.blocking {
             val initial = CodeGenState(
               targetAbi    = TargetAbi.fromHint(triple.some),
@@ -285,7 +286,8 @@ class AggregateAbiTests extends AggregateAbiFixture:
         "struct.Outer" -> "%struct.Outer = type { i32, %struct.Inner, { ptr, ptr }, i8 }"
       )
     )
-    val layout = state.layout.of("%struct.Outer", state).fold(e => fail(e.message), identity)
+    val layout =
+      state.layout.of("%struct.Outer", state).fold(e => fail(diagnosticMessage(e)), identity)
     assertEquals(layout.size, 48)
     assertEquals(layout.alignment, 8)
     assertEquals(layout.fields.map(_.offset), List(0, 8, 24, 40))
@@ -359,7 +361,7 @@ class AggregateAbiTests extends AggregateAbiFixture:
         triple <- LlvmToolchain.queryLocalTriple.map(_.getOrElse(fail("Missing native target")))
         target <- ClangTarget
           .resolve(directory, LlvmToolchain.clangFlags(config, triple))
-          .map(_.fold(e => fail(e.message), identity))
+          .map(_.fold(e => fail(diagnosticMessage(e)), identity))
         path <- IO.blocking {
           Files.writeString(directory.resolve("driver.c"), driver)
           Files.writeString(directory.resolve("Interop.ll"), ir)
@@ -432,7 +434,7 @@ class AggregateAbiNativeTests extends AggregateAbiFixture:
           triple <- LlvmToolchain.queryLocalTriple.map(_.getOrElse(fail("Missing native target")))
           target <- ClangTarget
             .resolve(directory, List("-target", triple))
-            .map(_.fold(e => fail(e.message), identity))
+            .map(_.fold(e => fail(diagnosticMessage(e)), identity))
           _ <- IO.blocking {
             Files.writeString(directory.resolve("fixture.c"), cSource)
             Files.writeString(directory.resolve("caller.ll"), fixtureIr(triple, target.attributes))

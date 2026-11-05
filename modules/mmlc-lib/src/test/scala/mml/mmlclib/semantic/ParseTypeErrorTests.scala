@@ -20,6 +20,12 @@ import mml.mmlclib.util.prettyprint.ast.prettyPrintTypeSpec
 
 class ParseTypeErrorTests extends BaseEffFunSuite:
 
+  private def recoveryRoot(error: mml.mmlclib.errors.CompilationError): SyntaxError | String =
+    error match
+      case SemanticError.ParseTypeErrorFound(recovered, _) => recovered.reason
+      case SemanticError.UndefinedRef(reference, _, _) => reference.name
+      case other => fail(s"Unexpected recovery diagnostic: $other")
+
   private val code = "fn example(value: Int): Int = value;; let after = 7;"
   private val info = SourceInfo(code.patch(code.indexOf("Int"), "???", 3))
   private val errorSpan = SrcSpan(
@@ -28,7 +34,7 @@ class ParseTypeErrorTests extends BaseEffFunSuite:
   )
 
   private def malformed: ParseTypeError =
-    ParseTypeError(errorSpan, "Expected a type after ':'", "???".some)
+    ParseTypeError(errorSpan, SyntaxError.InvalidTypeSyntax, "???".some)
 
   private def stateOf(module: Module): CompilerState =
     CompilerState.empty(module, info, CompilerConfig.default)
@@ -200,8 +206,8 @@ class ParseTypeErrorTests extends BaseEffFunSuite:
       assertEquals(recoveredTree(result.module), recoveredTree(recovered))
       assert(result.diagnostics.records.forall(_.relation == DiagnosticRelation.Primary))
       assertEquals(
-        result.errors.map(_.message).distinct,
-        Vector("Parse error in type: Expected a type after ':'")
+        result.errors.map(syntaxReason).distinct,
+        Vector(SyntaxError.InvalidTypeSyntax)
       )
     }
   }
@@ -254,11 +260,8 @@ class ParseTypeErrorTests extends BaseEffFunSuite:
       assert(kept.forall(_.causes == Vector(root)))
       assertEquals(missingParameters, Vector.empty)
       assertEquals(
-        visible.map(_.message),
-        Vector(
-          "Parse error in type: Expected a type after ':'",
-          "Undefined reference: 'missing'"
-        )
+        visible.map(recoveryRoot),
+        Vector[SyntaxError | String](SyntaxError.InvalidTypeSyntax, "missing")
       )
       assert(result.diagnostics.records.exists(_.causes == Vector(root)))
       val surviving = result.module.members.collect {
@@ -299,14 +302,14 @@ class ParseTypeErrorTests extends BaseEffFunSuite:
 
       assert(rendered.contains("Type parser error"), rendered)
       assert(rendered.contains(ErrorPrinter.formatLocation(errorSpan)), rendered)
-      assert(rendered.contains("Expected a type after ':'"), rendered)
+      assert(rendered.contains("Invalid type syntax"), rendered)
       assert(rendered.contains(s"${Console.RED}${Console.BOLD}???${Console.RESET}"), rendered)
       assert(fallback.contains("\n???"), fallback)
       assert(fallback.contains(LocationPrinter.printSpan(errorSpan)), fallback)
       assertEquals(diagnostics.map(_.range), List(Range.fromSrcSpan(errorSpan)))
       assertEquals(
         diagnostics.map(_.message),
-        List("Parse error in type: Expected a type after ':'")
+        List("Parse error in type: Invalid type syntax")
       )
       assert(diagnostics.forall(_.severity == DiagnosticSeverity.Error))
       assertEquals(AstLookup.formatType(malformed.some), "malformed type")
@@ -326,7 +329,7 @@ class ParseTypeErrorTests extends BaseEffFunSuite:
       assert(SemanticTokens.compute(result.module).data.nonEmpty)
       val ast = prettyPrintTypeSpec(malformed.some, showSourceSpans = true)
       assert(ast.contains("ParseTypeError"), ast)
-      assert(ast.contains("Expected a type after ':'"), ast)
+      assert(ast.contains("Invalid type syntax"), ast)
       assert(ast.contains("???"), ast)
     }
   }

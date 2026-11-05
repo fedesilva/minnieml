@@ -29,13 +29,13 @@ private val expressionRecovery = Recovery.Context(
 
 /** Preserves the exact failed fragment, including whitespace before the caller's boundary. */
 private[parser] def bindingError(
-  info:    SourceInfo,
-  start:   SrcPoint,
-  end:     SrcPoint,
-  message: String
+  info:   SourceInfo,
+  start:  SrcPoint,
+  end:    SrcPoint,
+  reason: SyntaxError
 ): ParseTermError =
   val text = info.slice(start.index, end.index)
-  ParseTermError(span(start, end), message, Option.when(text.nonEmpty)(text))
+  ParseTermError(span(start, end), reason, Option.when(text.nonEmpty)(text))
 
 /** Keeps retained syntax traversable before semantic normalization marks its result unavailable. */
 private[parser] def appendBindingErrors(expr: Expr, errors: List[ParseTermError]): Expr =
@@ -47,7 +47,9 @@ private[parser] def requiredBindingTokenP(info: SourceInfo, token: String)(using
   P[Any]
 ): P[Option[ParseTermError]] =
   P(token).map(_ => none[ParseTermError]) |
-    pointP(info).map(point => bindingError(info, point, point, s"Expected '$token'").some)
+    pointP(info).map(point =>
+      bindingError(info, point, point, SyntaxError.ExpectedToken(token)).some
+    )
 
 private[parser] def parsedBindingNameP(info: SourceInfo)(using P[Any]): P[ParsedBindingName] =
   val context = Recovery.Context(
@@ -70,9 +72,10 @@ private[parser] def parsedBindingNameP(info: SourceInfo)(using P[Any]): P[Parsed
         val start = parsed.location.start
         val end   = parsed.location.end
         val text  = info.slice(start.index, end.index)
-        val message =
-          if text.isEmpty then "Expected binding name" else s"Invalid identifier '$text'"
-        ParsedBindingName(parsed.location, none, bindingError(info, start, end, message).some)
+        val reason =
+          if text.isEmpty then SyntaxError.ExpectedBindingName
+          else SyntaxError.InvalidIdentifier(text, IdentifierKind.Binding, false)
+        ParsedBindingName(parsed.location, none, bindingError(info, start, end, reason).some)
   }
 
 /** Recovers the malformed tail of an opened list while preserving its successfully parsed prefix.
@@ -90,13 +93,18 @@ private[parser] def parsedParametersP(
   def closingP: P[Option[ParseTermError]] =
     P(")").map(_ => none[ParseTermError]) |
       P(P(pointP(info) ~~ recoveryP(info, context)) ~ ")".?).map { case (start, recovered) =>
-        bindingError(info, start, info.pointAt(recovered.end), "Invalid parameter list").some
+        bindingError(
+          info,
+          start,
+          info.pointAt(recovered.end),
+          SyntaxError.InvalidParameterList
+        ).some
       }
 
   P("(" ~ NoCut(fnParamP(info, contextType)).rep(sep = ",") ~ closingP)
     .map { case (params, error) => ParsedParameters(params.toList, error) } |
     pointP(info).map { point =>
-      ParsedParameters(Nil, bindingError(info, point, point, "Expected '('").some)
+      ParsedParameters(Nil, bindingError(info, point, point, SyntaxError.ExpectedToken("(")).some)
     }
 
 /** A frame excludes caller delimiters and declaration-only introducers, but permits local bindings.
@@ -121,7 +129,10 @@ private[parser] def bindingFrameP(
     .map { case (start, parts, _) =>
       parts.toList match
         case Nil =>
-          Expr(span(start, start), List(bindingError(info, start, start, "Expected expression")))
+          Expr(
+            span(start, start),
+            List(bindingError(info, start, start, SyntaxError.ExpectedExpression))
+          )
         case single :: Nil => single
         case multiple =>
           Expr(span(start, sourceEnd(multiple.last, start)), multiple.flatMap(_.terms))
@@ -149,7 +160,7 @@ private def bindingFramePartP(info: SourceInfo, termParser: => P[ParsedTerm])(us
     )
     if recovered.end > scannerStart.index then
       val end   = info.pointAt(recovered.end)
-      val error = bindingError(info, scannerStart, end, "Invalid expression syntax")
+      val error = bindingError(info, scannerStart, end, SyntaxError.InvalidExpressionSyntax)
       if terms.isEmpty then Expr(span(start, end), List(error))
       else Expr(span(start, end), List(prefix, error))
     else prefix

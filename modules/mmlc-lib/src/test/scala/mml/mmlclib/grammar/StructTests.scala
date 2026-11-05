@@ -1,6 +1,6 @@
 package mml.mmlclib.grammar
 
-import mml.mmlclib.ast.{Bnd, ParsingMemberError, Ref}
+import mml.mmlclib.ast.{Bnd, ParsingMemberError, Ref, SyntaxError}
 import mml.mmlclib.parser.Parser
 import mml.mmlclib.test.BaseEffFunSuite
 
@@ -37,7 +37,7 @@ class StructTests extends BaseEffFunSuite:
         module => {
           val errors = module.members.collect { case err: ParsingMemberError => err }
           assert(errors.nonEmpty, "Expected ParsingMemberError for empty struct")
-          assert(errors.exists(_.message.contains("at least one field")))
+          assert(errors.exists(_.reason == SyntaxError.EmptyStruct))
         }
       )
 

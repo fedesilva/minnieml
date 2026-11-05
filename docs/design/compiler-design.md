@@ -1790,15 +1790,44 @@ ownership analysis still visits the preserved operands to report independent err
 unavailable PAP result cannot establish capture or return ownership. A discarded result's
 type mismatch does not hide a genuine use-after-move inside that expression.
 
-### Error types
+### Typed errors and shared presentation
 
-#### `SemanticError`
-General semantic analysis errors (see language-reference.md, Errors)
+`CompilationError` is an open, data-only contract. Compiler-owned families identify failures
+with enum cases and retain the source nodes, types, identities, and other facts needed to
+explain them. They do not expose a `message` method. `SemanticError.TypeCheckingError` carries
+`TypeError` through the semantic pipeline; the protocol and entry-point carriers follow the
+same pattern. Duplicate-parameter errors retain their owning binding and duplicate parameters.
 
-#### `TypeError`
-Type system errors (see language-reference.md, Errors)
+The syntax recovery nodes carry `SyntaxError`. `SyntaxError.Group` preserves an ordered list
+of nested failures, including repeated reasons, their source origins, and failed text. The
+presentation layer may suppress repeated sentences when describing one recovered declaration;
+that does not deduplicate or replace the retained failures or their diagnostic causes.
 
-All type errors are wrapped as `SemanticError.TypeCheckingError` for uniform handling in the phase pipeline.
+`SemanticError.InvalidExpression` and `DanglingTerms` carry `ExpressionError`, whose families
+cover expression requirements, ownership, and destruction. Closure layout errors retain a
+`ClosureEnvironmentReason` and the affected lambda through semantic and code-generation
+boundaries. `CodeGenError` carries a `CodeGenReason` and optional source node; grouped field
+failures retain their original `CodeGenError` values rather than joined messages.
+
+Toolchain failures distinguish confirmed missing executables, process-start failures, and
+unsuccessful exits. They retain argument boundaries, the operation, exit status, and external
+stderr. File, resource, target, and triple failures carry specific reasons and relevant paths.
+Only a confirmed missing tool invalidates the tool-verification marker. External exception
+text, process output, and parser-library traces remain opaque data.
+
+`diagnosticMessage` in `util/error/print/DiagnosticMessage.scala` dispatches to family-specific
+presentation functions. Those functions use ordinary Scala string interpolation with typed
+fields; there is no template registry. CLI printers add locations, snippets, and colors. LSP
+conversion adds ranges and category labels. Quiet API output uses the same message functions.
+Warning and AST/debug presentation use the same separation between data and wording.
+Unknown extension errors remain representable and have no LSP conversion contract.
+
+Source selection and diagnostic visibility are independent of rendering. For example,
+`SemanticError.InvalidEntryPoint` retains either the checked binding for a non-public `main`
+or invalid return type, or the module source for a missing valid entry point. Both CLI printers,
+LSP, and plain API output share `entryPointMessage`; no consumer infers the reason from its text.
+Semantic tests assert typed reasons, payloads, and identities. Rendering tests assert wording,
+source ranges, and output layout separately.
 
 ## 11. Code generation: native templates
 

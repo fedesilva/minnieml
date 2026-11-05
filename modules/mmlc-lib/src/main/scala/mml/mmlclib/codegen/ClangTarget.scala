@@ -65,7 +65,11 @@ object ClangTarget:
         .map(_.toRealPath())
         .toRight(LlvmCompilationError.LlvmNotInstalled(List("clang")))
     }.attempt
-      .map(_.leftMap(error => resolutionError(error.getMessage)).flatten)
+      .map(
+        _.leftMap(error =>
+          LlvmCompilationError.TargetResolutionError(TargetFailure.FindClang(error.getMessage))
+        ).flatten
+      )
 
   private[codegen] def resolveWithClang(
     executable: Path,
@@ -86,7 +90,13 @@ object ClangTarget:
             MessageDigest.getInstance("SHA-256").digest(keyParts.mkString("\u0000").getBytes(UTF_8))
           (realPath, HexFormat.of().formatHex(digest))
         }.attempt
-          .map(_.leftMap(error => resolutionError(error.getMessage)))
+          .map(
+            _.leftMap(error =>
+              LlvmCompilationError.TargetResolutionError(
+                TargetFailure.InspectClang(executable.toString, error.getMessage)
+              )
+            )
+          )
       )
       (realPath, key) = identity
       cacheFile       = buildDir.resolve("toolchain").resolve(s"target-$key.ll")
@@ -120,13 +130,21 @@ object ClangTarget:
           if exitCode == 0 then stdout.toString.asRight
           else
             LlvmCompilationError
-              .CommandExecutionError(command.mkString(" "), stderr.toString, exitCode)
+              .CommandExecutionError(command, ToolOperation.ProbeTarget, stderr.toString, exitCode)
               .asLeft
         }.attempt
-          .map(_.leftMap(error => resolutionError(error.getMessage)).flatten)
+          .map(
+            _.leftMap(error =>
+              LlvmCompilationError.TargetResolutionError(
+                TargetFailure.StartProbe(command, error.getMessage)
+              )
+            ).flatten
+          )
       )
       attributes <- EitherT.fromEither[IO](
-        parseAttributes(ir).toRight(resolutionError("Clang returned no valid probe attributes"))
+        parseAttributes(ir).toRight(
+          LlvmCompilationError.TargetResolutionError(TargetFailure.InvalidProbeOutput(ir))
+        )
       )
       _ <- EitherT(writeCache(cacheFile, ir))
     yield attributes).value
@@ -148,7 +166,10 @@ object ClangTarget:
     }(temporary => IO.blocking(Files.deleteIfExists(temporary)).void)
       .attempt
       .map(
-        _.leftMap(error => resolutionError(s"Cannot cache target attributes: ${error.getMessage}"))
+        _.leftMap(error =>
+          LlvmCompilationError
+            .TargetResolutionError(TargetFailure.CacheAttributes(path.toString, error.getMessage))
+        )
       )
 
   private[codegen] def parseAttributes(ir: String): Option[TargetAttributes] =
@@ -169,6 +190,3 @@ object ClangTarget:
       if cpu.forall(_.matches("[A-Za-z0-9_.+\\-]+"))
       if features.forall(_.matches("[+\\-][A-Za-z0-9_.\\-]+(,[+\\-][A-Za-z0-9_.\\-]+)*"))
     yield TargetAttributes(cpu, features, layout, triple.some)
-
-  private def resolutionError(message: String): LlvmCompilationError =
-    LlvmCompilationError.TargetResolutionError(message)

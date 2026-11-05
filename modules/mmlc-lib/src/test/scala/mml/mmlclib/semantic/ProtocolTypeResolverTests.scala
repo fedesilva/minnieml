@@ -156,8 +156,8 @@ class ProtocolTypeResolverTests extends BaseEffFunSuite:
       val result    = undefinedType(signature.returnType)
 
       assertEquals(
-        resolved.errors.map(_.message),
-        Vector("Undefined type: 'Missing'", "Undefined type: 'Missing'")
+        resolved.errors.map(undefinedTypeName),
+        Vector("Missing", "Missing")
       )
       assertEquals(parameter.originalType, ascription(original.params.head))
       assertEquals(result.originalType, original.returnType)
@@ -197,12 +197,12 @@ class ProtocolTypeResolverTests extends BaseEffFunSuite:
       )
 
       assertEquals(
-        resolved.errors.map(_.message),
+        resolved.errors.map(undefinedTypeName),
         Vector(
-          "Undefined type: 'MissingHeader'",
-          "Undefined type: 'MissingParam'",
-          "Undefined type: 'MissingBody'",
-          "Undefined type: 'MissingResult'"
+          "MissingHeader",
+          "MissingParam",
+          "MissingBody",
+          "MissingResult"
         )
       )
       assertEquals(failures.map(_.originalType), writtenTypes)
@@ -242,7 +242,7 @@ class ProtocolTypeResolverTests extends BaseEffFunSuite:
         case other => fail(s"Expected an ambiguous type, got $other")
 
       assertEquals(candidates.size, 2)
-      assertEquals(resolved.errors.map(_.message), Vector("Ambiguous type: 'Choice'"))
+      assertEquals(resolved.errors.map(ambiguousTypeName), Vector("Choice"))
       assertEquals(failure.originalType, original.concreteType)
       assertEquals(failure.source, original.concreteType.source)
       assertEquals(failure.candidates, candidates)
@@ -274,8 +274,8 @@ class ProtocolTypeResolverTests extends BaseEffFunSuite:
 
       assertEquals(parameter.originalType, returnType.originalType)
       assertEquals(
-        resolved.errors.map(_.message),
-        Vector("Undefined type: 'Missing'", "Undefined type: 'Missing'")
+        resolved.errors.map(undefinedTypeName),
+        Vector("Missing", "Missing")
       )
       assertEquals(parameter.causes ++ returnType.causes, resolved.diagnostics.records.map(_.id))
       assertEquals((parameter.causes ++ returnType.causes).distinct.size, 2)

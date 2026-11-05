@@ -188,13 +188,16 @@ class NativeTypeTests extends BaseEffFunSuite:
       Parser.parseModule(code, "Test") match
         case Left(err) =>
           // Good - parser completely failed
-          assert(err.toString.contains("Failure"), s"Expected parse failure for i$bits")
+          assert(
+            err.isInstanceOf[mml.mmlclib.parser.ParserError.Failure],
+            s"Expected parse failure for i$bits"
+          )
         case Right(module) =>
           // Check if it parsed as a MemberError (which means the native type parser failed)
           module.members.find(_.isInstanceOf[ParsingMemberError]) match
             case Some(ParsingMemberError(_, message, _)) =>
               // Good - the member failed to parse due to invalid bit width
-              assert(message.contains("Failed to parse member"))
+              assert(message == SyntaxError.InvalidMemberSyntax)
             case _ =>
               // Check if a valid TypeDef was created
               module.members.collectFirst { case t: TypeDef if t.name == "Test" => t } match

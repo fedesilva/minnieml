@@ -16,6 +16,12 @@ import java.nio.file.Files
 
 class ConditionalRecoveryIntegrationTests extends BaseEffFunSuite:
 
+  private def recoveryRoot(error: mml.mmlclib.errors.CompilationError): SyntaxError | String =
+    error match
+      case SemanticError.ParseTermErrorFound(recovered, _) => recovered.reason
+      case SemanticError.UndefinedRef(reference, _, _) => reference.name
+      case other => fail(s"Unexpected recovery diagnostic: $other")
+
   private val source =
     """let broken =
       |  if true then
@@ -95,7 +101,7 @@ class ConditionalRecoveryIntegrationTests extends BaseEffFunSuite:
       val original    = binding(parsed, "broken").value
       val conditional = conditionalAt(original, source, "if true")
       val error       = onlyParseError(conditional.ifTrue)
-      assertEquals(error.message, "Invalid expression syntax")
+      assertEquals(error.reason, SyntaxError.InvalidExpressionSyntax)
       assertEquals(error.failedCode, "@".some)
       assertEquals(error.spanOpt, spanOf(source, "@").some)
       assertEquals(error.causes, Vector.empty)
@@ -107,8 +113,8 @@ class ConditionalRecoveryIntegrationTests extends BaseEffFunSuite:
       assertEquals(stamped.causes, ingested.diagnostics.records.map(_.id))
       assertEquals(ingested.diagnostics.records.map(_.relation), Vector(DiagnosticRelation.Primary))
       assertEquals(
-        ingested.visibleErrors.map(_.message),
-        Vector("Parse error in expression: Invalid expression syntax")
+        ingested.visibleErrors.map(syntaxReason),
+        Vector(SyntaxError.InvalidExpressionSyntax)
       )
       val retainedClause = conditionalAt(retained, source, "if true")
       assertEquals(retainedClause.spanOpt, conditional.spanOpt)
@@ -124,14 +130,11 @@ class ConditionalRecoveryIntegrationTests extends BaseEffFunSuite:
       val retained = onlyParseError(broken.value)
       assertEquals(retained.spanOpt, spanOf(source, "@").some)
       assertEquals(retained.failedCode, "@".some)
-      assertEquals(retained.message, "Invalid expression syntax")
+      assertEquals(retained.reason, SyntaxError.InvalidExpressionSyntax)
       assertEquals(retained.causes, onlyParseError(binding(ingested.module, "broken").value).causes)
       assertEquals(
-        state.visibleErrors.map(_.message),
-        Vector(
-          "Parse error in expression: Invalid expression syntax",
-          "Undefined reference: 'missing'"
-        )
+        state.visibleErrors.map(recoveryRoot),
+        Vector[SyntaxError | String](SyntaxError.InvalidExpressionSyntax, "missing")
       )
       val undefined = state.semanticErrors.collect {
         case SemanticError.UndefinedRef(reference, _, _) => reference
@@ -186,11 +189,8 @@ class ConditionalRecoveryIntegrationTests extends BaseEffFunSuite:
       assertEquals(onlyParseError(first.ifTrue).spanOpt, spanOf(code, "@").some)
       assertAddition(second.ifFalse, state)
       assertEquals(
-        state.visibleErrors.map(_.message),
-        Vector(
-          "Parse error in expression: Invalid expression syntax",
-          "Undefined reference: 'absent'"
-        )
+        state.visibleErrors.map(recoveryRoot),
+        Vector[SyntaxError | String](SyntaxError.InvalidExpressionSyntax, "absent")
       )
       val undefined = state.semanticErrors.collect {
         case SemanticError.UndefinedRef(reference, _, _) => reference
@@ -211,11 +211,11 @@ class ConditionalRecoveryIntegrationTests extends BaseEffFunSuite:
       val stamped  = parseErrors(binding(ingested.module, "broken").value)
       val retained = parseErrors(binding(state.module, "broken").value)
       assertEquals(
-        original.map(_.message),
+        original.map(_.reason),
         List(
-          "Expected expression",
-          "Expected expression",
-          "Invalid expression syntax"
+          SyntaxError.ExpectedExpression,
+          SyntaxError.ExpectedExpression,
+          SyntaxError.InvalidExpressionSyntax
         )
       )
       assertEquals(
@@ -240,18 +240,20 @@ class ConditionalRecoveryIntegrationTests extends BaseEffFunSuite:
         ValueAvailability.fromModule(state.module).isAvailable(binding(state.module, "after").value)
       )
 
-  private case class MissingCase(fragment: String, boundary: String, message: String)
+  private case class MissingCase(fragment: String, boundary: String, message: SyntaxError)
 
   private val missingCases = List(
-    MissingCase("if then 11;else 22;", "then", "Expected expression"),
-    MissingCase("if true then ;else 22;", ";else", "Expected expression"),
-    MissingCase("if true then 11;else ;", ";)", "Expected expression"),
-    MissingCase("if true then 11 else 22;", "else", "Expected ';'"),
-    MissingCase("if true else 22;", "else", "Expected 'then'")
+    MissingCase("if then 11;else 22;", "then", SyntaxError.ExpectedExpression),
+    MissingCase("if true then ;else 22;", ";else", SyntaxError.ExpectedExpression),
+    MissingCase("if true then 11;else ;", ";)", SyntaxError.ExpectedExpression),
+    MissingCase("if true then 11 else 22;", "else", SyntaxError.ExpectedToken(";")),
+    MissingCase("if true else 22;", "else", SyntaxError.ExpectedToken("then"))
   )
 
   missingCases.foreach { fixture =>
-    test(s"zero-width ${fixture.message} survives ingest, semantics, and LSP: ${fixture.fragment}"):
+    test(
+      s"zero-width ${mml.mmlclib.util.error.print.syntaxMessage(fixture.message)} survives ingest, semantics, and LSP: ${fixture.fragment}"
+    ):
       val code = s"let broken=(${fixture.fragment});let after=7;"
       for
         ingested <- IO.blocking(IngestStage.fromSource(code, "ConditionalRecovery"))
@@ -260,14 +262,17 @@ class ConditionalRecoveryIntegrationTests extends BaseEffFunSuite:
         val original     = onlyParseError(binding(ingested.module, "broken").value)
         val retained     = onlyParseError(binding(state.module, "broken").value)
         val expectedSpan = pointAt(code, fixture.boundary)
-        assertEquals(original.message, fixture.message)
+        assertEquals(original.reason, fixture.message)
         assertEquals(original.failedCode, None)
         assertEquals(original.spanOpt, expectedSpan.some)
         assertEquals(original.causes.size, 1)
         assertEquals(retained, original)
         assertEquals(state.visibleErrors, ingested.visibleErrors)
         val diagnostics = Diagnostics.fromCompilerState(state)
-        assertEquals(diagnostics.map(_.message), List(s"Parsing error: ${fixture.message}"))
+        assertEquals(
+          diagnostics.map(_.message),
+          List(s"Parsing error: ${mml.mmlclib.util.error.print.syntaxMessage(fixture.message)}")
+        )
         assertEquals(diagnostics.map(_.range), List(Range.fromSrcSpan(expectedSpan)))
         assert(diagnostics.forall(_.severity == DiagnosticSeverity.Error))
   }
@@ -277,7 +282,7 @@ class ConditionalRecoveryIntegrationTests extends BaseEffFunSuite:
       val diagnostics = Diagnostics.fromCompilerState(state)
       assertEquals(
         diagnostics.map(_.message),
-        List("Parsing error: Invalid expression syntax", "Undefined reference: missing")
+        List("Parsing error: Invalid expression syntax", "Undefined reference: 'missing'")
       )
       assertEquals(
         diagnostics.map(_.range),
@@ -299,7 +304,7 @@ class ConditionalRecoveryIntegrationTests extends BaseEffFunSuite:
       yield
         assertEquals(exit, ExitCode.Error)
         val rendered = messages.mkString("\n")
-        List("Parser error", "Undefined reference 'missing'").foreach { header =>
+        List("Parser error", "Undefined reference: 'missing'").foreach { header =>
           assertEquals(rendered.linesIterator.count(_.contains(header)), 1, rendered)
         }
         assert(rendered.contains("Invalid expression syntax"), rendered)

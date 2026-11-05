@@ -237,5 +237,5 @@ final case class BindingMeta(
 trait InvalidNode extends AstNode
 
 trait Error extends InvalidNode, FromSource:
-  def message:    String
+  def reason:     SyntaxError
   def failedCode: Option[String]

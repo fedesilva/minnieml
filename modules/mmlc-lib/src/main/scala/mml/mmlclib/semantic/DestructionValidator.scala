@@ -18,14 +18,14 @@ object DestructionValidator:
     state.addErrors(nodes.flatMap(validate(_, index)))
 
   def validate(node: Destruction, index: ResolvablesIndex): List[SemanticError] =
-    def error(message: String): SemanticError =
+    def error(reason: ExpressionError): SemanticError =
       SemanticError.InvalidExpression(
         Expr(node.source, List(node)),
-        message,
+        reason,
         "destruction-validation"
       )
-    def check(valid: Boolean, message: String): List[SemanticError] =
-      Option.unless(valid)(error(message)).toList
+    def check(valid: Boolean, reason: ExpressionError): List[SemanticError] =
+      Option.unless(valid)(error(reason)).toList
     @tailrec
     def canonical(tpe: Type, seen: Set[String] = Set.empty): Option[Type] = tpe match
       case TypeGroup(_, List(inner)) => canonical(inner, seen)
@@ -61,30 +61,30 @@ object DestructionValidator:
               check(
                 fn.paramTypes.size == 1 && expected.exists(same(_, fn.paramTypes.head)) &&
                   nominal(fn.returnType.some, "Unit"),
-                s"Incompatible destructor signature: $id"
+                DestructionError.IncompatibleSignature(id)
               ) ++ (b.value.terms match
                 case List(lambda: Lambda) =>
                   check(
                     lambda.params.size == 1 && lambda.params.headOption.exists(p =>
                       p.typeSpec.orElse(p.typeAsc).exists(t => expected.exists(same(t, _)))
                     ),
-                    s"Destructor parameter disagrees with its signature: $id"
+                    DestructionError.ParameterSignatureMismatch(id)
                   )
-                case _ => List(error(s"Destructor target has no function body: $id")))
-            case _ => List(error(s"Destructor target is not a function: $id"))
-        case _ => List(error(s"Missing destructor target: $id"))
+                case _ => List(error(DestructionError.MissingFunctionBody(id))))
+            case _ => List(error(DestructionError.NonFunctionTarget(id)))
+        case _ => List(error(DestructionError.MissingTarget(id)))
     val ptr = TypeRef(node.source, "RawPtr", "stdlib::typedef::RawPtr".some)
-    val common = check(nominal(node.typeSpec, "Unit"), "Destruction result must be Unit") ++
-      check(node.operand.terms.nonEmpty, "Destruction requires an operand") ++
+    val common = check(nominal(node.typeSpec, "Unit"), DestructionError.NonUnitResult) ++
+      check(node.operand.terms.nonEmpty, DestructionError.MissingOperand) ++
       node.operand.terms.lastOption.toList.flatMap(t =>
         check(
           t.typeSpec.exists(a => node.operand.typeSpec.exists(same(a, _))),
-          "Destruction operand expression type disagrees with its result"
+          DestructionError.OperandResultTypeMismatch
         )
       ) ++
       TermTraversal.collect(node.operand) { case r: Ref => r }.flatMap { ref =>
         val resolved = ref.resolvedId.flatMap(index.lookup)
-        check(resolved.isDefined, "Unresolved destruction operand reference") ++
+        check(resolved.isDefined, DestructionError.UnresolvedOperand) ++
           check(
             resolved
               .flatMap {
@@ -93,25 +93,28 @@ object DestructionValidator:
                 case _ => none
               }
               .exists(t => ref.typeSpec.exists(same(t, _))),
-            "Destruction operand reference type mismatch"
+            DestructionError.OperandReferenceTypeMismatch
           )
       }
     val specific = node match
       case d: DestroyClosure =>
         check(
           d.operand.typeSpec.flatMap(canonical(_)).exists(_.isInstanceOf[TypeFn]),
-          "DestroyClosure requires a function value"
+          DestructionError.NonFunctionClosure
         ) ++ target(d.targetId, ptr.some)
       case _: DispatchClosureDestructor =>
-        check(nominal(node.operand.typeSpec, "RawPtr"), "Dispatch requires RawPtr")
+        check(nominal(node.operand.typeSpec, "RawPtr"), DestructionError.NonPointerDispatch)
       case d: DisarmClosureEnvironment =>
-        check(nominal(d.operand.typeSpec, "RawPtr"), "Environment transfer requires RawPtr") ++
+        check(nominal(d.operand.typeSpec, "RawPtr"), DestructionError.NonPointerTransfer) ++
           target(d.targetId, ptr.some)
       case d: DestroyClosureEnvironment =>
         val operandErrors =
-          check(nominal(d.operand.typeSpec, "RawPtr"), "Environment destruction requires RawPtr")
+          check(nominal(d.operand.typeSpec, "RawPtr"), DestructionError.NonPointerDestruction)
         val duplicates =
-          check(d.fields.map(_.fieldId).distinct.size == d.fields.size, "Duplicate field cleanup")
+          check(
+            d.fields.map(_.fieldId).distinct.size == d.fields.size,
+            DestructionError.DuplicateFieldCleanup
+          )
         val layoutErrors = index.lookupType(d.layoutId) match
           case Some(layout: TypeStruct) =>
             val positions = d.fields.flatMap(c =>
@@ -119,16 +122,16 @@ object DestructionValidator:
                 case -1 => None
                 case n => n.some
             )
-            check(layout.id.contains(d.layoutId), "Environment layout identity mismatch") ++
+            check(layout.id.contains(d.layoutId), DestructionError.LayoutIdentityMismatch) ++
               check(
                 layout.fields.forall(_.id.nonEmpty) &&
                   layout.fields.flatMap(_.id).distinct.size == layout.fields.size,
-                "Environment fields require unique identities"
+                DestructionError.FieldIdentityMismatch
               ) ++
-              check(positions == positions.sorted, "Field cleanup must follow layout order") ++
+              check(positions == positions.sorted, DestructionError.FieldOrderMismatch) ++
               check(
                 layout.fields.headOption.exists(f => nominal(f.typeSpec.some, "RawPtr")),
-                "Closure layout requires a destructor pointer"
+                DestructionError.MissingDestructorPointer
               ) ++
               layout.fields.toList.drop(1).flatMap { field =>
                 TypeMemoryQueries.freeFnFor(field.typeSpec, index) match
@@ -138,32 +141,32 @@ object DestructionValidator:
                     DestructionTargets.forType(field.typeSpec, index) match
                       case None =>
                         List(
-                          error(s"Missing registered destructor '$name' for field '${field.name}'")
+                          error(DestructionError.MissingRegisteredFieldDestructor(name, field))
                         )
                       case Some(id) =>
                         check(
                           field.id
                             .exists(fieldId => d.fields.contains(FieldCleanup.Value(fieldId, id))),
-                          s"Missing required field cleanup: ${field.name}"
+                          DestructionError.MissingFieldCleanup(field)
                         )
               } ++
               check(
                 d.borrowedFields.subsetOf(layout.fields.toList.drop(1).flatMap(_.id).toSet) &&
                   !d.fields.exists(f => d.borrowedFields.contains(f.fieldId)),
-                "Borrowed environment fields must exist and have no cleanup"
+                DestructionError.InvalidBorrowedFields
               ) ++ d.fields.flatMap { cleanup =>
                 layout.fields.find(_.id.contains(cleanup.fieldId)) match
-                  case None => List(error(s"Missing destruction field: ${cleanup.fieldId}"))
+                  case None => List(error(DestructionError.MissingField(cleanup.fieldId)))
                   case Some(field) =>
                     check(
                       !layout.fields.headOption.contains(field),
-                      "Cannot destroy destructor slot"
+                      DestructionError.DestructorSlotCleanup
                     ) ++
                       (cleanup match
                         case _: FieldCleanup.Closure =>
                           check(
                             canonical(field.typeSpec).exists(_.isInstanceOf[TypeFn]),
-                            "Closure field cleanup requires a function value"
+                            DestructionError.NonFunctionField
                           ) ++
                             target(cleanup.targetId, ptr.some)
                         case _: FieldCleanup.Value =>
@@ -171,10 +174,10 @@ object DestructionValidator:
                             DestructionTargets
                               .forType(field.typeSpec, index)
                               .contains(cleanup.targetId),
-                            "Field cleanup must use its registered destructor"
+                            DestructionError.FieldDestructorMismatch
                           ) ++
                             target(cleanup.targetId, field.typeSpec.some))
               }
-          case _ => List(error(s"Missing closure environment layout: ${d.layoutId}"))
+          case _ => List(error(DestructionError.MissingLayout(d.layoutId)))
         operandErrors ++ duplicates ++ layoutErrors
     common ++ specific

@@ -19,7 +19,7 @@ private[semantic] object CloneCalls:
     val target = CloneTargets.forType(tpe, index, registry)
     target
       .toRight(
-        SemanticError.InvalidExpression(operand, "This type cannot be cloned", phase)
+        SemanticError.InvalidExpression(operand, ExpressionProblem.NotCloneable, phase)
       )
       .map { target =>
         val functionType = TypeFn(SourceOrigin.Synth, NonEmptyList.one(tpe), tpe)

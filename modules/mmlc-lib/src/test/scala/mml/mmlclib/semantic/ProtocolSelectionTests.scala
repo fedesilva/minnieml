@@ -65,7 +65,7 @@ class ProtocolSelectionTests extends BaseEffFunSuite:
           val span = expr.spanOpt.get
           assertEquals(expr.source, original.source)
           assertEquals(source.substring(span.start.index, span.end.index), "2147483648")
-          assertEquals(message, "Integer literal is outside the Int32 range")
+          assertEquals(message, ExpressionProblem.IntegerOutOfRange)
         case other => fail(s"Expected one literal-range diagnostic, got $other")
       assertEquals(
         computedType(binding(result.module, "after"), result.module),
@@ -88,7 +88,7 @@ class ProtocolSelectionTests extends BaseEffFunSuite:
           val span = expr.spanOpt.get
           assertEquals(expr.source, magnitude.source)
           assertEquals(source.substring(span.start.index, span.end.index), "2147483648")
-          assertEquals(message, "Integer literal is outside the Int32 range")
+          assertEquals(message, ExpressionProblem.IntegerOutOfRange)
         case other => fail(s"Expected one literal-range diagnostic, got $other")
     }
 
@@ -123,7 +123,7 @@ class ProtocolSelectionTests extends BaseEffFunSuite:
           val span = expr.spanOpt.get
           assertEquals(expr.source, magnitude.source)
           assertEquals(source.substring(span.start.index, span.end.index), "2147483648")
-          assertEquals(message, "Integer literal is outside the Int32 range")
+          assertEquals(message, ExpressionProblem.IntegerOutOfRange)
         case other => fail(s"Expected the custom operator's literal-range diagnostic, got $other")
     }
 

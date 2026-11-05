@@ -4,6 +4,7 @@ import cats.syntax.all.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.codegen.emitter.{
   CodeGenError,
+  CodeGenReason,
   CodeGenState,
   CompileResult,
   getLlvmType,
@@ -155,17 +156,14 @@ def applyBinaryOp(
                   ).asRight
                 case None =>
                   Left(
-                    CodeGenError(
-                      s"Could not determine return type for binary operator '${opRef.name}'",
-                      Some(opRef)
-                    )
+                    CodeGenError(CodeGenReason.MissingBinaryReturnType(opRef), Some(opRef))
                   )
             case Left(err) => Left(err)
         case None =>
-          Left(CodeGenError(s"Missing type information for binary operator operand", Some(left)))
+          Left(CodeGenError(CodeGenReason.MissingBinaryOperandType, Some(left)))
     case None =>
       Left(
-        CodeGenError(s"No native template found for binary operator '${opRef.name}'", Some(opRef))
+        CodeGenError(CodeGenReason.MissingBinaryTemplate(opRef), Some(opRef))
       )
 
 /** Applies a unary operation using its native template. */
@@ -196,15 +194,12 @@ def applyUnaryOp(
                   ).asRight
                 case None =>
                   Left(
-                    CodeGenError(
-                      s"Could not determine return type for unary operator '${opRef.name}'",
-                      Some(opRef)
-                    )
+                    CodeGenError(CodeGenReason.MissingUnaryReturnType(opRef), Some(opRef))
                   )
             case Left(err) => Left(err)
         case None =>
-          Left(CodeGenError(s"Missing type information for unary operator operand", Some(arg)))
+          Left(CodeGenError(CodeGenReason.MissingUnaryOperandType, Some(arg)))
     case None =>
       Left(
-        CodeGenError(s"No native template found for unary operator '${opRef.name}'", Some(opRef))
+        CodeGenError(CodeGenReason.MissingUnaryTemplate(opRef), Some(opRef))
       )

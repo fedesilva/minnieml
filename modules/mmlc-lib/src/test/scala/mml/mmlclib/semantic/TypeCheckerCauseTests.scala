@@ -7,13 +7,14 @@ import mml.mmlclib.compiler.{CompilerConfig, CompilerState}
 import mml.mmlclib.errors.{DiagnosticRecord, DiagnosticRelation}
 import mml.mmlclib.parser.SourceInfo
 import mml.mmlclib.test.BaseEffFunSuite
+import mml.mmlclib.util.error.print.diagnosticMessage
 
 class TypeCheckerCauseTests extends BaseEffFunSuite:
 
   private def checkedState(source: String): IO[CompilerState] =
     FrontEndApi.compile(source, "TypeCheckerCauses").value.map {
       case Right(state) => state
-      case Left(error) => fail(error.message)
+      case Left(error) => fail(diagnosticMessage(error))
     }
 
   private def binding(module: Module, name: String): Bnd =
@@ -204,9 +205,9 @@ class TypeCheckerCauseTests extends BaseEffFunSuite:
         val visible    = state.diagnostics.visibleRecords
         val undefined  = visible.filter(_.error.isInstanceOf[SemanticError.UndefinedRef])
         val mismatches = visible.filter(mismatch)
-        assertEquals(undefined.size, 1, state.errors.map(_.message))
-        assertEquals(mismatches.size, 1, state.errors.map(_.message))
-        assertEquals(visible.size, 2, state.errors.map(_.message))
+        assertEquals(undefined.size, 1, state.errors.map(diagnosticMessage))
+        assertEquals(mismatches.size, 1, state.errors.map(diagnosticMessage))
+        assertEquals(visible.size, 2, state.errors.map(diagnosticMessage))
         mismatches.head.error match
           case SemanticError.TypeCheckingError(error: TypeError.TypeMismatch) =>
             error.node match
@@ -254,7 +255,7 @@ class TypeCheckerCauseTests extends BaseEffFunSuite:
           case _: SemanticError.UndefinedTypeRef => true
           case SemanticError.TypeCheckingError(_: TypeError.MissingParameterType) => true
           case _ => false))
-        assert(!state.diagnostics.records.exists(mismatch), state.errors.map(_.message))
+        assert(!state.diagnostics.records.exists(mismatch), state.errors.map(diagnosticMessage))
         val caller = binding(state.module, "caller")
         assert(!ValueAvailability.fromModule(state.module).isAvailable(caller.value))
       }
@@ -267,7 +268,7 @@ class TypeCheckerCauseTests extends BaseEffFunSuite:
     """).map { state =>
       val visible = state.diagnostics.visibleRecords
       val evidence =
-        state.diagnostics.records.map(record => (record.id, record.error.message, record.relation))
+        state.diagnostics.records.map(record => (record.id, record.error, record.relation))
       assertEquals(visible.size, 1, evidence)
       assert(mismatch(visible.head))
       val failed = binding(state.module, "failed")
@@ -293,7 +294,7 @@ class TypeCheckerCauseTests extends BaseEffFunSuite:
       else ???; ;
     """).map { state =>
       val visible = state.diagnostics.visibleRecords
-      assertEquals(visible.size, 1, state.errors.map(_.message))
+      assertEquals(visible.size, 1, state.errors.map(diagnosticMessage))
       assert(mismatch(visible.head))
       assert(!state.errors.exists {
         case SemanticError.TypeCheckingError(_: TypeError.UntypedHoleInBinding) => true

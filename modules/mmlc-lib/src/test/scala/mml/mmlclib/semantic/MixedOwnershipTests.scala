@@ -108,7 +108,7 @@ class MixedOwnershipTests extends BaseEffFunSuite:
         result.errors.exists {
           case _:     SemanticError.BorrowedValuePassedToConsumingParam => true
           case error: SemanticError.InvalidExpression =>
-            error.message.toLowerCase.contains("borrow")
+            error.reason == OwnershipError.BorrowedSink
           case _ => false
         },
         result.errors
@@ -136,7 +136,7 @@ class MixedOwnershipTests extends BaseEffFunSuite:
       assert(
         result.errors.exists {
           case error: SemanticError.InvalidExpression =>
-            error.message.contains("stored consuming argument requires ownership on every path")
+            error.reason == OwnershipError.StoredArgumentRequiresOwnership
           case _ => false
         },
         result.errors
@@ -156,7 +156,7 @@ class MixedOwnershipTests extends BaseEffFunSuite:
       assert(
         result.errors.exists {
           case error: SemanticError.InvalidExpression =>
-            error.message.contains("global value")
+            error.reason == OwnershipError.GlobalTransfer
           case _ => false
         },
         result.errors
@@ -188,7 +188,7 @@ class MixedOwnershipTests extends BaseEffFunSuite:
             case _:     SemanticError.CapturedBorrowedHeapBinding => true
             case _:     SemanticError.BorrowEscapeViaReturn => true
             case error: SemanticError.InvalidExpression =>
-              error.message.toLowerCase.contains("borrow")
+              error.reason == OwnershipError.BorrowedSink
             case _ => false
           },
           result.errors
@@ -515,7 +515,8 @@ class MixedOwnershipTests extends BaseEffFunSuite:
       """).map { result =>
         assert(
           result.errors.exists {
-            case error: SemanticError.InvalidExpression => error.message.contains("global value")
+            case error: SemanticError.InvalidExpression =>
+              error.reason == OwnershipError.GlobalTransfer
             case _ => false
           },
           result.errors
@@ -536,7 +537,7 @@ class MixedOwnershipTests extends BaseEffFunSuite:
       assert(
         result.errors.exists {
           case error: SemanticError.InvalidExpression =>
-            error.message.contains("borrowed ownership")
+            error.reason == OwnershipError.BorrowedSink
           case _ => false
         },
         result.errors
@@ -554,7 +555,7 @@ class MixedOwnershipTests extends BaseEffFunSuite:
       assert(
         result.errors.exists {
           case error: SemanticError.InvalidExpression =>
-            error.message.contains("borrowed ownership")
+            error.reason == OwnershipError.BorrowedSink
           case _ => false
         },
         result.errors
@@ -606,7 +607,7 @@ class MixedOwnershipTests extends BaseEffFunSuite:
       assert(
         result.errors.exists {
           case error: SemanticError.InvalidExpression =>
-            error.message.contains("borrowed ownership")
+            error.reason == OwnershipError.BorrowedSink
           case _ => false
         },
         result.errors
@@ -632,7 +633,7 @@ class MixedOwnershipTests extends BaseEffFunSuite:
       assert(
         result.errors.exists {
           case error: SemanticError.InvalidExpression =>
-            error.message.contains("borrowed ownership")
+            error.reason == OwnershipError.BorrowedSink
           case _ => false
         },
         result.errors
@@ -662,7 +663,7 @@ class MixedOwnershipTests extends BaseEffFunSuite:
         assert(
           result.errors.forall {
             case error: SemanticError.InvalidExpression =>
-              error.message.contains("borrowed ownership")
+              error.reason == OwnershipError.BorrowedSink
             case _ => false
           },
           result.errors
@@ -697,7 +698,7 @@ class MixedOwnershipTests extends BaseEffFunSuite:
       assert(
         result.errors.exists {
           case error: SemanticError.InvalidExpression =>
-            error.message.contains("global value")
+            error.reason == OwnershipError.GlobalTransfer
           case _ => false
         },
         result.errors

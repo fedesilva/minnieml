@@ -10,8 +10,8 @@ object ClosureDestructorBodyGenerator:
 
   private val phase = "closure-destructor-bodies"
 
-  private def error(term: Term, message: String): SemanticError =
-    SemanticError.InvalidExpression(Expr(term.source, List(term)), message, phase)
+  private def error(term: Term, reason: ExpressionError): SemanticError =
+    SemanticError.InvalidExpression(Expr(term.source, List(term)), reason, phase)
 
   private def cleanup(
     destruction: DestroyClosureEnvironment,
@@ -75,7 +75,7 @@ object ClosureDestructorBodyGenerator:
             List(
               error(
                 destruction,
-                s"Destructor refers to a borrowed closure environment: ${destruction.layoutId}"
+                DestructionError.BorrowedEnvironment(destruction.layoutId)
               )
             )
           )
@@ -88,7 +88,7 @@ object ClosureDestructorBodyGenerator:
             List(
               error(
                 destruction,
-                s"Missing move-lambda metadata for layout: ${destruction.layoutId}"
+                DestructionError.MissingMoveMetadata(destruction.layoutId)
               )
             )
           )
@@ -105,4 +105,7 @@ object ClosureDestructorBodyGenerator:
     }
     state
       .withModule(module.copy(members = results.map(_._1)))
-      .addErrors(environments.errors.map(e => error(e.lambda, e.message)) ++ results.flatMap(_._2))
+      .addErrors(
+        environments.errors.map(e => error(e.lambda, ExpressionProblem.ClosureLayout(e))) ++ results
+          .flatMap(_._2)
+      )

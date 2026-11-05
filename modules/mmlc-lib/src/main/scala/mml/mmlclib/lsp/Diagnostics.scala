@@ -8,6 +8,12 @@ import mml.mmlclib.compiler.CompilerState
 import mml.mmlclib.errors.CompilationError
 import mml.mmlclib.parser.ParserError
 import mml.mmlclib.semantic.{SemanticError, TypeError}
+import mml.mmlclib.util.error.print.{
+  diagnosticMessage,
+  entryPointMessage,
+  expressionMessage,
+  typeErrorMessage
+}
 
 /** Converts source-bearing semantic and type errors to LSP diagnostics. */
 object Diagnostics:
@@ -54,7 +60,7 @@ object Diagnostics:
       case SemanticError.UndefinedRef(ref, _, _) => ref.spanOpt.toList
       case SemanticError.UndefinedTypeRef(typeRef, _, _) => typeRef.spanOpt.toList
       case SemanticError.AmbiguousTypeRef(typeRef, _, _, _) => typeRef.spanOpt.toList
-      case SemanticError.DuplicateName(_, dups, _) =>
+      case SemanticError.DuplicateName(_, dups, _, _) =>
         dups.iterator
           .collect { case fs: FromSource => fs.source.spanOpt }
           .collect { case Some(span) => span }
@@ -68,7 +74,7 @@ object Diagnostics:
       case SemanticError.InvalidExpressionFound(inv, _) => inv.spanOpt.toList
       case SemanticError.TypeCheckingError(typeErr) => extractTypeErrorSpans(typeErr)
       case SemanticError.ProtocolErrorFound(error, _) => error.source.spanOpt.toList
-      case SemanticError.InvalidEntryPoint(_, source) => source.spanOpt.toList
+      case SemanticError.InvalidEntryPoint(error) => error.source.spanOpt.toList
       case SemanticError.VisibilityViolation(ref, _, _) => ref.spanOpt.toList
       case error: SemanticError.UseAfterMove => error.source.spanOpt.toList
       case SemanticError.ConsumingParamNotLastUse(_, ref, _) => ref.spanOpt.toList
@@ -97,7 +103,7 @@ object Diagnostics:
       case TypeError.ConditionalBranchTypeMismatch(c, _, _, _) => c.spanOpt.toList
       case TypeError.ConditionalBranchTypeUnknown(cond, _) => cond.spanOpt.toList
       case TypeError.UnresolvableType(node, _, _) => nodeSpan(node).toList
-      case TypeError.IncompatibleTypes(node, _, _, _, _) => astNodeSpan(node).toList
+      case TypeError.IncompatibleTypes(node, _, _, _) => astNodeSpan(node).toList
       case TypeError.ConflictingLambdaParamInference(param, _, _, _) => param.spanOpt.toList
       case TypeError.UninferrableLambdaParam(param, _) => param.spanOpt.toList
       case TypeError.UntypedHoleInBinding(_, source, _) => source.spanOpt.toList
@@ -115,90 +121,18 @@ object Diagnostics:
       case fs: FromSource => fs.source.spanOpt
       case _ => None
 
-  private def formatSemanticError(error: SemanticError): String =
-    error match
-      case SemanticError.UndefinedRef(ref, _, _) =>
-        s"Undefined reference: ${ref.name}"
-      case SemanticError.UndefinedTypeRef(typeRef, _, _) =>
-        s"Undefined type: ${typeRef.name}"
-      case SemanticError.AmbiguousTypeRef(typeRef, _, _, _) =>
-        s"Ambiguous type: ${typeRef.name}"
-      case SemanticError.DuplicateName(name, _, _) =>
-        s"Duplicate definition: $name"
-      case SemanticError.InvalidExpression(_, msg, _) =>
-        s"Invalid expression: $msg"
-      case SemanticError.DanglingTerms(_, msg, _) =>
-        s"Dangling terms: $msg"
-      case SemanticError.MemberErrorFound(err, _) =>
-        s"Member error: ${err.message}"
-      case SemanticError.ParsingIdErrorFound(err, _) =>
-        s"Parsing error: ${err.message}"
-      case SemanticError.ParseTermErrorFound(err, _) =>
-        s"Parsing error: ${err.message}"
-      case SemanticError.ParseTypeErrorFound(err, _) =>
-        s"Parse error in type: ${err.message}"
-      case SemanticError.InvalidExpressionFound(_, _) =>
-        "Invalid expression"
-      case SemanticError.TypeCheckingError(typeErr) =>
-        formatTypeError(typeErr)
-      case SemanticError.ProtocolErrorFound(error, _) =>
-        error.message
-      case SemanticError.InvalidEntryPoint(msg, _) =>
-        s"Invalid entry point: $msg"
-      case e: SemanticError.VisibilityViolation => e.message
-      case e: SemanticError.UseAfterMove => e.message
-      case e: SemanticError.ConsumingParamNotLastUse => e.message
-      case e: SemanticError.BorrowedValuePassedToConsumingParam => e.message
-      case e: SemanticError.PartialApplicationWithConsuming => e.message
-      case e: SemanticError.ConditionalOwnershipMismatch => e.message
-      case e: SemanticError.BorrowEscapeViaReturn => e.message
-      case e: SemanticError.CapturedBorrowedHeapBinding => e.message
-      case e: SemanticError.CapturedMovedHeapBinding => e.message
-      case e: SemanticError.BorrowClosureEscapeViaReturn => e.message
+  private def formatSemanticError(error: SemanticError): String = error match
+    case SemanticError.InvalidExpression(_, reason, _) =>
+      s"Invalid expression: ${expressionMessage(reason)}"
+    case SemanticError.DanglingTerms(_, reason, _) =>
+      s"Dangling terms: ${expressionMessage(reason)}"
+    case SemanticError.MemberErrorFound(error, _) => s"Member error: ${diagnosticMessage(error)}"
+    case SemanticError.ParsingIdErrorFound(error, _) =>
+      s"Parsing error: ${diagnosticMessage(error)}"
+    case SemanticError.ParseTermErrorFound(error, _) =>
+      s"Parsing error: ${diagnosticMessage(error)}"
+    case SemanticError.InvalidEntryPoint(error) =>
+      s"Invalid entry point: ${entryPointMessage(error)}"
+    case other => diagnosticMessage(other)
 
-  private def formatTypeError(error: TypeError): String =
-    error match
-      case TypeError.MissingParameterType(param, _, _) =>
-        s"Missing type annotation for parameter: ${param.name}"
-      case TypeError.MissingReturnType(_, _) =>
-        "Missing return type annotation"
-      case TypeError.RecursiveFunctionMissingReturnType(_, _) =>
-        "Recursive function requires return type annotation"
-      case TypeError.MissingOperatorParameterType(param, _, _) =>
-        s"Missing type annotation for operator parameter: ${param.name}"
-      case TypeError.MissingOperatorReturnType(_, _) =>
-        "Missing return type annotation for operator"
-      case TypeError.TypeMismatch(_, expected, actual, _, _) =>
-        s"Type mismatch: expected ${AstLookup.formatType(Some(expected))}, " +
-          s"got ${AstLookup.formatType(Some(actual))}"
-      case TypeError.UndersaturatedApplication(_, exp, act, _) =>
-        s"Too few arguments: expected $exp, got $act"
-      case TypeError.OversaturatedApplication(_, exp, act, _) =>
-        s"Too many arguments: expected $exp, got $act"
-      case TypeError.InvalidApplication(_, fnType, argType, _) =>
-        s"Cannot apply ${AstLookup.formatType(Some(fnType))} " +
-          s"to ${AstLookup.formatType(Some(argType))}"
-      case TypeError.InvalidSelection(ref, baseType, _) =>
-        s"Cannot select '${ref.name}' from ${AstLookup.formatType(Some(baseType))}"
-      case TypeError.UnknownField(ref, struct, _) =>
-        s"Unknown field '${ref.name}' in struct ${struct.name}"
-      case TypeError.ConditionalBranchTypeMismatch(_, t, f, _) =>
-        s"Branch type mismatch: then-branch is ${AstLookup.formatType(Some(t))}, " +
-          s"else-branch is ${AstLookup.formatType(Some(f))}"
-      case TypeError.ConditionalBranchTypeUnknown(_, _) =>
-        "Cannot determine type of conditional branches"
-      case TypeError.UnresolvableType(_, ctx, _) =>
-        ctx match
-          case Some(c) => s"Cannot resolve type in context: $c"
-          case None => "Cannot resolve type"
-      case TypeError.IncompatibleTypes(_, t1, t2, ctx, _) =>
-        s"Incompatible types in $ctx: ${AstLookup.formatType(Some(t1))} " +
-          s"vs ${AstLookup.formatType(Some(t2))}"
-      case TypeError.ConflictingLambdaParamInference(param, firstType, nextType, _) =>
-        s"Conflicting types inferred for lambda parameter '${param.name}': " +
-          s"${AstLookup.formatType(Some(firstType))} vs " +
-          s"${AstLookup.formatType(Some(nextType))}"
-      case TypeError.UninferrableLambdaParam(param, _) =>
-        s"Cannot infer type for lambda parameter '${param.name}'"
-      case TypeError.UntypedHoleInBinding(name, _, _) =>
-        s"Typed hole in binding '$name' requires type annotation"
+  private def formatTypeError(error: TypeError): String = typeErrorMessage(error)

@@ -77,15 +77,17 @@ private def failedBindingMember(
   functionName: Boolean = false
 ): Member =
   val invalidId = name.error.flatMap(_.failedCode).getOrElse("")
-  val nameRule = "must start with a lowercase letter (a-z) " +
-    "followed by letters, digits, or underscores"
-  val message =
-    if invalidId.isEmpty then "Expected binding name"
-    else if functionName then s"Invalid function name '$invalidId'. Function names $nameRule"
-    else s"Invalid identifier '$invalidId'. Identifiers $nameRule"
+  val reason =
+    if invalidId.isEmpty then SyntaxError.ExpectedBindingName
+    else
+      SyntaxError.InvalidIdentifier(
+        invalidId,
+        if functionName then IdentifierKind.Function else IdentifierKind.Binding,
+        true
+      )
   ParsingIdError(
     span(start, end),
-    message,
+    reason,
     info.slice(start.index, end.index).some,
     invalidId
   )
@@ -262,9 +264,8 @@ private[parser] def binOpDefP(info: SourceInfo)(using P[Any]): P[Member] =
       name.value match {
         case Left(invalidId) =>
           ParsingIdError(
-            span = span(name.location.start, terminator.location.end),
-            message =
-              s"Invalid operator name '$invalidId'. Operator names must be symbolic or follow binding identifier rules.",
+            span       = span(name.location.start, terminator.location.end),
+            reason     = SyntaxError.InvalidIdentifier(invalidId, IdentifierKind.Operator, true),
             failedCode = Some(invalidId),
             invalidId  = invalidId
           )
@@ -348,9 +349,8 @@ private[parser] def unaryOpP(info: SourceInfo)(using P[Any]): P[Member] =
       name.value match {
         case Left(invalidId) =>
           ParsingIdError(
-            span = span(name.location.start, terminator.location.end),
-            message =
-              s"Invalid operator name '$invalidId'. Operator names must be symbolic or follow binding identifier rules.",
+            span       = span(name.location.start, terminator.location.end),
+            reason     = SyntaxError.InvalidIdentifier(invalidId, IdentifierKind.Operator, true),
             failedCode = Some(invalidId),
             invalidId  = invalidId
           )
@@ -411,7 +411,7 @@ private[parser] def failedMemberP(info: SourceInfo)(using P[Any]): P[Member] =
 
     ParsingMemberError(
       span       = SrcSpan(start, endPoint),
-      message    = "Failed to parse member",
+      reason     = SyntaxError.InvalidMemberSyntax,
       failedCode = failedSnippet
     )
   }

@@ -310,8 +310,8 @@ class FindDefinitionTests extends BaseEffFunSuite:
         .collectFirst { case value: TypeStruct => value }
         .getOrElse(fail("Expected struct"))
       val field       = struct.fields.head
-      val failedAlias = ParseTypeError(alias.typeRef.source, "Malformed alias type", None)
-      val failedField = ParseTypeError(field.typeSpec.source, "Malformed field type", None)
+      val failedAlias = ParseTypeError(alias.typeRef.source, SyntaxError.InvalidTypeSyntax, None)
+      val failedField = ParseTypeError(field.typeSpec.source, SyntaxError.InvalidTypeSyntax, None)
       val recovered = module.copy(members =
         List(
           alias.copy(typeRef = failedAlias),

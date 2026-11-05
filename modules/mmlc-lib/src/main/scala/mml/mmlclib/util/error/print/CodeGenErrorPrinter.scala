@@ -26,4 +26,4 @@ object CodeGenErrorPrinter:
     *   A human-readable error message
     */
   private def prettyPrintSingle(error: CodeGenError): String =
-    s"Code generation error: ${error.message}"
+    s"Code generation error: ${diagnosticMessage(error)}"

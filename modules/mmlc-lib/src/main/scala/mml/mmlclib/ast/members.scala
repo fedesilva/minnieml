@@ -31,29 +31,29 @@ case class DuplicateMember(
 case class InvalidMember(
   source:         SourceOrigin,
   originalMember: Member,
-  reason:         String
+  reason:         MemberInvalidity
 ) extends Member,
       InvalidNode,
       FromSource
 
 object InvalidMember:
-  def apply(span: SrcSpan, originalMember: Member, reason: String): InvalidMember =
+  def apply(span: SrcSpan, originalMember: Member, reason: MemberInvalidity): InvalidMember =
     new InvalidMember(SourceOrigin.Loc(span), originalMember, reason)
 
 case class ParsingMemberError(
   source:     SourceOrigin,
-  message:    String,
+  reason:     SyntaxError,
   failedCode: Option[String]
 ) extends Member,
       Error
 
 object ParsingMemberError:
-  def apply(span: SrcSpan, message: String, failedCode: Option[String]): ParsingMemberError =
-    new ParsingMemberError(SourceOrigin.Loc(span), message, failedCode)
+  def apply(span: SrcSpan, reason: SyntaxError, failedCode: Option[String]): ParsingMemberError =
+    new ParsingMemberError(SourceOrigin.Loc(span), reason, failedCode)
 
 case class ParsingIdError(
   source:     SourceOrigin,
-  message:    String,
+  reason:     SyntaxError,
   failedCode: Option[String],
   invalidId:  String
 ) extends Member,
@@ -62,8 +62,12 @@ case class ParsingIdError(
 object ParsingIdError:
   def apply(
     span:       SrcSpan,
-    message:    String,
+    reason:     SyntaxError,
     failedCode: Option[String],
     invalidId:  String
   ): ParsingIdError =
-    new ParsingIdError(SourceOrigin.Loc(span), message, failedCode, invalidId)
+    new ParsingIdError(SourceOrigin.Loc(span), reason, failedCode, invalidId)
+
+/** Invalid declarations preserve the parameter identities responsible for rejection. */
+enum MemberInvalidity:
+  case DuplicateParameters(parameters: List[FnParam])

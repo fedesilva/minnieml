@@ -24,7 +24,7 @@ def compileDestruction(
             val declared = operand.state.withFunctionDeclaration(name, "void", List("ptr"))
             val updated  = declared.emit(s"  store ptr @$name, ptr ${operand.operandStr}")
             CompileResult(0, updated, false, "Unit", exitBlock = operand.exitBlock).asRight
-          case _ => CodeGenError("Missing raw environment destructor", d.some).asLeft
+          case _ => CodeGenError(CodeGenReason.MissingRawEnvironmentDestructor, d.some).asLeft
       case _: DispatchClosureDestructor =>
         val st        = operand.state
         val ptr       = operand.operandStr
@@ -77,14 +77,14 @@ def compileDestruction(
                           case _: FieldCleanup.Value =>
                             callDestructor(cleanup.targetId, s"%$value", llvmType, loaded, d)
                       }
-                    case None => CodeGenError("Missing destruction field", d.some).asLeft
+                    case None => CodeGenError(CodeGenReason.MissingDestructionField, d.some).asLeft
                 }
               }
               .flatMap { st =>
                 callDestructor("stdlib::bnd::mml_free_raw", operand.operandStr, "ptr", st, d)
                   .map(done => CompileResult(0, done, false, "Unit", exitBlock = operand.exitBlock))
               }
-          case _ => CodeGenError("Missing closure environment layout", d.some).asLeft
+          case _ => CodeGenError(CodeGenReason.MissingClosureLayout, d.some).asLeft
   }
 
 private def destroyClosureValue(
@@ -111,7 +111,7 @@ private def callDestructor(
       for
         signature <- binding.typeSpec
           .flatMap(resolveToTypeFn(_, state.resolvables))
-          .toRight(CodeGenError("Missing destruction target type", node.some))
+          .toRight(CodeGenError(CodeGenReason.MissingDestructionTargetType, node.some))
         result <- compileCallableCall(
           Ref(node.source, binding.name, resolvedId = targetId.some, typeSpec = binding.typeSpec),
           List(CompiledArg(value, llvmType, signature.paramTypes.head.some)),
@@ -119,4 +119,4 @@ private def callDestructor(
           state
         )
       yield result.state
-    case _ => CodeGenError("Missing destruction target", node.some).asLeft
+    case _ => CodeGenError(CodeGenReason.MissingDestructionTarget, node.some).asLeft

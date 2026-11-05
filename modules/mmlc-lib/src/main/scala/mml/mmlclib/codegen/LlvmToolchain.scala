@@ -26,28 +26,22 @@ enum CompilationMode derives CanEqual:
   case Dev
 
 enum LlvmCompilationError extends CompilationError derives CanEqual:
-  case TemporaryFileCreationError(msg: String)
+  case TemporaryFileCreationError(reason: FileFailure)
   case UnsupportedOperatingSystem(osName: String)
   case UnsupportedArchitecture(archName: String)
-  case CommandExecutionError(command: String, errorMessage: String, exitCode: Int)
+  case CommandExecutionError(
+    command:   List[String],
+    operation: ToolOperation,
+    stderr:    String,
+    exitCode:  Int
+  )
+  case ProcessStartError(command: List[String], detail: String)
+  case ToolNotFound(tool: String, command: List[String])
   case ExecutableRunError(path: String, exitCode: Int)
   case LlvmNotInstalled(missingTools: List[String])
-  case RuntimeResourceError(msg: String)
-  case TripleResolutionError(msg: String)
-  case TargetResolutionError(msg: String)
-
-  def message: String = this match
-    case TemporaryFileCreationError(msg) => msg
-    case UnsupportedOperatingSystem(osName) => s"Unsupported operating system: $osName"
-    case UnsupportedArchitecture(archName) => s"Unsupported architecture: $archName"
-    case CommandExecutionError(command, errorMessage, exitCode) =>
-      s"Command '$command' failed (exit $exitCode): $errorMessage"
-    case ExecutableRunError(path, exitCode) => s"Executable '$path' failed with exit code $exitCode"
-    case LlvmNotInstalled(missingTools) =>
-      s"LLVM tools not installed: ${missingTools.mkString(", ")}"
-    case RuntimeResourceError(msg) => msg
-    case TripleResolutionError(msg) => msg
-    case TargetResolutionError(msg) => msg
+  case RuntimeResourceError(reason: RuntimeFailure)
+  case TripleResolutionError(reason: TripleFailure)
+  case TargetResolutionError(reason: TargetFailure)
 
 object LlvmToolchain:
 
@@ -156,7 +150,7 @@ object LlvmToolchain:
           case Some(host) => validateNativeCpu(triple, host).as(triple)
           case None =>
             LlvmCompilationError
-              .TargetResolutionError("Cannot determine host architecture for --cpu native")
+              .TargetResolutionError(TargetFailure.UnknownHostArchitecture)
               .asLeft
         }
       case result => IO.pure(result)
@@ -176,7 +170,7 @@ object LlvmToolchain:
       architecture(triple) == architecture(host),
       (),
       LlvmCompilationError.TargetResolutionError(
-        s"--cpu native requires the host architecture ($host); select an explicit CPU for $triple"
+        TargetFailure.NativeCpuArchitectureMismatch(triple, host)
       )
     )
 
@@ -189,7 +183,7 @@ object LlvmToolchain:
           catch
             case e: Exception =>
               LlvmCompilationError
-                .TripleResolutionError(s"Failed to read cached triple: ${e.getMessage}")
+                .TripleResolutionError(TripleFailure.ReadCache(cacheFile.toString, e.getMessage))
                 .asLeft
         }
       else queryAndCacheTriple(cacheFile)
@@ -207,12 +201,12 @@ object LlvmToolchain:
         triple.asRight
       else
         LlvmCompilationError
-          .TripleResolutionError("clang -print-target-triple returned empty output")
+          .TripleResolutionError(TripleFailure.EmptyOutput)
           .asLeft
     catch
       case e: Exception =>
         LlvmCompilationError
-          .TripleResolutionError(s"Failed to query clang for target triple: ${e.getMessage}")
+          .TripleResolutionError(TripleFailure.Query(e.getMessage))
           .asLeft
   }
 
@@ -295,7 +289,7 @@ object LlvmToolchain:
     if !inputFile.exists() then
       IO.pure(
         LlvmCompilationError
-          .TemporaryFileCreationError(s"LLVM IR file not found: $llvmIrPath")
+          .TemporaryFileCreationError(FileFailure.MissingIr(llvmIrPath.toString))
           .asLeft
       )
     else
@@ -454,7 +448,7 @@ object LlvmToolchain:
     logDebug(s"Output file: $outputFile", config.verbose)
     executeCommand(
       List("llvm-as", sourceFile, "-o", outputFile),
-      "Failed to convert IR to Bitcode",
+      ToolOperation.Assemble,
       config.outputDir,
       config.verbose
     )
@@ -485,7 +479,7 @@ object LlvmToolchain:
     logDebug(s"Output file: $outputFile", config.verbose)
     executeCommand(
       command,
-      "Failed to optimize bitcode",
+      ToolOperation.Optimize,
       config.outputDir,
       config.verbose
     )
@@ -502,7 +496,7 @@ object LlvmToolchain:
     logDebug(s"Output file: $outputFile", config.verbose)
     executeCommand(
       List("llvm-dis", inputFile, "-o", outputFile),
-      "Failed to generate optimized IR",
+      ToolOperation.Disassemble,
       config.outputDir,
       config.verbose
     )
@@ -523,7 +517,7 @@ object LlvmToolchain:
     executeCommand(
       List("llc", s"-mtriple=$targetTriple", "-relocation-model=pic") ++ cpuFlags ++
         List(inputFile, "-o", outputFile),
-      "Failed to convert Bitcode to Assembly",
+      ToolOperation.EmitAssembly,
       config.outputDir,
       config.verbose
     )
@@ -603,7 +597,12 @@ object LlvmToolchain:
       .attempt
       .map {
         case Right(bytes) => bytes.asRight
-        case Left(error) => LlvmCompilationError.RuntimeResourceError(error.getMessage).asLeft
+        case Left(error) =>
+          LlvmCompilationError
+            .RuntimeResourceError(
+              RuntimeFailure.ReadResource(mmlRuntimeResourcePath, error.getMessage)
+            )
+            .asLeft
       }
 
   private def extractRuntimeResource(
@@ -621,7 +620,12 @@ object LlvmToolchain:
     }.attempt
       .map {
         case Right(path) => path.asRight
-        case Left(error) => LlvmCompilationError.RuntimeResourceError(error.getMessage).asLeft
+        case Left(error) =>
+          LlvmCompilationError
+            .RuntimeResourceError(
+              RuntimeFailure.ExtractResource(outputDir.toString, error.getMessage)
+            )
+            .asLeft
       }
 
   private def compileRuntime(
@@ -666,7 +670,7 @@ object LlvmToolchain:
                 ) ++ target.flags ++ List("-o", objPath.toString, sourcePath))
                 executeCommand(
                   cmd,
-                  "Failed to compile MML runtime",
+                  ToolOperation.CompileRuntime,
                   config.outputDir,
                   config.verbose
                 )
@@ -726,7 +730,7 @@ object LlvmToolchain:
                 ) ++ target.flags ++ deferredPassFlags ++ List("-o", bcPath.toString, sourcePath))
                 executeCommand(
                   cmd,
-                  "Failed to compile MML runtime bitcode",
+                  ToolOperation.CompileRuntimeBitcode,
                   config.outputDir,
                   config.verbose
                 ).map {
@@ -763,7 +767,7 @@ object LlvmToolchain:
           timedStep("llvm-link", recordTiming)(
             executeCommand(
               List("llvm-link", programBitcode, runtimePath, "-o", linkedBitcode),
-              "Failed to link runtime bitcode",
+              ToolOperation.LinkRuntime,
               config.outputDir,
               config.verbose
             )
@@ -800,7 +804,7 @@ object LlvmToolchain:
         List(target.executable.toString, "-fuse-ld=lld") ++ linkFlags ++
           List(inputFile) ++ linkEntries.map(entry => s"-l${entry.name}") ++
           List("-o", outputPath.toString),
-        "Failed to compile and link",
+        ToolOperation.LinkExecutable,
         config.outputDir,
         config.verbose
       )
@@ -860,7 +864,7 @@ object LlvmToolchain:
             executeCommand(
               (List(target.executable.toString, "-c") ++ assemblyFlags ++
                 List(inputFile, "-o", finalLibraryPath)),
-              "Failed to compile library object",
+              ToolOperation.CompileLibrary,
               config.outputDir,
               config.verbose
             )
@@ -885,7 +889,7 @@ object LlvmToolchain:
               catch
                 case e: Exception =>
                   val error = LlvmCompilationError.RuntimeResourceError(
-                    s"Failed to copy runtime object to target: ${e.getMessage}"
+                    RuntimeFailure.CopyObject(runtimePath, runtimeTargetPath, e.getMessage)
                   )
                   logError(error.toString)
                   error.asLeft
@@ -922,7 +926,7 @@ object LlvmToolchain:
   /** Preserves argument boundaries and includes tool stderr in failed results. */
   private[mmlclib] def executeCommand(
     args:       Seq[String],
-    errorMsg:   String,
+    operation:  ToolOperation,
     workingDir: Path,
     verbose:    Boolean
   ): IO[Either[LlvmCompilationError, Int]] =
@@ -953,8 +957,9 @@ object LlvmToolchain:
             val exitCode = Process(args, workingDirFile).!(logger)
             if exitCode != 0 then
               val diagnostics = stderr.toString.stripTrailing()
-              val message     = if diagnostics.isEmpty then errorMsg else s"$errorMsg\n$diagnostics"
-              LlvmCompilationError.CommandExecutionError(cmd, message, exitCode).asLeft
+              LlvmCompilationError
+                .CommandExecutionError(args.toList, operation, diagnostics, exitCode)
+                .asLeft
             else
               Console.err.print(stderr.toString)
               logDebug(s"Command completed successfully with exit code $exitCode", verbose)
@@ -962,25 +967,30 @@ object LlvmToolchain:
           catch
             case e: java.io.IOException =>
               logError(s"Tool execution failed: ${e.getMessage}")
-              logError(
-                s"Tool ${cmd.split(" ").head} missing, marker file present. Have you uninstalled llvm? Removing marker file."
-              )
-              logError("Verify your llvm installation and try again")
-              logError(llvmInstallInstructions)
-              LlvmCompilationError
-                .CommandExecutionError(cmd, s"Tool not found: ${e.getMessage}", -1)
-                .asLeft
-        }.flatMap { result =>
-          if result.isLeft && result.left.exists {
-              case LlvmCompilationError.CommandExecutionError(_, msg, code) =>
-                msg.contains("Tool not found") && code == -1
-              case _ => false
-            }
-          then invalidateToolsMarker(workingDir).as(result)
-          else IO.pure(result)
+              args.headOption.filter(tool => confirmedMissingTool(tool, workingDir)) match
+                case Some(tool) => LlvmCompilationError.ToolNotFound(tool, args.toList).asLeft
+                case None =>
+                  LlvmCompilationError.ProcessStartError(args.toList, e.getMessage).asLeft
+        }.flatMap {
+          case result @ Left(_: LlvmCompilationError.ToolNotFound) =>
+            invalidateToolsMarker(workingDir).as(result)
+          case result => IO.pure(result)
         }
       }
     }
+
+  /** Missing means every executable candidate is known to be absent. An existing file that cannot
+    * start, including a non-executable file, is a process-start failure.
+    */
+  private def confirmedMissingTool(tool: String, workingDir: Path): Boolean =
+    val candidates =
+      if tool.contains(File.separator) then List(workingDir.resolve(tool))
+      else
+        sys.env.getOrElse("PATH", "").split(File.pathSeparator, -1).toList.map { directory =>
+          val base = if directory.isEmpty then workingDir else workingDir.resolve(directory)
+          base.resolve(tool)
+        }
+    candidates.nonEmpty && candidates.forall(Files.notExists(_))
 
   def gatherLlvmInfo(
     buildDir:    Path,

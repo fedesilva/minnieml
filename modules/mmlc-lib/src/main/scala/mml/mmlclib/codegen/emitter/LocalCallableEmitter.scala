@@ -141,7 +141,7 @@ private[emitter] def compileLocalCallableValue(
       for
         callable <- state.localCallableAnalysis.targets
           .get(target.bindingId)
-          .toRight(CodeGenError("Missing planned local callable"))
+          .toRight(CodeGenError(CodeGenReason.MissingPlannedLocalCallable))
         returnType <- getLlvmType(target.signature.returnType, state)
         paramTypes <- target.signature.paramTypes.toList.traverse(getLlvmType(_, state))
         (allocated, name) = state.allocAnonFnName

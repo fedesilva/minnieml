@@ -173,15 +173,15 @@ case class TypeAlias(
 /** Recovered malformed type syntax. Ingest attaches the primary diagnostic for this occurrence. */
 case class ParseTypeError(
   source:     SourceOrigin,
-  message:    String,
+  reason:     SyntaxError,
   failedCode: Option[String],
   causes:     Vector[DiagnosticId] = Vector.empty
 ) extends Type,
       Error
 
 object ParseTypeError:
-  def apply(span: SrcSpan, message: String, failedCode: Option[String]): ParseTypeError =
-    new ParseTypeError(SourceOrigin.Loc(span), message, failedCode)
+  def apply(span: SrcSpan, reason: SyntaxError, failedCode: Option[String]): ParseTypeError =
+    new ParseTypeError(SourceOrigin.Loc(span), reason, failedCode)
 
 /** A failed type lookup retains its written reference and the diagnostics that explain it. */
 sealed trait TypeResolutionError extends Type, InvalidNode:

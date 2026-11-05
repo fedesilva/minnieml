@@ -81,13 +81,15 @@ object ProtocolChecker:
   ): List[ProtocolError] =
     val types = signature.params.flatMap(_.typeAsc) :+ signature.returnType
     val details =
-      Option.when(signature.defaultBody.nonEmpty)("default bodies are not supported").toList ++
-        Option.when(signature.params.exists(_.typeAsc.isEmpty))("parameter types are required") ++
+      Option.when(signature.defaultBody.nonEmpty)(ProtocolSignatureError.DefaultBody).toList ++
+        Option.when(signature.params.exists(_.typeAsc.isEmpty))(
+          ProtocolSignatureError.MissingParameterType
+        ) ++
         Option.when(signature.params.groupBy(_.name).exists(_._2.size > 1))(
-          "parameter names must be distinct"
+          ProtocolSignatureError.DuplicateParameter
         ) ++
         Option.when(types.exists(hasUnboundVariable(_, protocol.typeParameter.name)))(
-          "only the protocol's type parameter may appear in a signature"
+          ProtocolSignatureError.UnboundTypeVariable
         )
     details.map(ProtocolError.InvalidSignature(signature, _))
 
@@ -160,7 +162,8 @@ object ProtocolChecker:
               binding.meta
                 .map(meta => ProtocolInstanceMember(binding, meta.origin))
                 .toRight(
-                  ProtocolError.InvalidInstanceMember(binding, "callable metadata is required")
+                  ProtocolError
+                    .InvalidInstanceMember(binding, ProtocolMemberError.MissingCallableMetadata)
                 )
             }
         }
@@ -249,7 +252,7 @@ object ProtocolChecker:
 
       case _ =>
         List(
-          ProtocolError.InvalidInstanceMember(binding, "an ordinary function body is required")
+          ProtocolError.InvalidInstanceMember(binding, ProtocolMemberError.MissingFunctionBody)
         ).asLeft
 
   /** Substitutes the instance's concrete type into a signature, retaining the source declaration
@@ -266,7 +269,9 @@ object ProtocolChecker:
 
     signature.params
       .traverse(_.typeAsc.map(instantiate))
-      .toRight(List(ProtocolError.InvalidSignature(signature, "parameter types are required")))
+      .toRight(
+        List(ProtocolError.InvalidSignature(signature, ProtocolSignatureError.MissingParameterType))
+      )
       .map(types => ConcreteSignature(signature, types, instantiate(signature.returnType)))
 
   /** Compares written types, consuming-parameter markers, and explicit operator attributes with the

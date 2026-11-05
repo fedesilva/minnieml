@@ -3,20 +3,21 @@
 ## Metadata
 
 - **Owner:** The Author
-- **Status:** design
+- **Status:** complete
 - **Kind:** improvement
 - **Priority:** unassigned
 - **Created:** 2026-10-30
-- **Target Branch:** unassigned
+- **Completed:** 2026-11-05
+- **Target Branch:** dev/typed-compiler-diagnostics
 - **External Reference (optional):** None.
 
 ## Execution Checklist
 
-1. [ ] **design** — Settle typed payloads, presentation mapping, and template arguments from the inventory.
-2. [ ] **planned** — Approve bounded migrations covering every inventoried diagnostic family.
-3. [ ] **planned** — Migrate error producers, carriers, and presentation consumers by family.
-4. [ ] **planned** — Replace semantic string matching in tests and production control flow.
-5. [ ] **planned** — Verify rendering, recovery, and diagnostic identity; update compiler documentation.
+1. [x] **complete** — Settle typed payloads, presentation mapping, and template arguments from the inventory.
+2. [x] **complete** — Agree on the bounded migration order covering every inventoried family.
+3. [x] **complete** — Migrate error producers, carriers, and presentation consumers across S1–S7.
+4. [x] **complete** — Replace semantic string matching in tests and production control flow.
+5. [x] **complete** — Verify the integrated result, finish review, and reconcile documentation.
 
 ## Tags
 
@@ -48,21 +49,27 @@ and compiler decisions use error types and fields; focused rendering tests verif
 Keep useful outer categories such as `SemanticError.InvalidExpression` and `CodeGenError`, but
 replace their arbitrary message strings with typed payloads. The existing
 `ParsingIdErrorFound(error, phase)` and `ProtocolErrorFound(error, phase)` establish the carrier
-pattern. For example: `InvalidExpression(OwnershipError.GlobalTransfer(expr), phase)`.
-The payload identifies the failure and retains its structured context and source. A shared trait
-or type-class instance can support the carrier; the concrete interface remains a design choice.
+pattern. For example: `InvalidExpression(expr, OwnershipError.GlobalTransfer, phase)`.
+The payload identifies the failure and retains its structured context and source. Use closed
+family enums and direct carriers. Introduce a small source-bearing trait only where consumers
+need that shared contract; ordinary presentation functions do not need type-class instances.
 
 Put the `error -> message` mapping near the printing side, shared by CLI, LSP, and plain API output.
 Errors do not own human wording or require a `message` method. Move existing message generation
 out of typed families such as `TypeError` and `ProtocolError` too. Keep shared message descriptions
 separate from output-specific layout, highlighting, snippets, and LSP ranges.
 
-Errors may carry a map from a thing to its message or substitution for an output template.
-Settle whether entries describe named template arguments, source subjects with explanatory
-labels, or both. Use structured keys and values, retaining the typed error independently of
-the map. Message references and arguments can keep final wording at the presentation boundary;
-deriving the map there from typed fields is another option. For a borrowed-argument error, the
-reference and consuming parameter supply the template's value and parameter names and source labels.
+Build messages with ordinary Scala string interpolation in shared presentation functions.
+Derive substitutions from typed fields rather than storing a second representation in a map.
+For a borrowed-argument error, the reference and consuming parameter supply the value and
+parameter names. Derive ordered source labels separately from their source origins. Extract
+individual message functions only when reuse or readability warrants them; no template engine
+or generic substitution registry is required.
+
+Keep `CompilationError` open, with a data-only target contract. Unknown extension errors remain
+outside LSP conversion, as required by `DiagnosticsTests`. All built-in message mappings live in
+presentation functions. Typed payloads contain no wording;
+the shared contract and family models have no compatibility message methods.
 
 Preserve diagnostic occurrence IDs, source provenance, ordering, recovery roots, and
 `Primary`/`Consequence` relationships. Apply existing visibility filtering before presentation;
@@ -86,17 +93,92 @@ replace modeling compiler-owned failure reasons.
 
 ## Plan (Approval Gate)
 
-Use the inventory to define payload families, carrier contracts, presentation ownership, and
-template-map types. Compare a direct trait with a type-class boundary, then propose bounded
-vertical migrations that update each family's producers, consumers, and tests together. Account
-for the shared `CompilationError.message` contract and all consumers before removing it.
+Design, migration order, and implementation of S1–S7: approved as one workstream.
+Verification and review apply to the integrated result. Each family migration includes producers,
+carriers, presentation consumers, and semantic assertions together.
 
-Approval: design direction and scheduling after protocol work are settled; concrete type shapes,
-migration stages, and implementation approval are pending.
+### Migration stages
+
+1. **S1 — Presentation foundation and entry-point pilot.** Introduce data-only reasons for no
+   valid entry point, non-public `main`, and invalid return type. Retain the relevant source or
+   binding. Route the semantic carrier, both CLI printers, LSP, and quiet output through shared
+   message mapping. Preserve eligibility, source ranges, visibility, and failure gating. Replace
+   entry-point semantic text assertions and verify output separately. Existing message access
+   delegates to presentation until S7 removes the shared contract.
+2. **S2 — Existing typed semantic families.** Move type, name-resolution, visibility, and protocol
+   wording to presentation; type protocol detail strings and migrate semantic assertions.
+3. **S3 — Parser recovery.** Type syntax reasons; retain ordered nested failures, failed source
+   text, and recovery causes through ingest. Preserve diagnostic grouping during this migration.
+4. **S4 — Expressions and ownership.** Cover rewriting, local bindings, integer ranges, Clone,
+   ownership sinks, and callable ownership with typed payloads and assertions.
+5. **S5 — Closures and destruction.** Preserve typed layout and destruction failures through
+   semantic and code-generation boundaries.
+6. **S6 — Code generation and toolchain.** Type emitter, target, resource, and process failures;
+   retain nested errors and external output. Distinguish process-start failure from confirmed
+   missing tools and unsuccessful process exits without broad exception-boundary cleanup.
+7. **S7 — Finish the contract migration.** Remove compatibility message methods, cover warning
+   presentation and AST/debug consumers, classify retained text assertions, and update compiler
+   documentation. Preserve existing warning emission and LSP family eligibility.
 
 ## Verification
 
-The inventory records source inspection. Implementation verification is pending.
+### S1 evidence
+
+- `sbtn "scalafmtAll; scalafixAll; testOnly mml.mmlclib.semantic.PreCodegenValidatorSuite mml.mmlclib.util.error.print.EntryPointMessageTests mml.mmlclib.errors.DiagnosticStoreTests mml.mmlclib.semantic.ParsingErrorCheckerTests mml.mmlclib.semantic.OwnershipDiagnosticCauseTests mml.mmlclib.lsp.DiagnosticsTests"` passed: 61 tests, no failures.
+- `./tests/smoke/run.sh all` passed all eight fixtures. The initial sandboxed invocation could
+  not acquire the sbt boot lock; the rerun with local cache/server access passed.
+- `sbtn testFull` passed: 2,604 library tests and 9 CLI tests; zero failures, errors, or skipped
+  tests in the test reports. Host verification: 2026-11-05, Darwin arm64, GraalVM JDK 25.0.4.1.
+- `sbtn mmlcPublishLocal` passed after smoke verification.
+- `make -C benchmark clean` and `make -C benchmark mml` passed, building all 37 MML benchmark
+  executables. These are compilation checks, not execution timings.
+- ABI/container and memory-harness gates do not apply: S1 changes diagnostic payloads and
+  presentation only. Ownership-test edits adapt existing diagnostic constructors.
+- QA compliance and tracking consistency checks passed. Independent review completed all four
+  dedicated checks and confirmed two findings: source-range tests derived their expectations
+  from the production accessor, and `NotFound` needed a local explanation of unsupported
+  parameters. The tests use independent fixture spans and the variant documents that condition.
+- `sbtn "scalafmtAll; scalafixAll; testOnly mml.mmlclib.util.error.print.EntryPointMessageTests mml.mmlclib.semantic.PreCodegenValidatorSuite"` passed after those corrections: 19 tests, no failures.
+  The corrections change test assertions and a comment, not production behavior. Narrow
+  independent re-review completed its primary review and all four fresh dedicated checks
+  (QA, test quality, readability, and code documentation) with no actionable findings.
+- Entry-point selection assertions match typed payloads. Presentation tests cover all three
+  reasons through both CLI printers, LSP, and quiet native compilation, including source spans,
+  synthetic-source omission, and rejection before output creation.
+
+### Integrated S1–S7 evidence
+
+- `sbtn "scalafmtAll; scalafixAll; testFull"` passed: 2,613 library tests and 9 CLI tests.
+  All 153 XML reports total 2,622 tests with zero failures, errors, or skipped tests.
+  The first integrated test run reported 26 migration-assertion failures; corrections
+  distinguish semantic facts from output formatting and use source evidence for duplicate
+  declarations. The complete rerun passes. Scalafix removed unused imports; final compilation
+  has no Scala warnings. sbt reports its existing multiple-main-classes discovery notice.
+- `./tests/smoke/run.sh all` passed all eight fixtures.
+- `sbtn mmlcPublishLocal` passed after smoke verification.
+- Host: Darwin arm64, GraalVM JDK 25.0.4.1, sbt 2.0.10, Homebrew LLVM/Clang 23.1.1.
+- `make -C benchmark clean` and `make -C benchmark mml` passed: all 37 benchmark
+  executables built. These are compilation checks, not performance measurements.
+- `./tests/mem/run.sh all` passed all 52 fixtures under ASan+LSan in 85 seconds.
+- No ABI or target-lowering algorithms changed. Linux ABI/container verification is not
+  applicable; host execution does not establish cross-target portability.
+- Local QA audit covers the full diff and new files: no introduced mutable compiler state,
+  exception-based diagnostic propagation, compatibility message methods, or semantic text
+  classification remains. Independent review completed its primary pass and four fresh
+  dedicated checks; each of three findings had a separate fresh verifier. The corrections
+  restore struct names in unknown-field wording, retain expected-token payloads across the
+  EOF parser test subprocess, and document closure mismatch counts as layout fields.
+- `sbtn "scalafmtAll; scalafixAll; testOnly mml.mmlclib.parser.ConditionalRecoveryTests mml.mmlclib.util.error.print.SharedDiagnosticMessageTests mml.mmlclib.util.error.print.TypeErrorPrinterTests mml.mmlclib.lsp.DiagnosticsTests mml.mmlclib.semantic.ClosureEnvironmentTests"`
+  passed after review corrections: 77 tests, zero failures. This includes the new unknown-field
+  rendering regression and all 11 EOF/truncation payload comparisons. Narrow re-review completed
+  its primary pass and all four fresh dedicated checks. Its only additional finding was an
+  independently confirmed missing blank line between identity and rendering assertions; that
+  correction passed a fresh narrow primary review and all four dedicated checks. No actionable
+  findings remain. The whitespace-only correction required no additional runtime verification.
+- Post-correction smoke verification passed 8/8 on retry. The first recheck reported 7/8:
+  `hola` printed its expected output and sbt reported success, then the thin client raised
+  `TimeoutException: Unable to join thread ... sbt-serverconnection-0 ... after 5 seconds`.
+  The full harness retry passed. The corrected compiler was installed locally successfully.
 
 For each migration, verify the exact typed reason and payload, source locations, independent
 occurrences, recovery roots, ordering, visibility, and failure gating. Test template coverage and
@@ -109,7 +191,7 @@ compiler checks and independent review under the repository rules.
 
 Follow-up after [Implement protocols](protocols.md). The protocol foundation is complete;
 [explicit Clone and global ownership transfers](explicit-clone.md) has separate scope and signoff.
-This task does not reopen protocol completion or authorize compiler changes.
+Protocol completion remains independent of this migration.
 
 Coordinate source-field contracts with
 [diagnostic contract documentation](compiler-diagnostic-contract-documentation.md) and ownership
@@ -117,23 +199,50 @@ construction with [diagnostic maintainability](ownership-diagnostic-maintainabil
 [Toolchain error boundaries](qa-toolchain-error-boundaries.md) owns broader exception-boundary
 cleanup; this task owns typed failure identity and presentation at those boundaries.
 
-The inventory describes affected modules, not individual call sites. Revalidate each module
-when planning its migration; rendering checks and external-output checks remain valid uses of text.
+The inventory below records the migration scope. Rendering checks and external-output checks
+remain valid uses of text.
 
 ## Signoff
 
-- Workstream signoff: concrete design and implementation plan pending.
-- Tracked item completion: pending.
-- Commit authorization: not granted.
+- Design and migration order: approved.
+- Integrated S1–S7 implementation, verification, and independent review: complete.
+- Whole-workstream signoff: approved for S1–S7.
+- Tracked item completion: complete.
+- Local commit and squash delivery to `main`: authorized.
 
 ## Task Working Memory
 
-The design separates typed error data from shared presentation mapping and supports template
-substitutions or subject messages without using text as error identity. The exact carrier,
-trait/type-class, and map representation need design. Next action: revalidate the inventory and
-present the concrete data model, renderer boundary, and bounded migration plan.
+All S1–S7 producers and consumers use typed payloads and shared presentation functions.
+The open `CompilationError` contract is data-only. Parser groups, closure layout failures,
+and codegen field errors retain nested structured values. Tool execution distinguishes missing
+executables from process-start and exit failures; only missing tools invalidate the marker.
+Semantic tests inspect reasons and source evidence independently of rendering. Compiler design
+records the complete contract.
 
-## Affected Modules
+Formatting/lint, 2,622 tests, eight smoke fixtures, local publishing, 37 benchmark builds, and
+52 ASan+LSan memory fixtures pass. The three initial review corrections pass 77 affected tests.
+Independent review and narrow re-reviews are complete with no actionable findings; the final
+correction separates two test paragraphs. The local compiler includes all production corrections.
+S1–S7 are signed off and complete. Implementation, verification, and review have no remaining work.
+
+### Retained text checks
+
+- CLI/LSP/plain rendering assertions: `DiagnosticPresentationTests`, `DiagnosticsTests`,
+  `ProtocolDiagnosticTests`, `ProtocolAlternativeDiagnosticTests`, `EntryPointMessageTests`,
+  `ParsingErrorPrinterTests`, and the output-specific sections of recovery integration,
+  protocol parser/checker, type resolver, and identifier tests.
+- Failure clues in `BaseEffFunSuite`, codegen tests, and semantic tests call `diagnosticMessage`
+  only after typed failure selection or to fail a test unexpectedly; text does not select behavior.
+- `FrontendCorpus` records rendered visible output for corpus comparisons. `ParserBaseline`
+  consumes parser-failure text as a benchmark checksum. `ParserDeadlineProbe` serializes
+  typed missing-syntax cases with token payloads for its structural comparison and renders only
+  its external probe failure report.
+- Toolchain probe stderr, sanitizer output, emitted LLVM IR, and CLI process output are external
+  or presentation contracts. Their checks retain text assertions.
+- Production `.message` fields belong to LSP/JSON-RPC protocol DTOs. Compiler control flow
+  does not inspect diagnostic wording.
+
+## Migration inventory (original scope)
 
 Production paths below are relative to
 `modules/mmlc-lib/src/main/scala/mml/mmlclib/`; corresponding test paths are under
@@ -145,7 +254,7 @@ Production paths below are relative to
 | `ast/` | Parser recovery nodes, invalid-member markers, and closure-environment errors carry string reasons. Preserve failed source text, subjects, and recovery evidence. |
 | `parser/` | Binding, expression, conditional, type, member, identifier, link, and protocol failures need typed reasons. Protocol recovery joins and deduplicates message strings; retain structured reasons before aggregation. External parser traces remain data. |
 | `compiler/` | Parsing-error lifting, compiler state, and code-generation failure boundaries must retain typed payloads and existing recovery, visibility, and gating behavior. |
-| `semantic/package.scala` | Generic `InvalidExpression`, `DanglingTerms`, and `InvalidEntryPoint` carriers mix distinct failures. Existing `SemanticError` and `TypeError` message mappings move to presentation. |
+| `semantic/package.scala` | `InvalidEntryPoint` carries the typed S1 payload. Generic `InvalidExpression` and `DanglingTerms` still mix distinct failures. Remaining `SemanticError` and `TypeError` message mappings move to presentation. |
 | Semantic ownership and Clone modules | Ownership sinks, global transfers, callable alternatives, consumed environments, capture ownership, malformed expressions, and Clone contracts use generic expression errors. |
 | Semantic expression, binding, and type modules | Expression rewriting, local binding identity, duplicate-name recovery, and integer-range checks use textual reasons. Some resolver tests inspect text despite existing typed errors. |
 | Semantic protocol modules | `ProtocolError` already models many reasons, but signature/member detail strings remain. Move rendering out of the model and use typed payloads in selection, grouping, and checker tests. |

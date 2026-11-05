@@ -305,7 +305,7 @@ class ClosureCodegenTest extends BaseEffFunSuite with ClosureAssertions:
       errors =>
         assert(
           errors.exists(
-            _.message.contains("Borrow closure on a loopified path may survive across iterations")
+            _.reason == mml.mmlclib.codegen.emitter.CodeGenReason.EscapingLoopBorrowClosure
           ),
           s"Expected loopified borrow-closure reuse rejection, got: $errors"
         )

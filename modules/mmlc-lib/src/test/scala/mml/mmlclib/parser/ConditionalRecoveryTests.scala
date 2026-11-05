@@ -5,7 +5,7 @@ import cats.syntax.all.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.compiler.{CompilerConfig, CompilerState, ParsingErrorChecker}
 import mml.mmlclib.errors.DiagnosticRelation
-import mml.mmlclib.parser.ParserDeadlineProbe.{ConditionalOutcome, Structure}
+import mml.mmlclib.parser.ParserDeadlineProbe.{ConditionalOutcome, MissingSyntax, Structure}
 import mml.mmlclib.semantic.SemanticError
 import mml.mmlclib.test.BaseEffFunSuite
 
@@ -68,11 +68,11 @@ class ConditionalRecoveryTests extends BaseEffFunSuite:
     error:   ParseTermError,
     start:   Int,
     end:     Int,
-    message: String = "Invalid expression syntax"
+    message: SyntaxError = SyntaxError.InvalidExpressionSyntax
   ): Unit =
     assertEquals(error.spanOpt, span(source, start, end).some)
     assertEquals(error.failedCode, Option.when(start < end)(source.substring(start, end)))
-    assertEquals(error.message, message)
+    assertEquals(error.reason, message)
 
   private def check(source: String, module: Module): CompilerState =
     ParsingErrorChecker.checkModule(
@@ -234,7 +234,7 @@ class ConditionalRecoveryTests extends BaseEffFunSuite:
     target:   Cond => Expr,
     boundary: String,
     retained: List[Long],
-    message:  String = "Expected expression"
+    message:  SyntaxError = SyntaxError.ExpectedExpression
   )
 
   private val missingCases = List(
@@ -261,7 +261,7 @@ class ConditionalRecoveryTests extends BaseEffFunSuite:
       _.ifTrue,
       "else",
       List(11L, 22L),
-      "Expected ';'"
+      SyntaxError.ExpectedToken(";")
     ),
     MissingCase(
       "elif semicolon",
@@ -269,7 +269,7 @@ class ConditionalRecoveryTests extends BaseEffFunSuite:
       value => conditional(value.ifFalse).ifTrue,
       "else",
       List(11L, 22L, 33L),
-      "Expected ';'"
+      SyntaxError.ExpectedToken(";")
     ),
     MissingCase(
       "else semicolon",
@@ -277,7 +277,7 @@ class ConditionalRecoveryTests extends BaseEffFunSuite:
       _.ifFalse,
       ")",
       List(11L, 22L),
-      "Expected ';'"
+      SyntaxError.ExpectedToken(";")
     ),
     MissingCase(
       "if then boundary",
@@ -285,7 +285,7 @@ class ConditionalRecoveryTests extends BaseEffFunSuite:
       _.ifTrue,
       "else",
       List(11L, 22L),
-      "Expected 'then'"
+      SyntaxError.ExpectedToken("then")
     ),
     MissingCase(
       "elif then boundary",
@@ -293,7 +293,7 @@ class ConditionalRecoveryTests extends BaseEffFunSuite:
       value => conditional(value.ifFalse).ifTrue,
       "else",
       List(11L, 22L, 33L),
-      "Expected 'then'"
+      SyntaxError.ExpectedToken("then")
     )
   )
 
@@ -322,7 +322,7 @@ class ConditionalRecoveryTests extends BaseEffFunSuite:
         val missing = errors(value.ifTrue)
         assertEquals(missing.size, 1)
         val boundary = startOf(source, if separator == ";" then ";else" else "else")
-        assertError(source, missing.head, boundary, boundary, "Expected 'then'")
+        assertError(source, missing.head, boundary, boundary, SyntaxError.ExpectedToken("then"))
         assertEquals(integers(value.ifFalse), List(22L))
         assertRoots(source, module, 1)
 
@@ -343,9 +343,15 @@ class ConditionalRecoveryTests extends BaseEffFunSuite:
         firstError.head,
         missingCondition,
         missingCondition,
-        "Expected expression"
+        SyntaxError.ExpectedExpression
       )
-      assertError(source, secondError.head, missingBody, missingBody, "Expected expression")
+      assertError(
+        source,
+        secondError.head,
+        missingBody,
+        missingBody,
+        SyntaxError.ExpectedExpression
+      )
       assertError(source, finalError.head, malformed, malformed + "@bad".length)
       assertEquals(integers(first.ifTrue), List(11L))
       assertEquals(integers(binding(module, "after").value), List(77L))
@@ -377,7 +383,7 @@ class ConditionalRecoveryTests extends BaseEffFunSuite:
       val missing = errors(inner.ifFalse)
       assertEquals(missing.size, 1)
       val boundary = startOf(source, ";;else")
-      assertError(source, missing.head, boundary, boundary, "Expected expression")
+      assertError(source, missing.head, boundary, boundary, SyntaxError.ExpectedExpression)
       assertEquals(integers(inner.ifTrue), List(11L))
       assertEquals(integers(outer.ifFalse), List(44L))
       assertRoots(source, module, 1)
@@ -449,8 +455,12 @@ class ConditionalRecoveryTests extends BaseEffFunSuite:
     diagnosticCount: Int
   )
 
-  private def missingAtEnd(end: Int, message: String): Structure =
-    Structure.ParseError((end, end).some, message, none[String])
+  private def missingAtEnd(end: Int, reason: MissingSyntax): Structure =
+    Structure.ParseError(
+      (end, end).some,
+      reason,
+      none[String]
+    )
 
   private def implicitUnitAtEnd(end: Int): List[Structure] =
     List(Structure.UnitValue((end, end).some))
@@ -460,8 +470,8 @@ class ConditionalRecoveryTests extends BaseEffFunSuite:
       "if",
       end =>
         Structure.Conditional(
-          List(missingAtEnd(end, "Expected expression")),
-          List(missingAtEnd(end, "Expected 'then'")),
+          List(missingAtEnd(end, MissingSyntax.Expression)),
+          List(missingAtEnd(end, MissingSyntax.Token("then"))),
           implicitUnitAtEnd(end)
         ),
       3
@@ -471,7 +481,7 @@ class ConditionalRecoveryTests extends BaseEffFunSuite:
       end =>
         Structure.Conditional(
           List(Structure.Bool(true)),
-          List(missingAtEnd(end, "Expected 'then'")),
+          List(missingAtEnd(end, MissingSyntax.Token("then"))),
           implicitUnitAtEnd(end)
         ),
       2
@@ -481,7 +491,10 @@ class ConditionalRecoveryTests extends BaseEffFunSuite:
       end =>
         Structure.Conditional(
           List(Structure.Bool(true)),
-          List(missingAtEnd(end, "Expected expression"), missingAtEnd(end, "Expected ';'")),
+          List(
+            missingAtEnd(end, MissingSyntax.Expression),
+            missingAtEnd(end, MissingSyntax.Token(";"))
+          ),
           implicitUnitAtEnd(end)
         ),
       3
@@ -491,7 +504,7 @@ class ConditionalRecoveryTests extends BaseEffFunSuite:
       end =>
         Structure.Conditional(
           List(Structure.Bool(true)),
-          List(Structure.Integer(11), missingAtEnd(end, "Expected ';'")),
+          List(Structure.Integer(11), missingAtEnd(end, MissingSyntax.Token(";"))),
           implicitUnitAtEnd(end)
         ),
       2
@@ -504,8 +517,8 @@ class ConditionalRecoveryTests extends BaseEffFunSuite:
           List(Structure.Integer(11)),
           List(
             Structure.Conditional(
-              List(missingAtEnd(end, "Expected expression")),
-              List(missingAtEnd(end, "Expected 'then'")),
+              List(missingAtEnd(end, MissingSyntax.Expression)),
+              List(missingAtEnd(end, MissingSyntax.Token("then"))),
               implicitUnitAtEnd(end)
             )
           )
@@ -521,7 +534,7 @@ class ConditionalRecoveryTests extends BaseEffFunSuite:
           List(
             Structure.Conditional(
               List(Structure.Bool(false)),
-              List(missingAtEnd(end, "Expected 'then'")),
+              List(missingAtEnd(end, MissingSyntax.Token("then"))),
               implicitUnitAtEnd(end)
             )
           )
@@ -537,7 +550,10 @@ class ConditionalRecoveryTests extends BaseEffFunSuite:
           List(
             Structure.Conditional(
               List(Structure.Bool(false)),
-              List(missingAtEnd(end, "Expected expression"), missingAtEnd(end, "Expected ';'")),
+              List(
+                missingAtEnd(end, MissingSyntax.Expression),
+                missingAtEnd(end, MissingSyntax.Token(";"))
+              ),
               implicitUnitAtEnd(end)
             )
           )
@@ -553,7 +569,7 @@ class ConditionalRecoveryTests extends BaseEffFunSuite:
           List(
             Structure.Conditional(
               List(Structure.Bool(false)),
-              List(Structure.Integer(22), missingAtEnd(end, "Expected ';'")),
+              List(Structure.Integer(22), missingAtEnd(end, MissingSyntax.Token(";"))),
               implicitUnitAtEnd(end)
             )
           )
@@ -566,7 +582,10 @@ class ConditionalRecoveryTests extends BaseEffFunSuite:
         Structure.Conditional(
           List(Structure.Bool(true)),
           List(Structure.Integer(11)),
-          List(missingAtEnd(end, "Expected expression"), missingAtEnd(end, "Expected ';'"))
+          List(
+            missingAtEnd(end, MissingSyntax.Expression),
+            missingAtEnd(end, MissingSyntax.Token(";"))
+          )
         ),
       3
     ),
@@ -576,7 +595,7 @@ class ConditionalRecoveryTests extends BaseEffFunSuite:
         Structure.Conditional(
           List(Structure.Bool(true)),
           List(Structure.Integer(11)),
-          List(Structure.Integer(22), missingAtEnd(end, "Expected ';'"))
+          List(Structure.Integer(22), missingAtEnd(end, MissingSyntax.Token(";")))
         ),
       2
     ),
@@ -589,9 +608,12 @@ class ConditionalRecoveryTests extends BaseEffFunSuite:
             Structure.Conditional(
               List(Structure.Bool(false)),
               List(Structure.Integer(11)),
-              List(missingAtEnd(end, "Expected expression"), missingAtEnd(end, "Expected ';'"))
+              List(
+                missingAtEnd(end, MissingSyntax.Expression),
+                missingAtEnd(end, MissingSyntax.Token(";"))
+              )
             ),
-            missingAtEnd(end, "Expected ';'")
+            missingAtEnd(end, MissingSyntax.Token(";"))
           ),
           implicitUnitAtEnd(end)
         ),
@@ -604,7 +626,11 @@ class ConditionalRecoveryTests extends BaseEffFunSuite:
       val source = s"let value=${fixture.fragment}"
       val end    = source.length
       val expected = ConditionalOutcome(
-        List(Structure.Binding(List(fixture.expected(end), missingAtEnd(end, "Expected ';'")))),
+        List(
+          Structure.Binding(
+            List(fixture.expected(end), missingAtEnd(end, MissingSyntax.Token(";")))
+          )
+        ),
         fixture.diagnosticCount
       )
       ParserDeadline

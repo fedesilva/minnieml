@@ -24,7 +24,7 @@ object SourceCodeExtractor:
     val sourceLines = sourceInfo.text.split("\n")
 
     error match
-      case SemanticError.DuplicateName(name, duplicates, _) =>
+      case SemanticError.DuplicateName(_, duplicates, _, _) =>
         // Sort duplicates by their starting index
         val sortedDuplicates =
           duplicates
@@ -121,8 +121,8 @@ object SourceCodeExtractor:
           .map(s => s"\n$s")
           .getOrElse("")
 
-      case SemanticError.InvalidEntryPoint(_, source) =>
-        source.spanOpt
+      case SemanticError.InvalidEntryPoint(error) =>
+        error.source.spanOpt
           .flatMap(extractSnippet(sourceInfo, _))
           .map(s => s"\n$s")
           .getOrElse("")
@@ -292,7 +292,7 @@ object SourceCodeExtractor:
               .getOrElse("")
           case _ => ""
 
-      case TypeError.IncompatibleTypes(node, _, _, _, _) =>
+      case TypeError.IncompatibleTypes(node, _, _, _) =>
         node match
           case fs: FromSource =>
             spanOf(fs)

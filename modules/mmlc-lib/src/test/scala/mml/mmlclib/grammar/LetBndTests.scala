@@ -2,6 +2,7 @@ package mml.mmlclib.grammar
 
 import mml.mmlclib.ast.*
 import mml.mmlclib.test.BaseEffFunSuite
+import mml.mmlclib.util.error.print.diagnosticMessage
 import mml.mmlclib.util.prettyprint.ast.{prettyPrintAst, prettyPrintTypeSpec}
 import munit.*
 
@@ -328,12 +329,12 @@ class LetBndTests extends BaseEffFunSuite:
             s"Expected '123invalid' but got '${error.invalidId}'"
           )
           assert(
-            error.message.contains("Invalid identifier"),
-            s"Error message should explain the rules: ${error.message}"
+            diagnosticMessage(error).contains("Invalid identifier"),
+            s"Error message should explain the rules: ${diagnosticMessage(error)}"
           )
           assert(
-            error.message.contains("lowercase letter"),
-            s"Error message should explain binding rules: ${error.message}"
+            diagnosticMessage(error).contains("lowercase letter"),
+            s"Error message should explain binding rules: ${diagnosticMessage(error)}"
           )
         case other =>
           fail(s"Expected ParsingIdError but got: ${other.getClass.getSimpleName}")

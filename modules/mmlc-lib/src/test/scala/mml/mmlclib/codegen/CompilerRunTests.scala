@@ -4,6 +4,7 @@ import cats.effect.{ExitCode, IO}
 import cats.syntax.all.*
 import mml.mmlclib.api.CompilerApi
 import mml.mmlclib.test.BaseEffFunSuite
+import mml.mmlclib.util.error.print.diagnosticMessage
 
 import java.nio.file.{Files, Path}
 
@@ -12,7 +13,7 @@ class CompilerRunTests extends BaseEffFunSuite:
   private def hostTriple(outputDir: Path): IO[String] =
     LlvmToolchain
       .resolveTargetTriple(none, outputDir.toString)
-      .map(_.fold(error => fail(error.message), identity))
+      .map(_.fold(error => fail(diagnosticMessage(error)), identity))
 
   test("run uses an absolute custom output with spaces and an explicit host target"):
     withSourceFixture("pub fn main(): Int = 37;;", "RunFixture.mml") { (path, initialConfig) =>

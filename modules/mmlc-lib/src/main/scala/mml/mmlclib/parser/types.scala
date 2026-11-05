@@ -179,7 +179,7 @@ private def typeError(info: SourceInfo, start: SrcPoint, end: SrcPoint): ParseTy
   val failedCode = info.slice(start.index, end.index)
   ParseTypeError(
     span(start, end),
-    if failedCode.isEmpty then "Expected type" else "Invalid type syntax",
+    if failedCode.isEmpty then SyntaxError.ExpectedType else SyntaxError.InvalidTypeSyntax,
     Option.when(failedCode.nonEmpty)(failedCode)
   )
 
@@ -288,7 +288,7 @@ private[parser] def structDefP(info: SourceInfo)(using P[Any]): P[Member] =
       val snippet = info.slice(start.index, end.index).trim
       ParsingMemberError(
         span       = structSpan,
-        message    = "Struct declarations must define at least one field",
+        reason     = SyntaxError.EmptyStruct,
         failedCode = if snippet.isEmpty then None else Some(snippet)
       )
     else

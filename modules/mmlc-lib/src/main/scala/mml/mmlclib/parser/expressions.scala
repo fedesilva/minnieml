@@ -304,7 +304,7 @@ private def parenthesizedTermP(info: SourceInfo, expressionP: => P[Expr])(using 
         case Nil =>
           ParseTermError(
             span       = location,
-            message    = "Tuple must have at least one element",
+            reason     = SyntaxError.EmptyTuple,
             failedCode = info.slice(start.index, closer.location.end.index).some
           )
 
@@ -358,7 +358,7 @@ private def conditionalClauseP(info: SourceInfo, conditionParser: => P[Expr])(us
   def bodyP: P[(Expr, SrcPoint)] =
     P(thenKw ~ terminatedBindingExprP(info)) |
       P(pointP(info) ~ tokenP(info)(semiKw).?).map { case (point, terminator) =>
-        val error = bindingError(info, point, point, "Expected 'then'")
+        val error = bindingError(info, point, point, SyntaxError.ExpectedToken("then"))
         (Expr(error.source, List(error)), terminator.fold(point)(_.location.end))
       }
 

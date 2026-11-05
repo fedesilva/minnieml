@@ -48,7 +48,7 @@ class GlobalOwnershipTests extends BaseEffFunSuite:
             assert(
               state.errors.exists {
                 case error: SemanticError.InvalidExpression =>
-                  error.message.contains("global value") && error.message.contains("^")
+                  error.reason == OwnershipError.GlobalTransfer
                 case _ => false
               },
               state.errors
@@ -82,7 +82,8 @@ class GlobalOwnershipTests extends BaseEffFunSuite:
     semState(prelude + "let rejected = Box global;").map { state =>
       assert(
         state.errors.exists {
-          case error: SemanticError.InvalidExpression => error.message.contains("global value")
+          case error: SemanticError.InvalidExpression =>
+            error.reason == OwnershipError.GlobalTransfer
           case _ => false
         },
         state.errors
@@ -102,7 +103,8 @@ class GlobalOwnershipTests extends BaseEffFunSuite:
     """).map { state =>
       assert(
         state.errors.exists {
-          case error: SemanticError.InvalidExpression => error.message.contains("global value")
+          case error: SemanticError.InvalidExpression =>
+            error.reason == OwnershipError.GlobalTransfer
           case _ => false
         },
         state.errors

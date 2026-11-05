@@ -41,7 +41,7 @@ object ClosureEnvironmentLayout:
       .filter(lambda => lambda.captures.nonEmpty || lambda.meta.exists(_.envLayoutId.isDefined))
     val environments = ClosureEnvironments.analyze(lambdas, module.resolvables)
     environments.errors.headOption match
-      case Some(error) => CodeGenError(error.message, error.lambda.some).asLeft
+      case Some(error) => CodeGenError(CodeGenReason.ClosureLayout(error), error.lambda.some).asLeft
       case None => plan(module, targets, environments.byId)
 
   private def plan(
@@ -101,7 +101,7 @@ object ClosureEnvironmentLayout:
         Either.cond(
           !cleanup.exists(field => omitted.contains(field.fieldId)),
           id -> ClosureEnvironmentLayout(physical, captures),
-          CodeGenError("Cannot omit a capture with payload destruction", lambda.some)
+          CodeGenError(CodeGenReason.CaptureHasDestruction, lambda.some)
         )
       }
       .map(_.toMap)

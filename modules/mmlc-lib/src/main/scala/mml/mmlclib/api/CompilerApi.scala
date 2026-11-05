@@ -8,7 +8,7 @@ import mml.mmlclib.compiler.{CodegenStage, CompilerConfig, CompilerState, Counte
 import mml.mmlclib.errors.{CompilationError, CompilerWarning}
 import mml.mmlclib.parser.{ParserError, SourceInfo}
 import mml.mmlclib.semantic.SemanticError
-import mml.mmlclib.util.error.print.ErrorPrinter
+import mml.mmlclib.util.error.print.{ErrorPrinter, diagnosticMessage}
 
 import java.nio.file.Path
 
@@ -216,7 +216,7 @@ object CompilerApi:
 
   /** Generate plain text error message from state errors (no ANSI codes). */
   private def plainErrorMessage(state: CompilerState): String =
-    val errors = state.visibleErrors.map(_.message)
+    val errors = state.visibleErrors.map(diagnosticMessage(_))
     if errors.isEmpty then "Unknown compilation error"
     else if errors.size == 1 then errors.head
     else errors.mkString("\n")
@@ -308,12 +308,12 @@ object CompilerApi:
 
   private def printLinkWarnings(state: CompilerState): IO[Unit] =
     state.warnings.toList.traverse_ {
-      case CompilerWarning.DiscardedLinkDirective(entry) =>
+      case warning @ CompilerWarning.DiscardedLinkDirective(entry) =>
         val path  = state.module.sourcePath.getOrElse(state.module.name)
         val point = entry.span.start
         IO.consoleForIO.errorln(
           s"$path:${point.line}:${point.col}: warning: " +
-            "linking directives are discarded in library mode"
+            mml.mmlclib.util.error.print.warningMessage(warning)
         )
       case _ => IO.unit
     }

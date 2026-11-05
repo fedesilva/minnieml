@@ -14,32 +14,54 @@ private[parser] def protocolP(info: SourceInfo)(using P[Any]): P[Member] =
     docCommentP(info) ~ visibilityP.? ~ pointP(info) ~ protocolKw ~
       tokenP(info)(typeIdP) ~ typeVariableP(info).rep ~ headerEndP(
         info,
-        "Protocol prerequisites are not supported"
+        SyntaxError.ProtocolPrerequisites
       ) ~
       protocolCallableP(info).rep ~ requiredBindingTokenP(info, ";") ~~ pointP(info)
   ).map { case (doc, visibility, start, name, variables, tail, members, endError, end) =>
     val parameterErrors = Option
       .when(variables.size != 1)(
-        "Protocols require exactly one type parameter; multiple parameters are not supported"
+        bindingError(info, start, end, SyntaxError.ProtocolParameterCount)
       )
       .toList
     val headerErrors = tail
     val memberErrors = members.toList.flatMap { member =>
       member.errors ++
         Option.when(member.types.exists(hasTypeApplication))(
-          "Parameterized signature types are not supported"
+          bindingError(
+            info,
+            member.location.start,
+            member.location.end,
+            SyntaxError.ParameterizedSignature
+          )
         ) ++
-        Option.when(member.body.nonEmpty)("Default protocol implementations are not supported") ++
+        Option.when(member.body.nonEmpty)(
+          bindingError(
+            info,
+            member.location.start,
+            member.location.end,
+            SyntaxError.DefaultProtocolImplementation
+          )
+        ) ++
         Option.when(member.parameters.exists(_.typeAsc.isEmpty) || member.result.isEmpty)(
-          "Protocol signatures require parameter and return types"
+          bindingError(
+            info,
+            member.location.start,
+            member.location.end,
+            SyntaxError.MissingSignatureTypes
+          )
         ) ++
         Option.when(
           member.types.flatMap(typeVariables).exists(v => !variables.exists(_.name == v))
         )(
-          "Member-local type variables are not supported"
+          bindingError(
+            info,
+            member.location.start,
+            member.location.end,
+            SyntaxError.MemberTypeVariables
+          )
         )
     }
-    val errors = parameterErrors ++ headerErrors ++ memberErrors ++ endError.map(_.message)
+    val errors = parameterErrors ++ headerErrors ++ memberErrors ++ endError
     variables.toList match
       case parameter :: Nil if errors.isEmpty =>
         Protocol(
@@ -61,22 +83,34 @@ private[parser] def instanceP(info: SourceInfo)(using P[Any]): P[Member] =
     docCommentP(info) ~ pointP(info) ~ instanceKw ~ tokenP(info)(typeIdP) ~
       typeSpecP(info, TypeContext.Protocol(TypeContext.BindingHeader)) ~ headerEndP(
         info,
-        "Parameterized instances and instance constraints are not supported"
+        SyntaxError.ParameterizedInstance
       ) ~
       protocolCallableP(info).rep ~ requiredBindingTokenP(info, ";") ~~ pointP(info)
   ).map { case (doc, start, name, concreteType, tail, members, endError, end) =>
     val headerErrors = tail ++ Option
       .when(typeVariables(concreteType).nonEmpty || hasTypeApplication(concreteType))(
-        "Parameterized instances and instance constraints are not supported"
+        bindingError(info, start, end, SyntaxError.ParameterizedInstance)
       )
       .toList
     val memberErrors = members.toList.flatMap { member =>
-      member.errors ++ Option.when(member.body.isEmpty)("Instance members require a body") ++
+      member.errors ++ Option.when(member.body.isEmpty)(
+        bindingError(
+          info,
+          member.location.start,
+          member.location.end,
+          SyntaxError.MissingInstanceBody
+        )
+      ) ++
         Option.when(member.types.flatMap(typeVariables).nonEmpty)(
-          "Member-local type variables are not supported"
+          bindingError(
+            info,
+            member.location.start,
+            member.location.end,
+            SyntaxError.MemberTypeVariables
+          )
         )
     }
-    val errors = headerErrors ++ memberErrors ++ endError.map(_.message)
+    val errors = headerErrors ++ memberErrors ++ endError
     if errors.nonEmpty then declarationError(info, start, end, errors)
     else
       ProtocolInstance(
@@ -89,7 +123,9 @@ private[parser] def instanceP(info: SourceInfo)(using P[Any]): P[Member] =
   }
 
 /** Header recovery stops before the body or the next declaration. */
-private def headerEndP(info: SourceInfo, unsupported: String)(using P[Any]): P[List[String]] =
+private def headerEndP(info: SourceInfo, unsupported: SyntaxError)(using
+  P[Any]
+): P[List[ParseTermError]] =
   val context =
     Recovery.Context(
       List(Recovery.Anchor.Token("=")),
@@ -98,18 +134,20 @@ private def headerEndP(info: SourceInfo, unsupported: String)(using P[Any]): P[L
   P(pointP(info) ~~ recoveryP(info, context) ~ requiredBindingTokenP(info, "="))
     .map { case (start, recovered, missing) =>
       val text = info.slice(start.index, recovered.end).trim
-      Option.when(text.nonEmpty)(unsupported).toList ++ missing.map(_.message)
+      Option
+        .when(text.nonEmpty)(bindingError(info, start, info.pointAt(recovered.end), unsupported))
+        .toList ++ missing
     }
 
 private def declarationError(
   info:   SourceInfo,
   start:  SrcPoint,
   end:    SrcPoint,
-  errors: List[String]
+  errors: List[ParseTermError]
 ): ParsingMemberError =
   ParsingMemberError(
     span(start, end),
-    errors.distinct.mkString("; "),
+    SyntaxError.Group(errors),
     info.slice(start.index, end.index).some
   )
 
@@ -138,15 +176,15 @@ private def protocolCallableP(info: SourceInfo)(using P[Any]): P[ParsedProtocolC
         ) =>
       val name = parsedName.value.map(Name(parsedName.location, _))
       val errors =
-        parsedName.error.map(_.message).toList ++ parameters.error.map(_.message) ++
-          endError.map(_.message) ++ constraints ++
+        parsedName.error.toList ++ parameters.error ++
+          endError ++ constraints ++
           Option.when(
             origin == BindingOrigin.Operator && !Set(1, 2).contains(parameters.values.size)
           )(
-            "Operators require one or two parameters"
+            bindingError(info, start, end, SyntaxError.OperatorParameterCount)
           ) ++
           Option.when(origin == BindingOrigin.Function && (precedence.nonEmpty || assoc.nonEmpty))(
-            "Only operators have precedence and associativity"
+            bindingError(info, start, end, SyntaxError.FunctionOperatorAttributes)
           )
       ParsedProtocolCallable(
         span(start, end),
@@ -176,7 +214,7 @@ private def protocolCallableNameP(info: SourceInfo)(using
             info,
             token.location.start,
             token.location.end,
-            s"Invalid operator name '$invalid'"
+            SyntaxError.InvalidIdentifier(invalid, IdentifierKind.Operator, false)
           )
         }
         val name = ParsedBindingName(token.location, token.value.toOption, error)
@@ -185,12 +223,14 @@ private def protocolCallableNameP(info: SourceInfo)(using
   )
 
 /** A deferred where clause ends before the body or signature terminator. */
-private def unsupportedMemberConstraintsP(info: SourceInfo)(using P[Any]): P[String] =
+private def unsupportedMemberConstraintsP(info: SourceInfo)(using P[Any]): P[ParseTermError] =
   val context = Recovery.Context(
     List("=", ";").map(Recovery.Anchor.Token(_)),
     declarationStops
   )
-  P(whereKw ~ recoveryP(info, context)).map(_ => "Member constraints are not supported")
+  P(pointP(info) ~ whereKw ~ recoveryP(info, context)).map { case (start, recovered) =>
+    bindingError(info, start, info.pointAt(recovered.end), SyntaxError.MemberConstraints)
+  }
 
 private def hasTypeApplication(tpe: Type): Boolean =
   TypeTraversal.exists(tpe)(_.isInstanceOf[TypeApplication])
@@ -209,7 +249,7 @@ private case class ParsedProtocolCallable(
   associativity: Option[Associativity],
   body:          Option[Lambda],
   doc:           Option[DocComment],
-  errors:        List[String]
+  errors:        List[ParseTermError]
 ):
 
   def types: List[Type] = parameters.flatMap(_.typeAsc) ++ result

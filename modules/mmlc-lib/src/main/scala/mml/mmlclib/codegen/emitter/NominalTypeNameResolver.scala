@@ -23,19 +23,13 @@ def getNominalTypeName(typeSpec: Type): Either[CodeGenError, String] =
       Right("Tuple")
     case np: NativePrimitive =>
       Left(
-        CodeGenError(
-          s"Compiler Bug: Bare NativePrimitive(${np.llvmType}) reached codegen without a nominal wrapper"
-        )
+        CodeGenError(CodeGenReason.BareNativePrimitive(np))
       )
     case np: NativePointer =>
       Left(
-        CodeGenError(
-          s"Compiler Bug: Bare NativePointer(${np.llvmType}) reached codegen without a nominal wrapper"
-        )
+        CodeGenError(CodeGenReason.BareNativePointer(np))
       )
     case other =>
       Left(
-        CodeGenError(
-          s"Cannot extract nominal name from ${other.getClass.getSimpleName}"
-        )
+        CodeGenError(CodeGenReason.MissingNominalName(other))
       )

@@ -7,6 +7,7 @@ import mml.mmlclib.ast.queries.TypeMemoryQueries
 import mml.mmlclib.compiler.CompilerConfig
 import mml.mmlclib.semantic.SemanticError
 import mml.mmlclib.test.BaseEffFunSuite
+import mml.mmlclib.util.error.print.diagnosticMessage
 
 import java.nio.file.{Files, Path}
 import scala.jdk.CollectionConverters.*
@@ -151,7 +152,7 @@ class StringReturnTests extends BaseEffFunSuite:
         triple <- LlvmToolchain.queryLocalTriple.map(_.getOrElse(fail("Missing target")))
         target <- ClangTarget
           .resolve(directory, LlvmToolchain.clangFlags(config, triple))
-          .map(_.fold(error => fail(error.message), identity))
+          .map(_.fold(error => fail(diagnosticMessage(error)), identity))
         path <- IO.blocking(Files.writeString(directory.resolve("StringReturn.ll"), ir))
         _ <- commandNotFailed(List("llvm-as", path.toString, "-o", "/dev/null"), directory)
         result <- LlvmToolchain.compile(path, config, triple.some, target)
