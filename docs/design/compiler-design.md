@@ -420,11 +420,22 @@ let result = 1 + 2 * 3;
 
 ### Commitment and recovery boundaries
 
-The parameterized lambda arrow commits to its body. Speculative field-selection and group
-alternatives contain nested cuts with `NoCut`: a lambda inside parentheses does not require
-that the parentheses be followed by a field-selection dot, and a comma can select the tuple
-alternative. The sequence lookahead also contains cuts because it only probes for another
-expression. These boundaries preserve the existing language and operator precedence.
+The parameterized lambda arrow commits to its body. Parenthesized terms parse their base once,
+followed by an optional field-selection chain. Parenthesized contents share
+one comma-separated expression parser: one expression forms a group and multiple expressions
+form a tuple. Ordinary and member-body variants supply their own expression parser, preserving
+their distinct sequencing rules. The exact `()` token is Unit; a spaced empty form such as
+`( )` produces the empty-tuple error.
+
+References use the field-selection rule only when a field follows. Plain references retain
+their ordinary term alternatives: lowercase names also belong to the operator grammar. This
+preserves annotation ownership without repeating parenthesized subexpressions.
+
+`NoCut` contains nested commitments within selectable terms, allowing grouped lambda values
+without a field-selection suffix and malformed terms to reach enclosing expression recovery.
+The sequence lookahead also contains cuts because it only probes for another expression.
+Field selections retain their qualifier tree and final-field annotation; successful source
+spans end at the owned closer or field name, independently of a following annotation.
 
 `Recovery.scan` supplies context-aware synchronization for malformed fragments. Ordinary
 anchors apply at delimiter depth zero; hard stops identify tokens excluded from the recovered

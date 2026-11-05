@@ -22,18 +22,7 @@ These are short notes for later triage, not approved repair plans.
 
 ## Notes
 
-- **B1 — Fixed: moved-capture editor diagnostics.**
-  [LSP diagnostics](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/lsp/Diagnostics.scala)
-  maps `CapturedMovedHeapBinding` to its reference range and existing message. A source-driven
-  regression confirms the capture-specific diagnostic alongside the existing use-after-move error.
-  This is a diagnostic-delivery bug; no ownership-checking or memory-safety defect is established.
-  Follow-up: [Show moved-capture and visibility errors in the editor](lsp-missing-semantic-diagnostics.md).
-
-- **B2 — Fixed: visibility diagnostic presentation.**
-  `VisibilityViolation` has LSP range and message mappings, covered with a diagnostic built from
-  parsed source nodes. It has a CLI renderer but no production emitter; this repair does not
-  establish source-level visibility enforcement.
-  Follow-up: [Show moved-capture and visibility errors in the editor](lsp-missing-semantic-diagnostics.md).
+Open notes are listed in priority order.
 
 - **B16 — Open, existing: 1,000 nested lets overflow the compiler stack.**
   The frontend corpus scan reaches `mml/samples/stack-depth-1000-lets.mml` and raises
@@ -41,13 +30,6 @@ These are short notes for later triage, not approved repair plans.
   [Compiler stack safety](compiler-stack-safety.md), which already contains the repair scope
   and phase-level evidence. The corpus comparison uses an explicitly increased JVM stack;
   that setting does not establish stack safety.
-
-- **B23 — Reported, existing: nested parentheses cause rapidly growing parse time.**
-  Review measurements of valid right-nested arithmetic report roughly doubled time per nesting
-  level on both the base revision and protocol implementation. This is separate from the corrected
-  [type-checker failure path](protocols-review-repairs.md#2-failed-nested-expressions).
-  Bounded reproduction and repair planning belong to
-  [Bound parsing work for nested parenthesized expressions](parser-parenthesized-expression-performance.md).
 
 - **B30 — Open, P2: dropping a local Buffer discards pending output.**
   [__free_Buffer](../../modules/mmlc-lib/src/main/resources/mml_runtime.c) frees its data without
@@ -77,6 +59,29 @@ These are short notes for later triage, not approved repair plans.
   while URI-decoded paths and an ordinary filename succeed. Use shared URI decoding rather
   than prefix stripping. This is source tracing plus a filesystem reproduction; editor execution
   was not run.
+
+### Resolved notes
+
+- **B23 — Fixed: nested parentheses cause rapidly growing parse work.**
+  Shared parenthesized parsing bounds work in ordinary and member-body arithmetic and nested
+  tuples. [Bounded measurements](parser-parenthesized-expression-performance-evidence.md)
+  show 3,452 callbacks for the 16-term case, down from 8,339,468, with preserved parser output.
+  Compiler checks, independent review, and Author signoff are complete.
+  Implementation and verification belong to
+  [Bound parsing work for nested parenthesized expressions](parser-parenthesized-expression-performance.md).
+
+- **B1 — Fixed: moved-capture editor diagnostics.**
+  [LSP diagnostics](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/lsp/Diagnostics.scala)
+  maps `CapturedMovedHeapBinding` to its reference range and existing message. A source-driven
+  regression confirms the capture-specific diagnostic alongside the existing use-after-move error.
+  This is a diagnostic-delivery bug; no ownership-checking or memory-safety defect is established.
+  Follow-up: [Show moved-capture and visibility errors in the editor](lsp-missing-semantic-diagnostics.md).
+
+- **B2 — Fixed: visibility diagnostic presentation.**
+  `VisibilityViolation` has LSP range and message mappings, covered with a diagnostic built from
+  parsed source nodes. It has a CLI renderer but no production emitter; this repair does not
+  establish source-level visibility enforcement.
+  Follow-up: [Show moved-capture and visibility errors in the editor](lsp-missing-semantic-diagnostics.md).
 
 ### Reproduction evidence for B30, B31, and B33
 
@@ -130,6 +135,6 @@ B1/B2 compiler checks and independent review pass. Verification evidence is reco
 
 B1/B2 diagnostic-delivery mappings and exhaustive semantic conversion are complete, verified,
 independently reviewed, and signed off.
-Open notes are B16, B23, B30/B31, and B33. B16 has a dedicated repair task; B23 needs bounded parser
-reproduction. B30/B31/B33 need runtime/tooling triage. Next: select a focused repair plan for an
-open note.
+B23's parser repair, compiler verification, independent review, and Author signoff are complete.
+Open notes are ordered B16, B30, B31, B33. B16 has a dedicated stack-safety task;
+B30/B31/B33 need runtime/tooling triage. Next: prepare bounded B16 implementation stages.

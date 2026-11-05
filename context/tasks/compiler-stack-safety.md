@@ -5,7 +5,6 @@
 - **Owner:** The Author
 - **Status:** planned
 - **Kind:** BUG
-- **Priority:** MID
 - **Created:** 2026-10-22
 - **Target Branch:** unassigned
 - **External Reference (optional):** none
@@ -116,8 +115,8 @@ Durable automated phase regressions and post-repair verification remain pending.
   [ClosureMemoryFnGenerator](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/ClosureMemoryFnGenerator.scala),
   closure tagging calls `rewriteExpr(lambda.body)` before attaching `flatMap`, so a `State`
   return type alone does not protect construction of the recursive computation.
-- Long generated functions are a plausible trigger. This is deferred compiler robustness work;
-  increasing the JVM stack only moves the failure threshold.
+- Long generated functions are a plausible trigger. Increasing the JVM stack only moves the
+  failure threshold.
 
 ## Signoff
 
@@ -129,5 +128,5 @@ Durable automated phase regressions and post-repair verification remain pending.
 
 The parser crash and the phase failures above are confirmed. Implementation approval is
 pending. Next: establish durable depth regressions, distinguish remaining traversal failures
-from runtime-cost limits, and prepare bounded implementation stages. The task remains deferred
-at MID priority.
+from runtime-cost limits, and prepare bounded implementation stages. This task is first in
+the [open bug-note order](bug-notes.md#notes).

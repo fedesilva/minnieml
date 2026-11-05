@@ -8,6 +8,11 @@
 - **Target Branch:** Unassigned
 - **External Reference (optional):** None
 
+## Execution Checklist
+
+1. [ ] **planned** — Select a pending item and approve its bounded repair plan.
+2. [ ] **planned** — Implement, verify, and review the selected repair.
+
 ## Purpose
 
 Collect concrete QA findings without interrupting ongoing work to fix each one. Select items
@@ -91,7 +96,25 @@ item needs its own plan. A cleanup campaign can work through several approved gr
   and its four dedicated checks have no actionable findings.
 - **Resolution:** Compiler gates, independent review, and Author signoff are complete.
 
+### QA-005: Describe lowercase operator references in the parser contract
+
+- **Status:** complete
+- **Implementation and verification:** [B23 parser repair](parser-parenthesized-expression-performance.md).
+- **Source:** [expressions.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/parser/expressions.scala),
+  `opRefP`, and [identifiers.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/parser/identifiers.scala),
+  `operatorIdP`.
+- **Problem:** The `opRefP` comment describes symbolic operators only, although `operatorIdP`
+  also accepts lowercase names. The plain-reference ordering depends on that behavior to
+  preserve annotation ownership.
+- **Expected outcome:** The declaration comment names both accepted operator forms.
+- **Evidence:** Independent documentation review and a separate claim verifier confirm the
+  mismatch. The corrected sentence describes symbolic or lowercase operator references.
+  This is a documentation defect; no runtime defect is established.
+- **Resolution:** The wording is corrected. Fresh narrow primary review and all four dedicated
+  checks have no actionable findings. B23's workstream signoff is complete.
+
 ## Working memory
 
 QA-001 implementation and verification are tracked in the linked alias-resolution task.
 QA-003/QA-004 are resolved in the completed diagnostic repair task.
+QA-005's wording is corrected and independently reviewed as part of B23.

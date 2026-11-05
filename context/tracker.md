@@ -2,6 +2,7 @@
 
 Read [task-tracking-rules.md](task-tracking-rules.md) before changing task state.
 This is the Author's active and near-term focus. The backlog lives in [tasks/](tasks/).
+Tasks and their open subitems are listed in priority order: first listed means first priority.
 
 ## Global
 
@@ -24,8 +25,9 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 
 - **Tracker:** [Bug notes](tasks/bug-notes.md)
 - **Status:** in_progress
-- **Current focus:** Collect confirmed bugs and fix status; split into focused tasks later.
-- 
+- **Current focus:** B16 stack-safety planning, followed by B30 local Buffer cleanup,
+  B31 spaced build paths, and B33 file-URI decoding.
+
 ### Typed compiler diagnostics
 
 - **Tracker:** [Typed compiler errors and shared diagnostic rendering](tasks/typed-compiler-diagnostics.md)
@@ -82,7 +84,6 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 
 - **Tracker:** [Prevent module symbol and output-name collisions](tasks/module-name-collisions.md)
 - **Status:** planned
-- **Priority:** HIGH
 - **Current focus:** Define module identity and naming rules that prevent symbol and output collisions.
 
 ### Modules, package root, and source inclusion

@@ -215,11 +215,9 @@ private[parser] def termP(info: SourceInfo)(using P[Any]): P[ParsedTerm] =
       litUnitP(info) |
       holeP(info) |
       litStringP(info) |
-      selectionTermP(info) |
+      selectableTermP(info, exprP(info)) |
       numericLitP(info) |
       opRefP(info) |
-      NoCut(groupTermP(info)) |
-      tupleP(info) |
       lambdaLitP(info) |
       typeRefTermP(info) |
       refP(info) |
@@ -238,116 +236,82 @@ private[parser] def termMemberP(info: SourceInfo)(using P[Any]): P[ParsedTerm] =
       litUnitP(info) |
       holeP(info) |
       litStringP(info) |
-      selectionTermMemberP(info) |
+      selectableTermP(info, exprMemberP(info)) |
       numericLitP(info) |
       opRefP(info) |
-      NoCut(groupTermMemberP(info)) |
-      tupleMemberP(info) |
       lambdaLitP(info) |
       typeRefTermP(info) |
       refP(info) |
       phP(info)
   )
 
-/** Parses a selection chain such as `person.name` or `config.db.port`. */
-private[parser] def selectionTermP(info: SourceInfo)(using P[Any]): P[Term] =
-  NoCut(selectionP(info, selectionBaseP(info)))
+/** A nonempty field chain and the annotation attached to its final field. */
+private final case class SelectionSuffix(
+  fields:     List[(String, SrcSpan)],
+  annotation: Option[Type]
+):
 
-/** Parses a selection chain inside member bodies. */
-private[parser] def selectionTermMemberP(info: SourceInfo)(using P[Any]): P[Term] =
-  NoCut(selectionP(info, selectionBaseMemberP(info)))
+  /** Builds qualified references whose spans start at the original base. */
+  def attachTo(base: Term): Term =
+    val lastIndex = fields.size - 1
+    fields.zipWithIndex.foldLeft(base) { case (qualifier, ((fieldName, fieldSpan), idx)) =>
+      val qualifierLoc  = locSpan(qualifier)
+      val selectionSpan = span(qualifierLoc.start, fieldSpan.end)
+      Ref(
+        source    = SourceOrigin.Loc(selectionSpan),
+        name      = fieldName,
+        typeAsc   = if idx == lastIndex then annotation else None,
+        qualifier = Some(qualifier)
+      )
+    }
 
-/** Parses the set of terms that may appear to the left of a `.` selection in expressions. */
-private def selectionBaseP(info: SourceInfo)(using P[Any]): P[Term] =
-  P(
-    NoCut(groupTermP(info)) |
-      tupleP(info) |
-      typeRefTermP(info) |
-      refP(info)
+/** Parses groups and tuples with optional fields, or a reference with required fields. Plain
+  * references retain their ordinary term alternatives and annotation ownership. In particular,
+  * lowercase names also belong to the operator grammar. Nested cuts remain local so malformed
+  * parenthesized contents can reach expression recovery.
+  */
+private def selectableTermP(info: SourceInfo, expressionP: => P[Expr])(using P[Any]): P[Term] =
+  NoCut(
+    P(parenthesizedTermP(info, expressionP) ~ selectionSuffixP(info).?).map { case (base, suffix) =>
+      suffix.fold(base)(_.attachTo(base))
+    } |
+      P((typeRefTermP(info) | refP(info)) ~ selectionSuffixP(info)).map { case (base, suffix) =>
+        suffix.attachTo(base)
+      }
   )
 
-/** Parses the set of terms that may appear to the left of a `.` selection in member bodies. */
-private def selectionBaseMemberP(info: SourceInfo)(using P[Any]): P[Term] =
-  P(
-    NoCut(groupTermMemberP(info)) |
-      tupleMemberP(info) |
-      typeRefTermP(info) |
-      refP(info)
-  )
+/** Field annotations belong to the final selection, independently of a base annotation. */
+private def selectionSuffixP(info: SourceInfo)(using P[Any]): P[SelectionSuffix] =
+  P(selectionFieldP(info).rep(1) ~ typeAscP(info)).map { case (fields, annotation) =>
+    SelectionSuffix(fields.toList, annotation)
+  }
 
 /** Parses one `.field` step in a selection chain. */
 private def selectionFieldP(info: SourceInfo)(using P[Any]): P[(String, SrcSpan)] =
   import fastparse.NoWhitespace.*
   P("." ~ tokenP(info)(bindingIdP)).map(token => token.value -> token.location)
 
-/** Parses and lowers a dotted selection chain to nested qualified [[Ref]] nodes.
-  *
-  * Example:
-  * {{{
-  * person.address.city
-  * }}}
+/** Parses comma-separated contents once and retains the enclosing parentheses in the span. One
+  * expression forms a group; multiple expressions form a tuple. The exact `()` token is parsed as
+  * Unit before this rule, while an empty spaced form retains its empty-tuple error.
   */
-private def selectionP(info: SourceInfo, baseP: => P[Term])(using P[Any]): P[Term] =
-  P(
-    pointP(info) ~ baseP ~ selectionFieldP(info).rep(1) ~ typeAscP(info) ~ pointP(info)
-  ).map { case (_, base, fields, typeAsc, _) =>
-    val fieldList = fields.toList
-    val lastIndex = fieldList.size - 1
-    fieldList.zipWithIndex.foldLeft(base) { case (qualifier, ((fieldName, fieldSpan), idx)) =>
-      val qualifierLoc  = locSpan(qualifier)
-      val selectionSpan = span(qualifierLoc.start, fieldSpan.end)
-      Ref(
-        source    = SourceOrigin.Loc(selectionSpan),
-        name      = fieldName,
-        typeAsc   = if idx == lastIndex then typeAsc else None,
-        qualifier = Some(qualifier)
-      )
-    }
+private def parenthesizedTermP(info: SourceInfo, expressionP: => P[Expr])(using P[Any]): P[Term] =
+  P(pointP(info) ~ "(" ~ expressionP.rep(sep = ",") ~ tokenP(info)(")")).map {
+    case (start, expressions, closer) =>
+      val location = span(start, closer.location.end)
+      expressions.toList match
+
+        case Nil =>
+          ParseTermError(
+            span       = location,
+            message    = "Tuple must have at least one element",
+            failedCode = info.slice(start.index, closer.location.end.index).some
+          )
+
+        case expression :: Nil => TermGroup(location, expression)
+
+        case first :: rest => Tuple(location, NonEmptyList(first, rest))
   }
-
-/** Parses tuple syntax.
-  *
-  * Example:
-  * {{{
-  * (x, y, z)
-  * }}}
-  */
-private[parser] def tupleP(info: SourceInfo)(using P[Any]): P[Term] =
-  P(pointP(info) ~ "(" ~ exprP(info).rep(sep = ",") ~ tokenP(info)(")") ~ pointP(info))
-    .map { case (start, exprs, closer, _) =>
-      val end = closer.location.end
-      NonEmptyList
-        .fromList(exprs.toList)
-        .fold(
-          ParseTermError(
-            span       = span(start, end),
-            message    = "Tuple must have at least one element",
-            failedCode = info.slice(start.index, end.index).some
-          )
-        ) { elements =>
-          Tuple(span(start, end), elements)
-        }
-
-    }
-
-/** Parses tuple syntax inside declaration bodies. */
-private[parser] def tupleMemberP(info: SourceInfo)(using P[Any]): P[Term] =
-  P(pointP(info) ~ "(" ~ exprMemberP(info).rep(sep = ",") ~ tokenP(info)(")") ~ pointP(info))
-    .map { case (start, exprs, closer, _) =>
-      val end = closer.location.end
-      NonEmptyList
-        .fromList(exprs.toList)
-        .fold(
-          ParseTermError(
-            span       = span(start, end),
-            message    = "Tuple must have at least one element",
-            failedCode = info.slice(start.index, end.index).some
-          )
-        ) { elements =>
-          Tuple(span(start, end), elements)
-        }
-
-    }
 
 /** One conditional clause retains its condition and true branch independently. */
 private final case class ConditionalClause(condition: Expr, body: Expr, end: SrcPoint)
@@ -572,29 +536,9 @@ private[parser] def lambdaLitP(info: SourceInfo)(using P[Any]): P[Term] =
     )
   }
 
-/** Parses a parenthesized expression group.
-  *
-  * Example:
-  * {{{
-  * (a + b)
-  * }}}
-  */
-private[parser] def groupTermP(info: SourceInfo)(using P[Any]): P[Term] =
-  P(pointP(info) ~ "(" ~ exprP(info) ~ tokenP(info)(")") ~ pointP(info))
-    .map { case (start, expr, closer, _) =>
-      TermGroup(span(start, closer.location.end), expr)
-    }
-
 /** Parses a member-body conditional, whose condition excludes statement sequencing. */
 private[parser] def ifExprMemberP(info: SourceInfo)(using P[Any]): P[Term] =
   conditionalP(info, bindingFrameP(info, termMemberP(info), required = true))
-
-/** Parses a parenthesized expression group inside member bodies. */
-private[parser] def groupTermMemberP(info: SourceInfo)(using P[Any]): P[Term] =
-  P(pointP(info) ~ "(" ~ exprMemberP(info) ~ tokenP(info)(")") ~ pointP(info))
-    .map { case (start, expr, closer, _) =>
-      TermGroup(span(start, closer.location.end), expr)
-    }
 
 /** Parses a lowercase value reference.
   *
@@ -628,7 +572,7 @@ private[parser] def typeRefTermP(info: SourceInfo)(using P[Any]): P[Term] =
       Ref(SourceOrigin.Loc(name.location), name.value, typeAsc = typeAsc)
     }
 
-/** Parses a symbolic operator reference used in expression position.
+/** Parses a symbolic or lowercase operator reference in expression position.
   *
   * Example:
   * {{{

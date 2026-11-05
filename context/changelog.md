@@ -4,6 +4,10 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-11-04
 
+- Parse nested groups and tuples through shared parenthesized contents, then attach field
+  selections without reparsing the base. Bound parser work for nested expressions while
+  preserving annotations, source spans, grouping, and malformed-input recovery.
+
 - Show moved-capture and visibility diagnostic payloads at their offending references in the
   editor. Match semantic error variants exhaustively for source ranges and messages so missing
   mappings fail compilation.

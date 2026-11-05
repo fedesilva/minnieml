@@ -13,6 +13,9 @@ repository state to pick one actionable next task. The order of entries under
 **Active Tasks** in `context/tracker.md` expresses priority: higher entries have
 higher priority. Select the highest-priority actionable work unless the Author
 explicitly directs otherwise. Branch alignment alone does not override this order.
+Within a task, follow the displayed order of open subitems. Priority labels and working-memory
+scheduling notes do not override visible order. Report stale deferrals instead of silently
+skipping earlier work; only completion or a concrete dependency blocker makes it non-actionable.
 
 Keep recommendations within the selected focus unless the Author requests broader backlog
 selection. Ask for plan approval before starting a recommendation that is not already approved. Do not change

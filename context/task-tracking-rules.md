@@ -88,6 +88,12 @@ candidate becomes a task, move its durable detail into that task file.
 
 Active Tasks is the Author's selected working set. Add a task only when the Author asks to
 put it in current or near-term focus. Listing a task does not authorize implementation.
+Display tasks and open subitems in priority order: first listed means first priority.
+The tracker order governs tasks; the displayed order within a task governs its open subitems.
+Priority labels and scheduling notes in working memory do not override that order. Keep
+deferrals reflected in the visible order rather than using them to silently skip earlier work.
+Completed work and concrete dependency blockers may make an item non-actionable; report
+those explicitly when selecting a later item.
 Keep entries limited to the name, task-file link, status, and current focus. Synchronize
 existing entries with task files; absence from the tracker is intentional. Remove completed
 workstream notes instead of accumulating history there.
