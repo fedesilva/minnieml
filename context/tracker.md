@@ -64,6 +64,7 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 - **Status:** design
 - **Current focus:** Revisit implicit cloning and ownership promotion after the initial
   protocol work, preserving explicit Clone and `^`.
+  note: this refers to promotion not cloning 
 
 ### Operator partial application
 
