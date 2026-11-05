@@ -453,7 +453,7 @@ object LlvmToolchain:
     logDebug(s"Input file: $sourceFile", config.verbose)
     logDebug(s"Output file: $outputFile", config.verbose)
     executeCommand(
-      s"llvm-as $sourceFile -o $outputFile",
+      List("llvm-as", sourceFile, "-o", outputFile),
       "Failed to convert IR to Bitcode",
       config.outputDir,
       config.verbose
@@ -501,7 +501,7 @@ object LlvmToolchain:
     logDebug(s"Input file: $inputFile", config.verbose)
     logDebug(s"Output file: $outputFile", config.verbose)
     executeCommand(
-      s"llvm-dis $inputFile -o $outputFile",
+      List("llvm-dis", inputFile, "-o", outputFile),
       "Failed to generate optimized IR",
       config.outputDir,
       config.verbose
@@ -763,7 +763,7 @@ object LlvmToolchain:
 
           timedStep("llvm-link", recordTiming)(
             executeCommand(
-              s"llvm-link $programBitcode $runtimePath -o $linkedBitcode",
+              List("llvm-link", programBitcode, runtimePath, "-o", linkedBitcode),
               "Failed to link runtime bitcode",
               config.outputDir,
               config.verbose
@@ -932,30 +932,15 @@ object LlvmToolchain:
           else LlvmCompilationError.UnsupportedOperatingSystem(os).asLeft
     }
 
-  private def executeCommand(
-    cmd:        String,
-    errorMsg:   String,
-    workingDir: Path,
-    verbose:    Boolean
-  ): IO[Either[LlvmCompilationError, Int]] =
-    executeProcess(dir => Process(cmd, dir), cmd, errorMsg, workingDir, verbose)
-
+  /** Preserves argument boundaries and includes tool stderr in failed results. */
   private[mmlclib] def executeCommand(
     args:       Seq[String],
     errorMsg:   String,
     workingDir: Path,
     verbose:    Boolean
   ): IO[Either[LlvmCompilationError, Int]] =
-    executeProcess(dir => Process(args, dir), args.mkString(" "), errorMsg, workingDir, verbose)
-
-  private def executeProcess(
-    process:    java.io.File => scala.sys.process.ProcessBuilder,
-    cmd:        String,
-    errorMsg:   String,
-    workingDir: Path,
-    verbose:    Boolean
-  ): IO[Either[LlvmCompilationError, Int]] =
     IO.defer {
+      val cmd = args.mkString(" ")
       val setupDir = IO.blocking {
         val absPath        = workingDir.toAbsolutePath
         val workingDirFile = absPath.toFile
@@ -978,7 +963,7 @@ object LlvmToolchain:
                 stderr.append(s"$line\n")
                 ()
             )
-            val exitCode = process(workingDirFile).!(logger)
+            val exitCode = Process(args, workingDirFile).!(logger)
             if exitCode != 0 then
               val diagnostics = stderr.toString.stripTrailing()
               val message     = if diagnostics.isEmpty then errorMsg else s"$errorMsg\n$diagnostics"

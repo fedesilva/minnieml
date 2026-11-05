@@ -4,6 +4,10 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-11-04
 
+- Compile successfully with spaced build-directory paths by passing LLVM assembly, runtime
+  bitcode linking, and optimized IR emission arguments as lists. Preserve path boundaries
+  through the shared toolchain runner.
+
 - Clarify that dropping a Buffer discards pending output. Call `flush(b)` explicitly
   before dropping it to write that output.
 
