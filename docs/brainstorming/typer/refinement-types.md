@@ -1,11 +1,11 @@
 # Design note: refinement types
 
-## Status
+## Status: deprecated
 
-Forward design note. The working sketch [`refinements.mml`](./refinements.mml)
-is the seed — read it first, it's short, and its decisions are baseline here.
-This note builds the model around the sketch and wires it up to
-[`token-types.md`](./token-types.md).
+Superseded by [Array access and bounds safety](../language/array-access-and-bounds-safety.md),
+including the path-dependent index proposal and the refinement seed sketch.
+Retained as historical discussion; the decisions and open questions below describe
+that proposal. Continue the design in the consolidated document.
 
 ## Why
 

@@ -1,6 +1,9 @@
 # Design note: progressive token types for zero-cost safety
 
-## Status: superseded
+## Status: deprecated
+
+Superseded by [Array access and bounds safety](../language/array-access-and-bounds-safety.md).
+Retained as historical discussion; continue the design in the consolidated document.
 
 This document is kept for its problem statement and rationale, not as the live
 design. The token / brand mechanism described here requires rank-2 polymorphism,
@@ -11,7 +14,7 @@ provenance the brand was carrying, refinement supplies the range. Structural
 invalidation on resize, the Phase 2 role, is an orthogonal mutation/linearity
 concern, not something the brand needs to encode.
 
-The live design is [`refinement-types.md`](./refinement-types.md). Read this
+The refinement successor is also deprecated in favor of the consolidated document. Read this
 document for: the two-parameter provenance/domain analysis (§ Two parameters),
 the requirements analysis that showed rank-2 was unavoidable for the brand
 approach (§ Type-system requirements), the matmul acceptance test (§3), and the

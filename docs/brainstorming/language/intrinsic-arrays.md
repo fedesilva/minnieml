@@ -28,6 +28,10 @@ codegen. right now the codegen knows about string literals for example.
 
 ## Scope
 
+This proposal can be implemented with runtime bounds checks. Static bounds proofs,
+refinement types, and validated index types are independent follow-on work, not
+prerequisites for intrinsic arrays.
+
 In scope:
 
 - `Array` as a built-in type, written `Array Int`, `Array Float`, `Array String`, and

@@ -1,3 +1,6 @@
+// Deprecated: [Array access and bounds safety](../language/array-access-and-bounds-safety.md).
+// Historical syntax only; continue the design in the consolidated document.
+
 // refinement types
 // Chico means small in Spanish.
 type IntChico = Int { i | i <= 5 }

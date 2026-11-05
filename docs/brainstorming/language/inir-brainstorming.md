@@ -139,7 +139,10 @@ Not every analysis needs to become an interaction rule. A useful arrangement cou
 | Computing effects across calls | Function summaries, with recursive groups handled together |
 | Reusing previous results | Recorded dependencies on bodies, signatures, or analysis facts |
 
-For example, a solver could publish a proof that an access is in bounds. That fact could enable a local rewrite that removes the check. The solver and the rewrite engine can share IDs and scheduling without using the same algorithm.
+The array-bounds discussion here is deprecated and superseded by
+[Array access and bounds safety](array-access-and-bounds-safety.md#static-bounds-analysis).
+That document covers proof inference, check removal, and invalidation of analysis facts.
+The broader graph and scheduling discussion remains here.
 
 The Kotlin K2 discussion was relevant here: resolving individual declarations to the phase needed by a query suggests work units such as `(declaration, analysis phase)`. This is a useful scheduling idea alongside local graph rewrites. It does not mean every function is independent of every other function.
 
