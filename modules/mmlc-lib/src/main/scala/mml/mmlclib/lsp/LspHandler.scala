@@ -3,7 +3,7 @@ package mml.mmlclib.lsp
 import cats.effect.IO
 import mml.mmlclib.api.CompilerApi
 import mml.mmlclib.codegen.CompilationMode
-import mml.mmlclib.compiler.{CompilerConfig, CompilerState}
+import mml.mmlclib.compiler.{Compilation, CompilerConfig, CompilerState}
 import org.typelevel.log4cats.Logger
 
 import java.io.{InputStream, PrintStream}
@@ -490,7 +490,7 @@ class LspHandler(
         }
 
   private def uriToPath(uri: String): String =
-    if uri.startsWith("file://") then uri.stripPrefix("file://")
+    if uri.startsWith("file:/") then Compilation.sourcePathFromUri(uri)
     else uri
 
 /** Supported LSP commands (server-side). */

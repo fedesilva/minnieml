@@ -2,6 +2,12 @@
 
 Durable product changes belong here. Current task state belongs in task files.
 
+## 2026-11-05
+
+- Decode file URIs in editor binary, library, AST, and IR commands so escaped filenames
+  resolve to the intended files. Preserve raw filesystem paths, including relative filenames
+  beginning with `file:`.
+
 ## 2026-11-04
 
 - Compile successfully with spaced build-directory paths by passing LLVM assembly, runtime

@@ -7,7 +7,7 @@
 - **Kind:** BUG
 - **Priority:** unassigned
 - **Created:** 2026-10-26
-- **Target Branch:** main
+- **Target Branch:** dev/b33-file-uri-decoding
 - **External Reference:** None.
 
 ## Execution Checklist
@@ -24,16 +24,6 @@ Repair approvals are recorded separately under Scope / Approval.
 
 Open notes are listed in priority order.
 
-- **B33 — Open, P2: editor compile commands do not decode file URIs.**
-  [LspHandler.uriToPath](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/lsp/LspHandler.scala)
-  strips `file://` and passes the percent-encoded remainder to path-based compilation.
-  The VS Code extension sends `uri.toString()` to binary, AST, and IR commands. Files named
-  `demo#file.mml`, `demo file.mml`, and `demo%file.mml` are therefore opened using literal
-  `%23`, `%20`, and `%25` names. JDK filesystem reproductions fail with `NoSuchFileException`,
-  while URI-decoded paths and an ordinary filename succeed. Use shared URI decoding rather
-  than prefix stripping. This is source tracing plus a filesystem reproduction; editor execution
-  was not run.
-
 - **B34 — Open, P2: `run --output` launches the default executable path.**
   The CLI accepts a custom output path for `run`, and
   [LlvmToolchain.compileBinary](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/LlvmToolchain.scala)
@@ -48,6 +38,13 @@ Open notes are listed in priority order.
   Executing `build/b34-run-output/custom` directly prints `Hola, fede` and `Hola, pepe` and exits 0.
 
 ### Resolved notes
+
+- **B33 — Complete: decode file URIs in editor compile commands.**
+  [LspHandler.uriToPath](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/lsp/LspHandler.scala)
+  uses shared URI decoding for binary, library, AST, and IR commands. Hierarchical `file:/`
+  forms decode once; raw filesystem paths, including relative `file:`-prefixed filenames,
+  pass through unchanged. All [53 command regressions and compiler checks](#b33-editor-file-uri-decoding)
+  pass. Independent review and Author signoff are complete.
 
 - **B31 — Complete: preserve build-directory paths containing spaces.**
   [LlvmToolchain](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/LlvmToolchain.scala)
@@ -134,7 +131,52 @@ B31 repair approved: use argument lists for LLVM assembly, runtime bitcode linki
 IR emission; remove the unused string-command overload; add spaced-path executable and library
 regressions; run required compiler checks and review; update the evidence in this record.
 
+B33 repair approved: reuse shared URI decoding for editor binary/library, AST, and IR commands;
+add command-level regressions for escaped filenames and ordinary paths; run required compiler
+checks and review; update this record. Work branch: `dev/b33-file-uri-decoding`.
+
 ## Verification
+
+### B33 editor file-URI decoding
+
+Host checks on 2026-11-05 use macOS arm64 and Clang/LLVM 23.1.1.
+[LspCommandTests](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/lsp/LspCommandTests.scala)
+exercises binary, library, AST, and IR commands through the JSON-RPC handler with real temporary
+source files. Each command receives file URIs and raw paths for ordinary filenames and names
+containing spaces, `#`, `%`, `+`, and literal `%20`; a further AST case covers `file:/` syntax.
+An exact type-mismatch diagnostic establishes source loading before artifact generation.
+
+- Before the repair, `sbtn 'testOnly mml.mmlclib.lsp.LspCommandTests'` reports 17 failures
+  and 32 passes. The failures are the four commands' escaped filenames and the `file:/` case;
+  they report file-read errors instead of the source diagnostic.
+- `sbtn 'scalafmtAll; scalafixAll; testOnly mml.mmlclib.lsp.LspCommandTests'` passes all
+  49 cases after shared decoding is applied.
+- `./tests/smoke/run.sh all` passes all eight fixtures, including compilation and execution
+  through the development compiler.
+- `sbtn 'testFull; mmlcPublishLocal'` passes 2,593 library tests and nine CLI tests, then installs
+  the compiler locally. No tests fail; the test reports contain no skipped tests.
+- `make -C benchmark clean` and `make -C benchmark mml` pass, rebuilding all 37 MML binaries
+  with the installed compiler. This verifies compilation, not execution timings.
+- QA enforcement, task/tracker consistency, all 31 local file links, and `git diff --check` pass.
+  Initial independent review completed all four dedicated checks and confirmed one compatibility
+  finding with the broad `file:` guard: a raw relative `file:demo.mml` argument terminated every
+  compile command without a response. The same file passed to AST as `./file:demo.mml` succeeded.
+  Java URI decoding returns no path for the opaque form, so decoding is restricted to hierarchical
+  `file:/` forms to preserve those raw paths.
+- Four real relative-file regressions reproduce the review finding before correction: 49 cases
+  pass and four fail with `NullPointerException`. After narrowing the guard,
+  `sbtn 'scalafmtAll; scalafixAll; testOnly mml.mmlclib.lsp.LspCommandTests'` passes all 53.
+  The four cases create unique `file:`-prefixed files in the working directory and remove them
+  through resource cleanup. Smoke, full-suite, installation, and all 37 benchmark builds pass again
+  after this correction.
+- Fresh narrow independent review confirms the correction and finds no actionable issues.
+  All four dedicated checks complete: code style/QA, test quality, human readability, and code
+  documentation. The sole new candidate is independently rejected; no unresolved claims remain.
+- Independent replay through the installed `mmlc lsp` uses a relative `file:demo.mml` containing
+  `let value: Int = true;` in the server's working directory. All four compile commands return
+  the expected source diagnostic, preserve initialization/command/shutdown responses, and exit 0.
+- Memory and ABI gates do not apply to this URI-to-path conversion change. Interactive editor
+  execution is untested; command regressions exercise the actual JSON-RPC handler in memory.
 
 ### B31 spaced build paths
 
@@ -180,6 +222,7 @@ B1/B2 compiler checks and independent review pass. Verification evidence is reco
 - Workstream signoff: Ongoing note collection approved.
 - B30 documentation correction: signed off; local commit authorized.
 - B31 spaced build-path repair: signed off; local commit and delivery to `main` authorized.
+- B33 file-URI decoding: signed off; local commit and delivery to `main` authorized.
 - Tracked item completion: Pending triage.
 - Commit authorization: granted for the existing notes and follow-up definitions.
 
@@ -190,5 +233,6 @@ independently reviewed, and signed off.
 B23's parser repair, compiler verification, independent review, and Author signoff are complete.
 B30's documentation correction is complete, verified, independently reviewed, and signed off.
 B31's spaced build-path repair is complete, verified, independently reviewed, and signed off.
-Open notes are ordered B33, B34; neither repair is approved.
-Next: prepare the B33 file-URI decoding plan.
+B33's file-URI decoding repair is complete, verified, independently reviewed, and signed off.
+B34 remains open and its repair is unapproved.
+Next: prepare the B34 custom-output execution plan.

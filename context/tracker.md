@@ -25,7 +25,7 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 
 - **Tracker:** [Bug notes](tasks/bug-notes.md)
 - **Status:** in_progress
-- **Current focus:** B33 file-URI decoding, followed by B34 custom-output execution.
+- **Current focus:** B34 custom-output execution.
 
 ### Typed compiler diagnostics
 
