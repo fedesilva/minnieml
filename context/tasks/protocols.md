@@ -551,11 +551,6 @@ P4 verification:
 - Both new examples execute successfully via `sbtn 'run run -s <path>'` with sanitizers:
   `mml/samples/protocol-functions.mml` prints `answer: 42`, `ready: true`, `function value: 5`,
   and `partial: 15`; `mml/samples/protocol-operators.mml` prints `42`, `true`, `5`, and `15`.
-- The initial frontend corpus scan completed 182 sources, then hit a parser stack overflow in
-  `mml/samples/stack-depth-1000-lets.mml`. The retry with
-  `set mmlclib / Test / javaOptions += "-Xss16m"` completed all 262 sources: 224 clean and
-  38 with diagnostics, with no infrastructure failures. The larger stack is a corpus-run
-  setting; [Compiler stack safety](compiler-stack-safety.md) remains open.
 
 <details>
 <summary>P4 corpus baseline: sources with diagnostics</summary>

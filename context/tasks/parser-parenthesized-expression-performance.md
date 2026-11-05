@@ -25,10 +25,6 @@ suffix. Bounded parser-only measurements confirm approximately doubled rule work
 nesting level in ordinary and member-body expressions. Nested first-element tuples repeat
 more work through both selection and group-versus-tuple alternatives.
 
-This is distinct from repeated type checking of an erroneous expression, which belongs to the
-immediate protocol repairs. It is also distinct from the known
-[stack overflow on long sequences](compiler-stack-safety.md).
-
 ## Outcome and scope
 
 Parsing a moderately nested valid arithmetic expression performs bounded work proportional to
@@ -180,4 +176,4 @@ arithmetic and tuple families.
 Compiler checks pass, including the full suite, smoke retry, publication, benchmark builds,
 and all 52 memory fixtures. Primary review and all four dedicated checks are complete; the
 confirmed operator-comment finding is corrected and its narrow review is clean. Author signoff
-is complete. B23 has no remaining work; B16 is first in the open bug-note order.
+is complete. B23 has no remaining work.

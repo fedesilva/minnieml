@@ -24,13 +24,6 @@ These are short notes for later triage, not approved repair plans.
 
 Open notes are listed in priority order.
 
-- **B16 — Open, existing: 1,000 nested lets overflow the compiler stack.**
-  The frontend corpus scan reaches `mml/samples/stack-depth-1000-lets.mml` and raises
-  `StackOverflowError` in recursive parsing with the default JVM stack. This reproduces
-  [Compiler stack safety](compiler-stack-safety.md), which already contains the repair scope
-  and phase-level evidence. The corpus comparison uses an explicitly increased JVM stack;
-  that setting does not establish stack safety.
-
 - **B30 — Open, P2: dropping a local Buffer discards pending output.**
   [__free_Buffer](../../modules/mmlc-lib/src/main/resources/mml_runtime.c) frees its data without
   flushing, contrary to the [buffer I/O contract](../../docs/language-reference.md#buffered-io).
@@ -136,5 +129,5 @@ B1/B2 compiler checks and independent review pass. Verification evidence is reco
 B1/B2 diagnostic-delivery mappings and exhaustive semantic conversion are complete, verified,
 independently reviewed, and signed off.
 B23's parser repair, compiler verification, independent review, and Author signoff are complete.
-Open notes are ordered B16, B30, B31, B33. B16 has a dedicated stack-safety task;
-B30/B31/B33 need runtime/tooling triage. Next: prepare bounded B16 implementation stages.
+Open notes are ordered B30, B31, B33 and need runtime/tooling triage.
+Next: prepare the B30 local Buffer cleanup plan.

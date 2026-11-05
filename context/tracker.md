@@ -25,8 +25,8 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 
 - **Tracker:** [Bug notes](tasks/bug-notes.md)
 - **Status:** in_progress
-- **Current focus:** B16 stack-safety planning, followed by B30 local Buffer cleanup,
-  B31 spaced build paths, and B33 file-URI decoding.
+- **Current focus:** B30 local Buffer cleanup, followed by B31 spaced build paths
+  and B33 file-URI decoding.
 
 ### Typed compiler diagnostics
 
@@ -92,3 +92,10 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 - **Status:** design
 - **Current focus:** Settle remaining module and inclusion semantics and prepare a bounded
   plan for Package and nested modules in one source file, followed by source inclusion.
+
+### Compiler stack safety and traversal cost
+
+- **Tracker:** [Make long local sequences stack-safe and bound traversal cost](tasks/compiler-stack-safety-and-traversal-cost.md)
+- **Status:** deferred
+- **Current focus:** Draft staged repair using shared functional traversal tools across compiler
+  phases, including availability queries and LLVM emission.
