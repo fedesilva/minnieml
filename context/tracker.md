@@ -21,12 +21,6 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 
 ## Active Tasks
 
-### Bug notes
-
-- **Tracker:** [Bug notes](tasks/bug-notes.md)
-- **Status:** in_progress
-- **Current focus:** B34 custom-output execution.
-
 ### Typed compiler diagnostics
 
 - **Tracker:** [Typed compiler errors and shared diagnostic rendering](tasks/typed-compiler-diagnostics.md)

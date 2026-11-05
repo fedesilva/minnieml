@@ -544,7 +544,6 @@ object LlvmToolchain:
         targetTriple,
         config,
         outputDir,
-        targetDir,
         target,
         linkEntries,
         recordTiming
@@ -779,40 +778,28 @@ object LlvmToolchain:
     targetTriple: String,
     config:       CompilerConfig,
     outputDir:    Path,
-    targetDir:    Path,
     target:       ClangTarget,
     linkEntries:  List[LinkEntry],
     recordTiming: Option[TimingRecorder]
   ): IO[Either[LlvmCompilationError, Int]] =
-    val targetDirPath = targetDir.toAbsolutePath
-    if !Files.exists(targetDirPath) then
-      logDebug(s"Creating target directory: $targetDirPath", config.verbose)
-      Files.createDirectories(targetDirPath)
 
-    val finalExecutablePath = config.outputName match
-      case Some(path) => Paths.get(path).toAbsolutePath.toString
-      case None =>
-        val baseName = programName.toLowerCase
-        val finalName =
-          if config.targetTriple.isDefined then s"$baseName-$targetTriple" else baseName
-        targetDirPath.resolve(finalName).toString
-    val inputFile = outputDir.resolve(s"$programName.s").toAbsolutePath.toString
+    val outputPath = config.executablePath(programName, targetTriple)
+    val inputFile  = outputDir.resolve(s"$programName.s").toAbsolutePath.toString
     // Frame-pointer selection applies when compiling IR or C, not when linking assembly.
     val linkFlags = target.flags.filterNot(_ == "-fno-omit-frame-pointer")
 
-    val outputPath = Paths.get(finalExecutablePath)
-    val parentDir  = outputPath.getParent
+    val parentDir = outputPath.getParent
     if parentDir != null && !Files.exists(parentDir) then Files.createDirectories(parentDir)
 
     logPhase(s"Compiling and linking executable", config.printPhases)
     logDebug(s"Input file: $inputFile", config.verbose)
-    logDebug(s"Output file: $finalExecutablePath", config.verbose)
+    logDebug(s"Output file: $outputPath", config.verbose)
 
     timedStep("llvm-compile-binary", recordTiming)(
       executeCommand(
         List(target.executable.toString, "-fuse-ld=lld") ++ linkFlags ++
           List(inputFile) ++ linkEntries.map(entry => s"-l${entry.name}") ++
-          List("-o", finalExecutablePath),
+          List("-o", outputPath.toString),
         "Failed to compile and link",
         config.outputDir,
         config.verbose

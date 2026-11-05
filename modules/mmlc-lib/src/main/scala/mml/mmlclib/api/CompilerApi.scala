@@ -350,17 +350,13 @@ object CompilerApi:
     yield exit
 
   private def executeBinary(state: CompilerState): IO[ExitCode] =
-    val outputDir = state.config.outputDir.toString
-    val baseName  = state.module.name.toLowerCase
-    val execPath = state.config.targetTriple match
-      case Some(_) =>
-        val triple = state.resolvedTriple.getOrElse("unknown")
-        s"$outputDir/target/$baseName-$triple"
-      case None =>
-        s"$outputDir/target/$baseName"
+    val execPath = state.config.executablePath(
+      state.module.name,
+      state.resolvedTriple.getOrElse("unknown")
+    )
 
     IO.blocking {
-      val process = new ProcessBuilder(execPath).inheritIO().start()
+      val process = new ProcessBuilder(execPath.toString).inheritIO().start()
       process.waitFor()
     }.map(ExitCode(_))
       .handleErrorWith { e =>

@@ -22,7 +22,21 @@ case class CompilerConfig(
   asan:              Boolean,
   llvmOptArgs:       List[String] = Nil,
   showParserMetrics: Boolean      = false
-)
+):
+
+  /** Absolute executable path, with relative custom outputs resolved against the compiler's working
+    * directory. Without a custom output, the lowercased program name goes in the build directory's
+    * target folder, with the resolved triple appended only for an explicitly requested target.
+    */
+  def executablePath(programName: String, resolvedTriple: String): Path =
+    val path = outputName match
+      case Some(customPath) => Paths.get(customPath)
+      case None =>
+        val baseName = programName.toLowerCase
+        val fileName = if targetTriple.isDefined then s"$baseName-$resolvedTriple" else baseName
+        outputDir.resolve("target").resolve(fileName)
+
+    path.toAbsolutePath
 
 object CompilerConfig:
 

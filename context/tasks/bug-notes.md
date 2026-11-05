@@ -7,7 +7,7 @@
 - **Kind:** BUG
 - **Priority:** unassigned
 - **Created:** 2026-10-26
-- **Target Branch:** dev/b33-file-uri-decoding
+- **Target Branch:** dev/b34-custom-output-execution
 - **External Reference:** None.
 
 ## Execution Checklist
@@ -22,22 +22,15 @@ Repair approvals are recorded separately under Scope / Approval.
 
 ## Notes
 
-Open notes are listed in priority order.
-
-- **B34 — Open, P2: `run --output` launches the default executable path.**
-  The CLI accepts a custom output path for `run`, and
-  [LlvmToolchain.compileBinary](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/LlvmToolchain.scala)
-  writes the executable there. However,
-  [CompilerApi.executeBinary](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/api/CompilerApi.scala)
-  constructs the launch path from the build directory, module name, and optional target triple,
-  ignoring `config.outputName`. A missing default executable causes a launch failure; an existing
-  default executable can run stale code. Source tracing confirms the mismatch in code unchanged
-  from `0e4334ba`; it does not depend on spaces. With an initially absent build directory,
-  `mmlc run --build-dir build/b34-run-output --output build/b34-run-output/custom tests/smoke/hola.mml`
-  compiles the custom executable, then exits 1 because `build/b34-run-output/target/hola` is absent.
-  Executing `build/b34-run-output/custom` directly prints `Hola, fede` and `Hola, pepe` and exits 0.
+No open bug notes.
 
 ### Resolved notes
+
+- **B34 — Complete: execute the custom `run --output` path.**
+  [CompilerConfig.executablePath](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/compiler/CompilerConfig.scala)
+  selects one absolute path for linking and execution, including custom relative outputs.
+  [Run regressions](#b34-custom-output-execution) cover custom paths, stale default executables,
+  and default naming. Compiler checks, independent review, and Author signoff are complete.
 
 - **B33 — Complete: decode file URIs in editor compile commands.**
   [LspHandler.uriToPath](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/lsp/LspHandler.scala)
@@ -135,7 +128,52 @@ B33 repair approved: reuse shared URI decoding for editor binary/library, AST, a
 add command-level regressions for escaped filenames and ordinary paths; run required compiler
 checks and review; update this record. Work branch: `dev/b33-file-uri-decoding`.
 
+B34 repair approved: share executable-path selection between compilation and execution;
+add regressions for custom paths, stale default executables, and default naming; run required
+compiler checks and independent review; update this record. Work branch:
+`dev/b34-custom-output-execution`, based on `main`.
+
 ## Verification
+
+### B34 custom-output execution
+
+Baseline source at `f0f49adb` selects `config.outputName` during linking but ignores it when
+launching the executable. With an initially absent build directory,
+`mmlc run --build-dir build/b34-run-output --output build/b34-run-output/custom tests/smoke/hola.mml`
+compiles the custom executable, then exits 1 because `build/b34-run-output/target/hola` is absent.
+Executing the custom output directly prints `Hola, fede` and `Hola, pepe` and exits 0.
+An existing default executable can instead run stale code; the regression below establishes
+that failure with distinct program exit codes.
+
+Host checks on 2026-11-05 use macOS arm64 and Clang/LLVM 23.1.1.
+[CompilerRunTests](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/CompilerRunTests.scala)
+compiles and executes source fixtures through `CompilerApi.processRun`, checking exact exit codes.
+Six cases cover an absolute custom path with spaces and an explicit host target, a nested relative
+path, a basename in the process working directory, a stale default executable, and default naming
+with implicit and explicit host targets. Temporary outputs are removed through resource cleanup.
+
+- Before connecting the shared path rule, `sbtn 'testOnly mml.mmlclib.codegen.CompilerRunTests'`
+  reports four failures and two passes. Three custom-output cases fail to launch; the stale-default
+  case returns 37 from the old program instead of 43 from the freshly compiled custom executable.
+- `sbtn 'scalafmtAll; scalafixAll; testOnly mml.mmlclib.codegen.CompilerRunTests mml.mmlclib.codegen.ToolchainPathTests'`
+  passes all eight cases after compilation and execution use the shared rule.
+- `./tests/smoke/run.sh all` passes all eight fixtures. An initial sandboxed attempt cannot
+  access the sbt cache lock; the rerun with cache access passes.
+- `sbtn 'run run --build-dir "build/b34-run space" --output "build/b34-run space/custom program" tests/smoke/hola.mml; testFull; mmlcPublishLocal'`
+  runs the custom executable, printing `Hola, fede` and `Hola, pepe`, passes 2,599 library tests
+  and nine CLI tests, then installs the compiler locally. Test reports contain no failures,
+  errors, or skipped tests. An initial invocation with separate task arguments fails CLI parsing;
+  the semicolon-separated command above completes successfully.
+- `make -C benchmark clean` and `make -C benchmark mml` pass, rebuilding all 37 MML binaries
+  with the installed compiler. This verifies compilation, not execution timings.
+- QA enforcement, task/tracker consistency, all local file links, and the B34-scoped
+  `git diff --check` pass.
+- Memory-harness and ABI container gates do not apply to this executable-path selection change.
+  Execution coverage is macOS arm64; no Linux or Windows execution is claimed.
+- Independent review finds no actionable issues. All four separate checks complete: code style
+  and QA, test quality, human readability, and code documentation. No candidate findings require
+  claim verification, and no unresolved claims remain. The review independently checks test
+  reports and the shared path inputs; it does not rerun tests.
 
 ### B33 editor file-URI decoding
 
@@ -223,6 +261,7 @@ B1/B2 compiler checks and independent review pass. Verification evidence is reco
 - B30 documentation correction: signed off; local commit authorized.
 - B31 spaced build-path repair: signed off; local commit and delivery to `main` authorized.
 - B33 file-URI decoding: signed off; local commit and delivery to `main` authorized.
+- B34 custom-output execution: signed off; local commit and delivery to `main` authorized.
 - Tracked item completion: Pending triage.
 - Commit authorization: granted for the existing notes and follow-up definitions.
 
@@ -234,5 +273,10 @@ B23's parser repair, compiler verification, independent review, and Author signo
 B30's documentation correction is complete, verified, independently reviewed, and signed off.
 B31's spaced build-path repair is complete, verified, independently reviewed, and signed off.
 B33's file-URI decoding repair is complete, verified, independently reviewed, and signed off.
-B34 remains open and its repair is unapproved.
-Next: prepare the B34 custom-output execution plan.
+B34 repair is implemented on `dev/b34-custom-output-execution`. `CompilerConfig.executablePath`
+selects the absolute output path for both linking and execution. Custom outputs take precedence;
+default names retain explicit-target suffixes. Four failing run regressions pass with the repair,
+alongside two default-naming controls and two existing toolchain-path regressions.
+Required compiler checks, focused QA/tracking checks, and independent review pass.
+B34 is signed off; local commit and delivery to `main` are authorized. All recorded bugs are
+resolved. Bug collection remains open without an active repair; new notes require triage.

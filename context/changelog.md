@@ -4,6 +4,10 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-11-05
 
+- Execute the custom path selected by `run --output`, including relative filenames and paths
+  containing spaces. Share executable-path selection with linking to avoid launching stale
+  default outputs, while preserving default naming and explicit-target suffixes.
+
 - Decode file URIs in editor binary, library, AST, and IR commands so escaped filenames
   resolve to the intended files. Preserve raw filesystem paths, including relative filenames
   beginning with `file:`.
