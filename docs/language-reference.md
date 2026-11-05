@@ -1486,7 +1486,9 @@ to C's `free`. Explicit early release is possible, but ordinary code needs no ma
 #### Buffered I/O
 
 Buffers provide efficient batched output. Write operations accumulate in memory and
-are flushed explicitly or when the buffer is freed.
+flush as needed to make room for more data. Call `flush(b)` explicitly to write any
+pending output before dropping a buffer. Dropping a buffer releases its storage
+without flushing; any pending output is discarded.
 
 | Function                     | Type                       | Description                                    |
 | ---------------------------- | -------------------------- | ---------------------------------------------- |

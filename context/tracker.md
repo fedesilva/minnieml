@@ -25,8 +25,7 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 
 - **Tracker:** [Bug notes](tasks/bug-notes.md)
 - **Status:** in_progress
-- **Current focus:** B30 local Buffer cleanup, followed by B31 spaced build paths
-  and B33 file-URI decoding.
+- **Current focus:** B31 spaced build paths, followed by B33 file-URI decoding.
 
 ### Typed compiler diagnostics
 
