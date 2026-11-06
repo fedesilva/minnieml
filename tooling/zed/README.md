@@ -1,8 +1,33 @@
 # MinnieML for Zed
 
 Syntax highlighting, bracket matching, outline entries, and indentation rules for
-`.mml` files, with diagnostics, hover information, definitions, references, and
+`.mml` files, with diagnostics, hover information, definitions, implementations, references, and
 workspace symbols from `mmlc lsp`.
+
+## Protocol navigation
+
+Zed uses its native language-server navigation actions for MML. With the cursor
+on the relevant name or operator, open the command palette and run:
+
+| Action | Protocol behavior |
+| --- | --- |
+| **editor: go to definition** | A member call opens the signature in its protocol. |
+| **editor: go to implementation** | A protocol name lists its instances; a signature lists its implementations. |
+| **editor: find all references** | An instance header finds uses of its members; a member finds only its implementation's uses. |
+
+References from a protocol signature include uses across its instances. These actions
+work for both functions and operators. The extension starts `mmlc lsp`; Zed enables
+implementation navigation from the server's advertised capability, without custom
+extension commands. See [Zed's native actions](https://zed.dev/docs/all-actions).
+
+After updating the compiler, run **editor: restart language server**. Open
+[protocol-functions.mml](../../mml/samples/protocol-functions.mml) and
+[protocol-operators.mml](../../mml/samples/protocol-operators.mml); navigate from a call
+to its signature, then list implementations without moving the selected caret and find references
+from each one. Zed selects destination names with the caret at their end; navigation accepts that
+position as well as a caret inside the name.
+Use the protocol-log viewer to inspect the `textDocument/definition`,
+`textDocument/implementation`, and `textDocument/references` requests.
 
 ## Verify
 
@@ -17,6 +42,19 @@ The script regenerates the parser, checks the syntax and recovery corpus, parses
 reference programs, and compiles/runs every Zed query. It uses the repository's
 ignored `build/` directory for the native parser cache. It does not launch Zed;
 indentation and rendering still require an editor check.
+
+After publishing the compiler, verify the navigation contract used by Zed's native
+actions with:
+
+```sh
+python3 tooling/test-protocol-navigation.py
+```
+
+This launches the adapter's default `mmlc lsp` command, checks its advertised navigation
+capabilities and exact definition, implementation, and reference responses for named
+members and operators. It also chains requests from the ends of returned selections, then shuts
+down. Use `--compiler /path/to/mmlc` to match a custom
+`lsp.mml.binary.path`. The script tests the server contract, not Zed's GUI.
 
 Check the language-server adapter with:
 
@@ -199,7 +237,7 @@ For semantic highlighting, add this to Zed settings:
 }
 ```
 
-The compiler currently supplies diagnostics, hover, definitions, references,
+The compiler currently supplies diagnostics, hover, definitions, implementations, references,
 workspace symbols, and semantic tokens. It does not advertise completion,
 renaming, or formatting. Zed's outline continues to use the Tree-sitter query.
 

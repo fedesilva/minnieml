@@ -1,7 +1,7 @@
 {
     "name": "mml-language",
     "displayName": "MinnieML Language",
-    "description": "Language support for MinnieML with syntax highlighting, diagnostics, and hover",
+    "description": "MinnieML syntax highlighting, diagnostics, hover, and protocol navigation",
     "version": "0.2.0",
     "engines": {
         "vscode": "^1.75.0"
@@ -89,6 +89,7 @@
         "vscode:prepublish": "npm run build",
         "build": "esbuild src/extension.ts --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node",
         "compile": "tsc -p ./",
+        "test": "npm run compile && node --test test/*.test.cjs",
         "watch": "tsc -watch -p ./"
     },
     "dependencies": {

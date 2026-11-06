@@ -96,6 +96,7 @@ export function activate(context: vscode.ExtensionContext) {
                     return next(document);
                 },
                 provideDefinition: async (document, position, token, next) => {
+                    await flushPendingDidChange(document.uri.toString());
                     const reqId = nextRequestId();
                     const symbol = symbolAt(document, position);
                     logLsp(`(invoked) textDocument/definition (${reqId}) ${symbol}`);
@@ -109,6 +110,14 @@ export function activate(context: vscode.ExtensionContext) {
                     }
                     logLsp(`(received) textDocument/definition (${reqId}) found`);
                     return result;
+                },
+                provideImplementation: async (document, position, token, next) => {
+                    await flushPendingDidChange(document.uri.toString());
+                    return next(document, position, token);
+                },
+                provideReferences: async (document, position, options, token, next) => {
+                    await flushPendingDidChange(document.uri.toString());
+                    return next(document, position, options, token);
                 }
             }
         };

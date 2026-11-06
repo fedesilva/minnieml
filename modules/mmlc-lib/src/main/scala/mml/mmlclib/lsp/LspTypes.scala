@@ -128,6 +128,7 @@ object ServerCapabilities:
   def toJson(
     hoverProvider:           Boolean                      = true,
     definitionProvider:      Boolean                      = false,
+    implementationProvider:  Boolean                      = false,
     referencesProvider:      Boolean                      = false,
     workspaceSymbolProvider: Boolean                      = false,
     textDocumentSync:        Int                          = 1,
@@ -137,6 +138,7 @@ object ServerCapabilities:
     val obj = ujson.Obj(
       "hoverProvider" -> hoverProvider,
       "definitionProvider" -> definitionProvider,
+      "implementationProvider" -> implementationProvider,
       "referencesProvider" -> referencesProvider,
       "workspaceSymbolProvider" -> workspaceSymbolProvider,
       "textDocumentSync" -> textDocumentSync

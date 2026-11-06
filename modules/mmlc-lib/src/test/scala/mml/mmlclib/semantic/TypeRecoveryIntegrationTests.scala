@@ -114,11 +114,11 @@ class TypeRecoveryIntegrationTests extends BaseEffFunSuite:
 
       val use = laterRefs.head.spanOpt.getOrElse(fail("Expected later reference span"))
       assertEquals(
-        AstLookup.findDefinitionAt(state.module, use.start.line, use.start.col),
+        AstLookup.findDefinitionAt(state, use.start.line, use.start.col),
         good.spanOpt.toList
       )
       val failed = spanOf(source, "wrong ").start
-      assertEquals(AstLookup.findDefinitionAt(state.module, failed.line, failed.col), Nil)
+      assertEquals(AstLookup.findDefinitionAt(state, failed.line, failed.col), Nil)
       assertEquals(
         AstLookup.findReferencesAt(
           state,

@@ -314,7 +314,7 @@ class ParseTypeErrorTests extends BaseEffFunSuite:
       assert(diagnostics.forall(_.severity == DiagnosticSeverity.Error))
       assertEquals(AstLookup.formatType(malformed.some), "malformed type")
       assertEquals(
-        AstLookup.findDefinitionAt(result.module, errorSpan.start.line, errorSpan.start.col),
+        AstLookup.findDefinitionAt(result, errorSpan.start.line, errorSpan.start.col),
         Nil
       )
       assertEquals(

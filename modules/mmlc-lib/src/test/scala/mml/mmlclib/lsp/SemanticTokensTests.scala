@@ -79,7 +79,8 @@ let result = ((identity): Number -> Number) 1;"""
       ";;"
     ).mkString("\n")
 
-    semNotFailed(code).map { module =>
+    semStateNotFailed(code).map { state =>
+      val module = state.module
       val tokens = decodeTokens(SemanticTokens.compute(module))
       assertEquals(tokens.filter(_.line == 2), List(DecodedToken(2, 3, 5, TokenType.Parameter)))
       assertEquals(tokens.filter(_.line == 5), List(DecodedToken(5, 3, 4, TokenType.String)))
@@ -88,7 +89,7 @@ let result = ((identity): Number -> Number) 1;"""
       assertEquals(reference.span, Some(SrcSpan(SrcPoint(2, 3, 29), SrcPoint(2, 8, 34))))
       assertEquals(AstLookup.formatType(reference.typeSpec), "Int")
       assertEquals(
-        AstLookup.findDefinitionAt(module, 2, 3),
+        AstLookup.findDefinitionAt(state, 2, 3),
         List(SrcSpan(SrcPoint(1, 9, 8), SrcPoint(1, 19, 18)))
       )
       val literal = AstLookup.findAt(module, 5, 3).getOrElse(fail("Expected string literal"))
@@ -98,8 +99,14 @@ let result = ((identity): Number -> Number) 1;"""
       val punctuationAndTrivia = List((2, 8), (2, 13), (2, 14), (5, 7), (5, 8))
       punctuationAndTrivia.foreach { (line, col) =>
         assertEquals(AstLookup.findAt(module, line, col), None, s"Lookup at $line:$col")
+      }
+      assertEquals(
+        AstLookup.findDefinitionAt(state, 2, 8),
+        List(SrcSpan(SrcPoint(1, 9, 8), SrcPoint(1, 19, 18)))
+      )
+      punctuationAndTrivia.filterNot(_ == (2, 8)).foreach { (line, col) =>
         assertEquals(
-          AstLookup.findDefinitionAt(module, line, col),
+          AstLookup.findDefinitionAt(state, line, col),
           Nil,
           s"Definition at $line:$col"
         )
@@ -116,7 +123,8 @@ let result = ((identity): Number -> Number) 1;"""
         partial 1;
       ;
     """
-    semNotFailed(code).map { module =>
+    semStateNotFailed(code).map { state =>
+      val module = state.module
       val definition = module.members
         .collectFirst {
           case binding: Bnd if binding.name == "text" => binding
@@ -136,7 +144,7 @@ let result = ((identity): Number -> Number) 1;"""
         Some("text")
       )
       assertEquals(
-        AstLookup.findDefinitionAt(module, span.start.line, span.start.col),
+        AstLookup.findDefinitionAt(state, span.start.line, span.start.col),
         definition.nameNode.spanOpt.toList
       )
     }

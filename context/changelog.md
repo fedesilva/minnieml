@@ -4,6 +4,10 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-11-05
 
+- Navigate protocol calls to their signatures, list concrete implementations, and find references
+  scoped to an instance or member in VS Code, Zed, and Neovim. Support functions and operators,
+  pending editor changes, and chained navigation from Zed's selected destination names.
+
 - Represent compiler failures with typed reasons and structured context across parsing, semantics,
   ownership, closures, code generation, and tool execution. Share message wording across CLI,
   editor diagnostics, and plain API output while preserving nested errors and source evidence.

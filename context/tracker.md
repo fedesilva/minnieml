@@ -21,13 +21,6 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 
 ## Active Tasks
 
-### Protocol navigation
-
-- **Tracker:** [Extend LSP navigation for protocols](tasks/lsp-protocol-navigation.md)
-- **Status:** planned
-- **Current focus:** After Protocols: calls to signatures, protocols to implementations,
-  and instances or their members to references.
-
 ### Allow globals at owning boundaries without cloning
 
 - **Tracker:** [Allow globals at owning boundaries without cloning](tasks/global-owning-boundaries.md)

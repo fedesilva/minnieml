@@ -46,8 +46,7 @@ let anotherInteger = inspect 2;"""
       val integerUse         = SrcSpan(SrcPoint(6, 15, 171), SrcPoint(6, 22, 178))
       val booleanUse         = SrcSpan(SrcPoint(7, 15, 196), SrcPoint(7, 22, 203))
       val anotherIntUse      = SrcSpan(SrcPoint(8, 22, 231), SrcPoint(8, 29, 238))
-      val integerDeclaration = AstLookup.findDefinitionAt(state.module, 6, 15)
-      assertEquals(integerDeclaration.size, 1)
+      val integerDeclaration = List(SrcSpan(SrcPoint(4, 27, 80), SrcPoint(4, 34, 87)))
 
       assertEquals(
         AstLookup.findReferencesAt(state, 4, 27, includeDeclaration = false),
@@ -91,7 +90,7 @@ let result = ((identity): Number -> Number) 1;"""
         List(parameterType, resultType)
       )
       assertEquals(
-        AstLookup.findDefinitionAt(module, 3, 37),
+        AstLookup.findDefinitionAt(state, 3, 37),
         List(spanOrFail(alias, "Number alias"))
       )
     }

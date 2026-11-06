@@ -31,7 +31,7 @@ lspconfig.mml.setup({})
 -- ============================================================================
 
 local function get_mml_client()
-  local clients = vim.lsp.get_clients({ name = 'mml' })
+  local clients = vim.lsp.get_clients({ name = 'mml', bufnr = 0 })
   if #clients == 0 then
     vim.notify('MML LSP server not attached', vim.log.levels.WARN)
     return nil
@@ -74,6 +74,11 @@ local function mml_restart()
   vim.notify('MML LSP server restarting...', vim.log.levels.INFO)
 end
 
+local function mml_navigate(method)
+  if not get_mml_client() then return end
+  vim.lsp.buf[method]()
+end
+
 -- ============================================================================
 -- User Commands
 -- ============================================================================
@@ -84,6 +89,9 @@ vim.api.nvim_create_user_command('MmlCompileLib', function() mml_execute_command
 vim.api.nvim_create_user_command('MmlClean', function() mml_execute_command('mml.server.clean', 'Clean') end, { desc = 'Clean MML build directory' })
 vim.api.nvim_create_user_command('MmlAst', function() mml_execute_command('mml.server.ast', 'AST') end, { desc = 'Show MML AST' })
 vim.api.nvim_create_user_command('MmlIr', function() mml_execute_command('mml.server.ir', 'IR') end, { desc = 'Show MML IR' })
+vim.api.nvim_create_user_command('MmlDefinition', function() mml_navigate('definition') end, { desc = 'Go to definition or protocol signature' })
+vim.api.nvim_create_user_command('MmlImplementation', function() mml_navigate('implementation') end, { desc = 'Go to protocol implementations' })
+vim.api.nvim_create_user_command('MmlReferences', function() mml_navigate('references') end, { desc = 'Find references to the selected declaration' })
 
 -- ============================================================================
 -- Keybindings (buffer-local, set on LspAttach for mml filetype)
@@ -93,6 +101,8 @@ vim.api.nvim_create_autocmd('LspAttach', {
   group = vim.api.nvim_create_augroup('MmlLspKeybindings', { clear = true }),
   callback = function(args)
     if vim.bo[args.buf].filetype ~= 'mml' then return end
+    local client = vim.lsp.get_client_by_id(args.data.client_id)
+    if not client or client.name ~= 'mml' then return end
 
     local opts = function(desc) return { buffer = args.buf, desc = desc } end
 
@@ -102,5 +112,8 @@ vim.api.nvim_create_autocmd('LspAttach', {
     vim.keymap.set('n', '<leader>mK',   function() mml_execute_command('mml.server.clean', 'Clean') end,          opts('MML: Clean'))
     vim.keymap.set('n', '<leader>ma',   function() mml_execute_command('mml.server.ast', 'AST') end,              opts('MML: Show AST'))
     vim.keymap.set('n', '<leader>mi',   function() mml_execute_command('mml.server.ir', 'IR') end,                opts('MML: Show IR'))
+    vim.keymap.set('n', '<leader>mgd', function() mml_navigate('definition') end, opts('MML: Go to definition'))
+    vim.keymap.set('n', '<leader>mgi', function() mml_navigate('implementation') end, opts('MML: Go to implementation'))
+    vim.keymap.set('n', '<leader>mgr', function() mml_navigate('references') end, opts('MML: Find references'))
   end,
 })

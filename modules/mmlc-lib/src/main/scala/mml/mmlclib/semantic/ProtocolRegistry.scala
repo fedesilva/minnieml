@@ -133,6 +133,21 @@ final case class ProtocolRegistry private (
   def memberBindingIds(signatureId: String): Set[String] =
     memberBindings.collect { case ((_, id), bindingId) if id == signatureId => bindingId }.toSet
 
+  /** The required signature implemented by a concrete member binding. */
+  def signatureIdForBinding(bindingId: String): Option[String] =
+    memberBindings.collectFirst { case ((_, signatureId), id) if id == bindingId => signatureId }
+
+  /** Registered, usable instances of a protocol. Rejected declarations supply no implementations.
+    */
+  def instanceIds(protocolId: String): Set[String] =
+    instanceKeys.collect {
+      case (id, key) if key.protocolId == protocolId && !failedInstances.contains(id) => id
+    }.toSet
+
+  /** Executable members belonging to one concrete instance. */
+  def instanceMemberBindingIds(instanceId: String): Set[String] =
+    memberBindings.collect { case ((id, _), bindingId) if id == instanceId => bindingId }.toSet
+
   /** Read a registered protocol from the supplied index. An indexed but unregistered protocol
     * returns MissingProtocol; a registered ID whose node is absent returns MissingNode.
     */

@@ -2,6 +2,7 @@ package mml.mmlclib.lsp
 
 import cats.effect.IO
 import mml.mmlclib.api.CompilerApi
+import mml.mmlclib.ast.SrcSpan
 import mml.mmlclib.codegen.CompilationMode
 import mml.mmlclib.compiler.{Compilation, CompilerConfig, CompilerState}
 import org.typelevel.log4cats.Logger
@@ -103,10 +104,13 @@ class LspHandler(
                 )
                 .as(state)
         }
-      case "textDocument/definition" =>
+      case "textDocument/definition" | "textDocument/implementation" =>
         requireInitialized(req.id, state) {
+          val lookup: (CompilerState, Int, Int) => List[SrcSpan] =
+            if req.method == "textDocument/definition" then AstLookup.findDefinitionAt
+            else AstLookup.findImplementationsAt
           req.params match
-            case Some(params) => handleDefinition(req.id, params).as(state)
+            case Some(params) => handleNavigation(req.id, params, req.method, lookup).as(state)
             case None =>
               JsonRpc
                 .writeError(
@@ -210,6 +214,7 @@ class LspHandler(
       val capabilities = ServerCapabilities.toJson(
         hoverProvider           = true,
         definitionProvider      = true,
+        implementationProvider  = true,
         referencesProvider      = true,
         workspaceSymbolProvider = true,
         textDocumentSync        = 1,
@@ -284,10 +289,16 @@ class LspHandler(
               sendResponse(id, Hover.toJson(hover))
       }
 
-  private def handleDefinition(id: ujson.Value, params: ujson.Value): IO[Unit] =
+  /** Definition and implementation queries share position decoding and location responses. */
+  private def handleNavigation(
+    id:     ujson.Value,
+    params: ujson.Value,
+    method: String,
+    lookup: (CompilerState, Int, Int) => List[SrcSpan]
+  ): IO[Unit] =
     val pos = TextDocumentPositionParams.fromJson(params)
     logger.debug(
-      s"definition: ${pos.textDocument.uri} ${pos.position.line}:${pos.position.character}"
+      s"$method: ${pos.textDocument.uri} ${pos.position.line}:${pos.position.character}"
     ) *>
       documentManager.get(pos.textDocument.uri).flatMap {
         case None =>
@@ -295,7 +306,7 @@ class LspHandler(
         case Some(docState) =>
           val line  = pos.position.line + 1
           val col   = pos.position.character + 1
-          val spans = AstLookup.findDefinitionAt(docState.state.module, line, col)
+          val spans = lookup(docState.state, line, col)
           if spans.isEmpty then sendResponse(id, ujson.Null)
           else
             val locations =

@@ -137,7 +137,12 @@ operator regardless of arity. Registry associations remain the authority for con
 Entry-point validation and emission share a lookup that excludes lowered instance member IDs:
 a protocol member named `main` does not supply the executable's entry point. Editor reference
 search uses registry associations to find selected calls across all implementations of a signature;
-searching a concrete member retains that implementation's scope.
+searching a concrete member retains that implementation's scope. Searching an instance's protocol
+name finds calls to any of that instance's members; selecting its concrete type retains ordinary
+type navigation. Definition requests on selected protocol calls lead to the required signature.
+Implementation requests on a protocol lead to written instance headers, and requests on a signature
+lead to its concrete member declarations. These editor projections use the registry's binding,
+signature, and instance IDs without changing the selected executable target.
 
 **Bnd with BindingMeta**: Functions and operators are represented as `Bnd` nodes containing a `Lambda` body and `BindingMeta`:
 ```scala
@@ -332,8 +337,10 @@ not assign IDs, remap references, or refresh type information stored on referenc
 Editor navigation keeps its selection and recovery rules in `lsp.AstLookup`. It uses
 `ast.queries.SourceQueries` for inclusive-start, exclusive-end span containment and positive
 source coordinates. Hiding generated references, choosing the innermost node, and mapping a
-constructor to its source struct remain editor decisions. Field-owner lookup uses TypeQueries
-for resolved aliases, including cached chains and grouped types. When a reference lacks an indexed
+constructor to its source struct remain editor decisions. Navigation also accepts the caret at
+the end of a written name selected by an editor, while preferring a token under that caret.
+Hover and source-span containment retain their exclusive-end semantics. Field-owner lookup uses
+TypeQueries for resolved aliases, including cached chains and grouped types. When a reference lacks an indexed
 declaration, the editor can recover the first module declaration with the source name; it guards
 those recovered aliases against cycles. An indexed non-struct declaration does not fall through
 to an unrelated same-name struct. Protocol reference expansion still uses the authoritative registry.

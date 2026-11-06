@@ -124,7 +124,7 @@ class ProtocolCheckerTests extends BaseEffFunSuite:
         Some("value")
       )
       assertEquals(
-        AstLookup.findDefinitionAt(result.module, paramAt.line, paramAt.col),
+        AstLookup.findDefinitionAt(result, paramAt.line, paramAt.col),
         param.spanOpt.toList
       )
     }

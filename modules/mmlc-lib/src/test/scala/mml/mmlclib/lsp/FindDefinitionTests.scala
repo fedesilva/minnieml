@@ -1,6 +1,8 @@
 package mml.mmlclib.lsp
 
 import mml.mmlclib.ast.*
+import mml.mmlclib.compiler.{CompilerConfig, CompilerState}
+import mml.mmlclib.parser.SourceInfo
 import mml.mmlclib.test.BaseEffFunSuite
 
 class FindDefinitionTests extends BaseEffFunSuite:
@@ -17,7 +19,8 @@ class FindDefinitionTests extends BaseEffFunSuite:
       ;
       """
 
-    semNotFailed(code).map { m =>
+    semStateNotFailed(code).map { state =>
+      val m = state.module
       val mainBnd = m.members
         .collectFirst { case b: Bnd if b.name == "main" => b }
         .getOrElse(fail("Could not find 'main'"))
@@ -36,14 +39,14 @@ class FindDefinitionTests extends BaseEffFunSuite:
 
       val xRef       = xRefOpt.get
       val xRefSpan   = spanOrFail(xRef, "ref 'x'")
-      val xDefs      = AstLookup.findDefinitionAt(m, xRefSpan.start.line, xRefSpan.start.col)
+      val xDefs      = AstLookup.findDefinitionAt(state, xRefSpan.start.line, xRefSpan.start.col)
       val xParam     = xParamOpt.get
       val xParamSpan = spanOrFail(xParam, "param 'x'")
       assert(xDefs.contains(xParamSpan), s"Missing param span for 'x': $xDefs")
 
       val yRef       = yRefOpt.get
       val yRefSpan   = spanOrFail(yRef, "ref 'y'")
-      val yDefs      = AstLookup.findDefinitionAt(m, yRefSpan.start.line, yRefSpan.start.col)
+      val yDefs      = AstLookup.findDefinitionAt(state, yRefSpan.start.line, yRefSpan.start.col)
       val yParam     = yParamOpt.get
       val yParamSpan = spanOrFail(yParam, "param 'y'")
       assert(yDefs.contains(yParamSpan), s"Missing param span for 'y': $yDefs")
@@ -136,7 +139,8 @@ class FindDefinitionTests extends BaseEffFunSuite:
       fn make(a: Int, b: Int): Pair = Pair a b;;
       """
 
-    semNotFailed(code).map { m =>
+    semStateNotFailed(code).map { state =>
+      val m         = state.module
       val structOpt = m.members.collectFirst { case ts: TypeStruct => ts }
       assert(structOpt.isDefined, "Could not find struct 'Pair'")
       val struct = structOpt.get
@@ -151,7 +155,7 @@ class FindDefinitionTests extends BaseEffFunSuite:
 
       val ref            = ctorRef.get
       val refSpan        = spanOrFail(ref, "constructor ref 'Pair'")
-      val defs           = AstLookup.findDefinitionAt(m, refSpan.start.line, refSpan.start.col)
+      val defs           = AstLookup.findDefinitionAt(state, refSpan.start.line, refSpan.start.col)
       val structNameSpan = spanOrFail(struct.nameNode, "struct 'Pair' name")
       assert(
         defs.contains(structNameSpan),
@@ -175,7 +179,8 @@ class FindDefinitionTests extends BaseEffFunSuite:
       ;
       """
 
-    semNotFailed(code).map { m =>
+    semStateNotFailed(code).map { state =>
+      val m         = state.module
       val structOpt = m.members.collectFirst { case ts: TypeStruct if ts.name == "Address" => ts }
       assert(structOpt.isDefined, "Could not find struct 'Address'")
       val struct = structOpt.get
@@ -190,7 +195,7 @@ class FindDefinitionTests extends BaseEffFunSuite:
 
       val ref            = ctorRef.get
       val refSpan        = spanOrFail(ref, "constructor ref 'Address'")
-      val defs           = AstLookup.findDefinitionAt(m, refSpan.start.line, refSpan.start.col)
+      val defs           = AstLookup.findDefinitionAt(state, refSpan.start.line, refSpan.start.col)
       val structNameSpan = spanOrFail(struct.nameNode, "struct 'Address' name")
       assert(
         defs.contains(structNameSpan),
@@ -213,7 +218,8 @@ class FindDefinitionTests extends BaseEffFunSuite:
       ;
       """
 
-    semNotFailed(code).map { m =>
+    semStateNotFailed(code).map { state =>
+      val m = state.module
       val mainBnd = m.members
         .collectFirst { case b: Bnd if b.meta.exists(_.originalName == "main") => b }
         .getOrElse(fail("Could not find 'main'"))
@@ -225,7 +231,7 @@ class FindDefinitionTests extends BaseEffFunSuite:
 
       val ref     = stdlibRef.get
       val refSpan = spanOrFail(ref, "ref 'int_to_str'")
-      val defs    = AstLookup.findDefinitionAt(m, refSpan.start.line, refSpan.start.col)
+      val defs    = AstLookup.findDefinitionAt(state, refSpan.start.line, refSpan.start.col)
       assertEquals(
         defs,
         Nil,
@@ -252,7 +258,8 @@ class FindDefinitionTests extends BaseEffFunSuite:
       let stored = 1;
       """
 
-    semNotFailed(code).map { module =>
+    semStateNotFailed(code).map { state =>
+      val module = state.module
       val alias = module.members
         .collectFirst {
           case value: TypeAlias if value.source.isFromSource =>
@@ -275,7 +282,7 @@ class FindDefinitionTests extends BaseEffFunSuite:
       declarations.foreach { declaration =>
         val name = spanOrFail(declaration.nameNode, "written declaration name")
         assertEquals(
-          AstLookup.findDefinitionAt(module, name.start.line, name.start.col),
+          AstLookup.findDefinitionAt(state, name.start.line, name.start.col),
           List(spanOrFail(declaration, "declaration"))
         )
       }
@@ -284,7 +291,7 @@ class FindDefinitionTests extends BaseEffFunSuite:
       typeReferences.foreach { reference =>
         val span = spanOrFail(reference, "written type reference")
         assertEquals(
-          AstLookup.findDefinitionAt(module, span.start.line, span.start.col),
+          AstLookup.findDefinitionAt(state, span.start.line, span.start.col),
           List(spanOrFail(alias, "resolved type declaration"))
         )
       }
@@ -294,7 +301,7 @@ class FindDefinitionTests extends BaseEffFunSuite:
       assertEquals(valueReferences.size, 1)
       val value = spanOrFail(valueReferences.head, "parameter use")
       assertEquals(
-        AstLookup.findDefinitionAt(module, value.start.line, value.start.col),
+        AstLookup.findDefinitionAt(state, value.start.line, value.start.col),
         List(spanOrFail(parameter, "resolved parameter"))
       )
     }
@@ -303,6 +310,7 @@ class FindDefinitionTests extends BaseEffFunSuite:
   test("malformed alias targets and struct fields do not resolve to enclosing declarations") {
     val code = "type Value = Int; struct Box { field: Int };"
     parseNotFailed(code).map { module =>
+      val state = CompilerState.empty(module, SourceInfo(code), CompilerConfig.default)
       val alias = module.members
         .collectFirst { case value: TypeAlias => value }
         .getOrElse(fail("Expected alias"))
@@ -321,7 +329,11 @@ class FindDefinitionTests extends BaseEffFunSuite:
 
       List(failedAlias, failedField).foreach { error =>
         val span = spanOrFail(error, "malformed type")
-        assertEquals(AstLookup.findDefinitionAt(recovered, span.start.line, span.start.col), Nil)
+        assertEquals(
+          AstLookup
+            .findDefinitionAt(state.copy(module = recovered), span.start.line, span.start.col),
+          Nil
+        )
       }
     }
   }

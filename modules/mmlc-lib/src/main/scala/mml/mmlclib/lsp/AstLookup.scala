@@ -19,19 +19,80 @@ object AstLookup:
   def findAt(module: Module, line: Int, col: Int): Option[LookupResult] =
     findInMembers(module.members, line, col)
 
-  /** Find the definition span for the symbol or type at the given position. */
-  def findDefinitionAt(module: Module, line: Int, col: Int): List[SrcSpan] =
-    if isNonSourceRefAt(module, line, col) then Nil
-    else
-      val spans = findDefinitionInMembers(module.members, line, col, module)
-      spans.filter(SourceQueries.hasCoordinates).distinct
+  /** Find a written definition. Selected protocol calls lead to their required signature. */
+  def findDefinitionAt(state: CompilerState, line: Int, col: Int): List[SrcSpan] =
 
-  private def isNonSourceRefAt(module: Module, line: Int, col: Int): Boolean =
-    findInnermostRefAt(module, line, col).exists { ref =>
-      ref.qualifier.isEmpty && ref.resolvedId
-        .flatMap(module.resolvables.lookup)
-        .exists(resolvable => spanForResolvable(resolvable, module).isEmpty)
-    }
+    val module = state.module
+    val column = navigationColumn(state, line, col)
+    val ref    = findInnermostRefAt(module, line, column)
+    val signature = ref
+      .filter(_.qualifier.isEmpty)
+      .flatMap(_.resolvedId)
+      .flatMap(state.protocols.signatureIdForBinding)
+      .flatMap(module.resolvables.lookup)
+      .collect { case signature: ProtocolSignature => signature }
+
+    val spans = signature match
+      case Some(declaration) => declaration.nameNode.spanOpt.toList
+      case None if ref.exists(isNonSourceRef(_, module)) => Nil
+      case None => findDefinitionInMembers(module.members, line, column, module)
+
+    sourceOrderedSpans(spans)
+
+  /** Find instance headers for a protocol, or concrete members for a protocol signature. */
+  def findImplementationsAt(state: CompilerState, line: Int, col: Int): List[SrcSpan] =
+
+    val module = state.module
+    val target =
+      findReferenceTargetInMembers(module.members, line, navigationColumn(state, line, col), module)
+    val spans = target match
+      case Some(value: ValueTarget) =>
+        val signatureId = state.protocols.signatureIdForBinding(value.id).getOrElse(value.id)
+        val instanceIds = state.protocols.instanceIds(value.id)
+        val bindingIds  = state.protocols.memberBindingIds(signatureId)
+        module.members.flatMap {
+          case instance: ProtocolInstance if instance.id.exists(instanceIds.contains) =>
+            instance.protocol.nameNode.spanOpt.toList
+          case binding: Bnd if binding.id.exists(bindingIds.contains) =>
+            spanForResolvable(binding, module).toList
+          case _ => Nil
+        }
+      case _ => Nil
+
+    sourceOrderedSpans(spans)
+
+  /** Semantic processing can reorder declarations; editor results follow written source order. */
+  private def sourceOrderedSpans(spans: List[SrcSpan]): List[SrcSpan] =
+    spans.filter(SourceQueries.hasCoordinates).distinct.sortBy(_.start.index)
+
+  /** A selected navigation destination leaves the caret at its exclusive end in some editors.
+    * Prefer the token under the caret; otherwise accept the immediately preceding written name.
+    * Source text distinguishes names from enclosing declaration spans returned by hover lookup.
+    */
+  private def navigationColumn(state: CompilerState, line: Int, col: Int): Int =
+
+    def writtenToken(result: LookupResult): Option[SrcSpan] =
+      result.span.filter { span =>
+        result.name.forall { name =>
+          state.sourceInfo.text.slice(span.end.index - name.length, span.end.index) == name
+        }
+      }
+
+    if col <= 1 || findAt(state.module, line, col).flatMap(writtenToken).nonEmpty then col
+    else
+      val precedingName = for
+        result <- findAt(state.module, line, col - 1)
+        if result.name.nonEmpty
+        span <- writtenToken(result)
+        if span.end.line == line && span.end.col == col
+      yield col - 1
+
+      precedingName.getOrElse(col)
+
+  private def isNonSourceRef(ref: Ref, module: Module): Boolean =
+    ref.qualifier.isEmpty && ref.resolvedId
+      .flatMap(module.resolvables.lookup)
+      .exists(resolvable => spanForResolvable(resolvable, module).isEmpty)
 
   private def findInnermostRefAt(module: Module, line: Int, col: Int): Option[Ref] =
     val refs = module.members.flatMap(findRefsInMemberAt(_, line, col))
@@ -96,8 +157,9 @@ object AstLookup:
         findRefsInExprAt(lambda.body, line, col)
 
   /** Find references to a symbol or type. A protocol signature includes calls to each concrete
-    * implementation. A concrete member declaration or selected call keeps its instance scope.
-    * includeDeclaration adds the selected declaration, not the other implementations' declarations.
+    * implementation. An instance header includes calls to all its members; a concrete member
+    * declaration or selected call keeps that member's scope. includeDeclaration adds the selected
+    * declaration, not the other implementations' declarations.
     */
   def findReferencesAt(
     state:              CompilerState,
@@ -106,17 +168,21 @@ object AstLookup:
     includeDeclaration: Boolean
   ): List[SrcSpan] =
     val module = state.module
-    val target = findReferenceTargetInMembers(module.members, line, col, module)
-    target
+    val target =
+      findReferenceTargetInMembers(module.members, line, navigationColumn(state, line, col), module)
+    val spans = target
       .map {
         case value: ValueTarget =>
-          value.copy(implementationIds = state.protocols.memberBindingIds(value.id))
+          value.copy(implementationIds =
+            state.protocols.memberBindingIds(value.id) ++
+              state.protocols.instanceMemberBindingIds(value.id)
+          )
         case other => other
       }
       .map(collectReferences(module, _, includeDeclaration))
       .getOrElse(Nil)
-      .filter(SourceQueries.hasCoordinates)
-      .distinct
+
+    sourceOrderedSpans(spans)
 
   private def containsOrInvalid(span: SrcSpan, line: Int, col: Int): Boolean =
     !SourceQueries.hasCoordinates(span) || SourceQueries.containsPosition(span, line, col)
@@ -153,7 +219,7 @@ object AstLookup:
         containsPosition(instance.protocol, line, col) ||
         containsPosition(instance.concreteType, line, col)
       case bnd: Bnd =>
-        // Bnd span is just the name, but we also need to check value span for params/body
+        // Function/operator spans cover names; value spans include parameters and bodies.
         containsPosition(bnd, line, col) || containsPosition(bnd.value, line, col)
       case fs: FromSource => fs.source.spanOpt.exists(SourceQueries.containsPosition(_, line, col))
       case _ => false
@@ -179,9 +245,7 @@ object AstLookup:
           )
         else findInMembers(instance.members.map(_.binding), line, col)
       case bnd: Bnd =>
-        // Only fall back to bnd info if position is OUTSIDE the value's span
-        // (i.e., on the binding name itself). If inside value span, return what findInExpr returns
-        // (None for comments/whitespace).
+        // Member let spans include trivia outside the value; those positions return binding info.
         if containsPosition(bnd.value, line, col) then findInExpr(bnd.value, line, col)
         else if bnd.source == SourceOrigin.Synth then None
         else
@@ -763,7 +827,7 @@ object AstLookup:
             .orElse(findReferenceTargetInType(signature.returnType, line, col, module))
       case instance: ProtocolInstance =>
         if containsPosition(instance.protocol.nameNode, line, col) then
-          instance.protocol.resolvedId.map(ValueTarget(_))
+          instance.id.map(ValueTarget(_))
         else
           findReferenceTargetInType(instance.concreteType, line, col, module)
             .orElse(
@@ -1075,6 +1139,8 @@ object AstLookup:
           collectReferencesInType(signature.returnType, target, module)
       case instance: ProtocolInstance =>
         val reference = target match
+          case value: ValueTarget if includeDeclaration && instance.id.contains(value.id) =>
+            instance.protocol.nameNode.spanOpt.toList
           case value: ValueTarget if instance.protocol.resolvedId.contains(value.id) =>
             instance.protocol.nameNode.spanOpt.toList
           case _ => Nil

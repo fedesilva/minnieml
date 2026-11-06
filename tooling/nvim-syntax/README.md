@@ -8,6 +8,7 @@ Syntax highlighting and LSP support for MinnieML (`.mml`) files in Neovim.
   - Diagnostics (parse and semantic errors)
   - Hover (type information)
   - Go to definition
+  - Go to implementation
   - Find references
   - Semantic tokens (rich syntax highlighting)
 
@@ -23,8 +24,8 @@ Syntax highlighting and LSP support for MinnieML (`.mml`) files in Neovim.
 - **LSP commands** for compiling, cleaning, AST/IR generation, and server restart
 
 - **File type detection** for `.mml` files
-- **No dependencies** - pure Vim script implementation
-- **Compatible** with Neovim and Vim 7.0+
+- Syntax highlighting works with Neovim and Vim 7.0+; navigation requires Neovim's LSP client
+  and nvim-lspconfig
 
 ## Installation
 
@@ -39,10 +40,12 @@ Copy the plugin files to your Neovim configuration directory:
 # Create directories if they don't exist
 mkdir -p ~/.config/nvim/ftdetect
 mkdir -p ~/.config/nvim/syntax
+mkdir -p ~/.config/nvim/after/plugin
 
 # Copy the files
 cp ftdetect/mml.vim ~/.config/nvim/ftdetect/
 cp syntax/mml.vim ~/.config/nvim/syntax/
+cp after/plugin/mml_lsp.lua ~/.config/nvim/after/plugin/
 ```
 
 No restart required - Neovim will automatically load the syntax when you open a `.mml` file.
@@ -102,6 +105,9 @@ The following user commands are available when the MML LSP server is running:
 | `:MmlClean` | Clean the build directory |
 | `:MmlAst` | Generate and display the AST |
 | `:MmlIr` | Generate and display LLVM IR |
+| `:MmlDefinition` | Go to a definition or protocol-member signature |
+| `:MmlImplementation` | List a protocol's instances or a signature's implementations |
+| `:MmlReferences` | Find references to the selected declaration |
 
 ## Keybindings
 
@@ -115,6 +121,21 @@ Default keybindings are set buffer-locally when the MML LSP server attaches:
 | `<leader>mK` | `:MmlClean` | Clean build directory |
 | `<leader>ma` | `:MmlAst` | Show AST |
 | `<leader>mi` | `:MmlIr` | Show IR |
+| `<leader>mgd` | `:MmlDefinition` | Go to definition |
+| `<leader>mgi` | `:MmlImplementation` | Go to implementation |
+| `<leader>mgr` | `:MmlReferences` | Find references |
+
+Navigation delegates to Neovim's native LSP actions and location lists. It uses the
+MML server attached to the current buffer. Definition on a protocol-member call
+opens its signature. Implementation on a protocol name lists its concrete instances;
+on a signature it lists the corresponding members. References on an instance header
+finds uses of its members; on an individual member it keeps that implementation's
+scope. Signature references include all instances. Functions and operators follow
+the same rules.
+
+Open [protocol-functions.mml](../../mml/samples/protocol-functions.mml) and
+[protocol-operators.mml](../../mml/samples/protocol-operators.mml) to exercise these
+actions. Restart the server after updating `mmlc`.
 
 ## Usage
 
@@ -131,6 +152,32 @@ Open a `.mml` file in Neovim and run:
 You should see: `filetype=mml`
 
 ### Testing
+
+From the repository root, verify command and keymap wiring without a running server:
+
+```sh
+NVIM_LOG_FILE=/dev/null nvim --headless -u NONE -l tooling/nvim-syntax/test/navigation.lua
+```
+
+This checks all three native navigation calls, MML-client attachment, and buffer-local
+maps. Compiler navigation destinations are covered by the compiler's LSP tests.
+
+After publishing the compiler, run `python3 tooling/test-protocol-navigation.py` from
+the repository root. This starts the same `mmlc lsp` command as the plugin and verifies
+its capabilities and exact navigation responses. Use `--compiler /path/to/mmlc` if
+your lspconfig setup specifies another compiler.
+
+Exercise the plugin through Neovim's real LSP client and native navigation UI with:
+
+```sh
+XDG_STATE_HOME="$PWD/build/nvim-test-state" NVIM_LOG_FILE=/dev/null \
+  nvim --headless -u NONE -l tooling/nvim-syntax/test/navigation-server.lua
+```
+
+The test uses the plugin's server command with Neovim's built-in client, checks exact
+cursor and quickfix destinations, and navigates after an unsaved source edit. Set
+`MMLC=/path/to/mmlc` to select another published compiler. Its lspconfig setup boundary
+is replaced by a small test adapter; native LSP requests and navigation are real.
 
 Open one of the sample files to see the syntax highlighting in action:
 

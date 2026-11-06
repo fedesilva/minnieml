@@ -397,7 +397,7 @@ class ProtocolParserTests extends BaseEffFunSuite:
         Some("left")
       )
       assertEquals(
-        AstLookup.findDefinitionAt(assigned, name.line, name.col),
+        AstLookup.findDefinitionAt(initial.copy(module = assigned), name.line, name.col),
         signature.nameNode.spanOpt.toList
       )
       val symbols = AstLookup.collectSymbols(assigned, "file:///protocol.mml")

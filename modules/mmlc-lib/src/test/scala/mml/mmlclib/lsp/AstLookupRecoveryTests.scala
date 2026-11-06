@@ -58,7 +58,7 @@ fn read(box: BoxAlias): Int = box.value;;"""
     val usePoint  = useSpan.end.copy(col = useSpan.end.col - 1)
 
     assertEquals(
-      AstLookup.findDefinitionAt(module, usePoint.line, usePoint.col),
+      AstLookup.findDefinitionAt(fixture.state.copy(module = module), usePoint.line, usePoint.col),
       List(fieldSpan)
     )
     assertEquals(
@@ -128,7 +128,10 @@ fn read(box: BoxAlias): Int = box.value;;"""
       )
       val point = span(fixture.access).end
 
-      assertEquals(AstLookup.findDefinitionAt(module, point.line, point.col - 1), Nil)
+      assertEquals(
+        AstLookup.findDefinitionAt(fixture.state.copy(module = module), point.line, point.col - 1),
+        Nil
+      )
       assertFieldNavigation(
         fixture,
         fixture.moduleWith(
@@ -148,7 +151,11 @@ fn read(box: BoxAlias): Int = box.value;;"""
 
       List(indexed, ResolvablesIndex()).foreach { index =>
         val module = fixture.moduleWith(owner, List(fixture.struct, alias), index)
-        assertEquals(AstLookup.findDefinitionAt(module, point.line, point.col - 1), Nil)
+        assertEquals(
+          AstLookup
+            .findDefinitionAt(fixture.state.copy(module = module), point.line, point.col - 1),
+          Nil
+        )
       }
     }
 
@@ -165,5 +172,8 @@ fn read(box: BoxAlias): Int = box.value;;"""
       val module = fixture.moduleWith(owner, List(fixture.struct), index)
       val point  = span(fixture.access).end
 
-      assertEquals(AstLookup.findDefinitionAt(module, point.line, point.col - 1), Nil)
+      assertEquals(
+        AstLookup.findDefinitionAt(fixture.state.copy(module = module), point.line, point.col - 1),
+        Nil
+      )
     }
