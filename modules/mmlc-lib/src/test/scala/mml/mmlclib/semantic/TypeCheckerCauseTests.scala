@@ -37,8 +37,12 @@ class TypeCheckerCauseTests extends BaseEffFunSuite:
       let downstream = identity alias;
     """).map { state =>
       val visible = state.diagnostics.visibleRecords
-      assertEquals(visible.size, 1, state.errors)
+      assertEquals(visible.size, 3, state.errors)
       assert(mismatch(visible.head), state.errors)
+      assertEquals(
+        visible.tail.map(record => diagnosticMessage(record.error)),
+        Vector("Cannot resolve type", "Cannot resolve type for argument")
+      )
       val root         = visible.head.id
       val broken       = binding(state.module, "broken")
       val alias        = binding(state.module, "alias")
@@ -207,7 +211,11 @@ class TypeCheckerCauseTests extends BaseEffFunSuite:
         val mismatches = visible.filter(mismatch)
         assertEquals(undefined.size, 1, state.errors.map(diagnosticMessage))
         assertEquals(mismatches.size, 1, state.errors.map(diagnosticMessage))
-        assertEquals(visible.size, 2, state.errors.map(diagnosticMessage))
+        assertEquals(visible.size, 3, state.errors.map(diagnosticMessage))
+        assertEquals(
+          visible.filter(_.causes.nonEmpty).map(record => diagnosticMessage(record.error)),
+          Vector("Cannot resolve type for 'target'")
+        )
         mismatches.head.error match
           case SemanticError.TypeCheckingError(error: TypeError.TypeMismatch) =>
             error.node match
@@ -224,7 +232,7 @@ class TypeCheckerCauseTests extends BaseEffFunSuite:
         val caller = binding(state.module, "caller")
         assertEquals(
           DiagnosticCauses.fromModule(state.module).knownRootsOf(caller.value).toSet,
-          visible.map(_.id).toSet
+          visible.filter(_.relation == DiagnosticRelation.Primary).map(_.id).toSet
         )
         assert(!ValueAvailability.fromModule(state.module).isAvailable(caller.value))
         assert(invalidNodes(caller.value).exists(_.typeSpec.isDefined))
@@ -269,8 +277,10 @@ class TypeCheckerCauseTests extends BaseEffFunSuite:
       val visible = state.diagnostics.visibleRecords
       val evidence =
         state.diagnostics.records.map(record => (record.id, record.error, record.relation))
-      assertEquals(visible.size, 1, evidence)
+      assertEquals(visible.size, 2, evidence)
       assert(mismatch(visible.head))
+      assertEquals(diagnosticMessage(visible.last.error), "Cannot resolve type for 'failed'")
+      assertEquals(visible.last.causes, Vector(visible.head.id))
       val failed = binding(state.module, "failed")
       visible.head.error match
         case SemanticError.TypeCheckingError(error: TypeError.TypeMismatch) =>

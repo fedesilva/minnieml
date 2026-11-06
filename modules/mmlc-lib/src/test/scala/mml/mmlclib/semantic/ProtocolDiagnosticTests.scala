@@ -83,26 +83,33 @@ class ProtocolDiagnosticTests extends BaseEffFunSuite:
                    |let result = 1 <+> 2 <+> 3;
                    |""".stripMargin
     checkedState(source).map { state =>
-      assertEquals(state.visibleErrors.size, 1)
+      assertEquals(state.visibleErrors.size, 3)
       assertEquals(
         Diagnostics.fromCompilerState(state).map(error => error.message -> error.range),
         List(
           "Operator '<+>' has conflicting precedence or associativity for the same arity" ->
-            Range(Position(1, 24), Position(1, 27))
+            Range(Position(1, 24), Position(1, 27)),
+          "Not enough type information to select '<+>'; add a type annotation" ->
+            Range(Position(2, 15), Position(2, 18)),
+          "Not enough type information to select '<+>'; add a type annotation" ->
+            Range(Position(2, 21), Position(2, 24))
         )
       )
     }
 
-  test("a conflicting prefix operator retains only its declaration diagnostic"):
+  test("a conflicting prefix operator retains its declaration and use diagnostics"):
     val source = """protocol First 'T = op !(value: 'T): 'T 95 right; ;
                    |protocol Second 'T = op !(value: 'T): 'T 80 right; ;
                    |let result = !1;
                    |""".stripMargin
     checkedState(source).map { state =>
-      assertEquals(state.visibleErrors.size, 1)
+      assertEquals(state.visibleErrors.size, 2)
       assertEquals(
         Diagnostics.fromCompilerState(state).map(_.message),
-        List("Operator '!' has conflicting precedence or associativity for the same arity")
+        List(
+          "Operator '!' has conflicting precedence or associativity for the same arity",
+          "Not enough type information to select '!'; add a type annotation"
+        )
       )
     }
 
@@ -134,12 +141,13 @@ class ProtocolDiagnosticTests extends BaseEffFunSuite:
                    |let result = 1 <+> missing;
                    |""".stripMargin
     checkedState(source).map { state =>
-      assertEquals(state.visibleErrors.size, 2)
+      assertEquals(state.visibleErrors.size, 3)
       assertEquals(
         Diagnostics.fromCompilerState(state).map(_.message).toSet,
         Set(
           "Undefined reference: 'missing'",
-          "Operator '<+>' has conflicting precedence or associativity for the same arity"
+          "Operator '<+>' has conflicting precedence or associativity for the same arity",
+          "Not enough type information to select '<+>'; add a type annotation"
         )
       )
     }
@@ -151,7 +159,7 @@ class ProtocolDiagnosticTests extends BaseEffFunSuite:
                    |let unrelated = 1 2;
                    |""".stripMargin
     checkedState(source).map { state =>
-      assertEquals(state.visibleErrors.size, 2)
+      assertEquals(state.visibleErrors.size, 3)
       val dangling = state.visibleErrors.collect { case error: SemanticError.DanglingTerms =>
         error
       }

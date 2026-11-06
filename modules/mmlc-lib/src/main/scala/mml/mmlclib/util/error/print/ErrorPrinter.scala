@@ -223,8 +223,9 @@ object ErrorPrinter:
         s"${Console.RED}${entryPointMessage(error)} at $location${Console.RESET}"
 
       case SemanticError.ProtocolErrorFound(error, phase) =>
-        val location = locationOf(error.source)
-        s"${Console.RED}${diagnosticMessage(error)} at $location${Console.RESET}\n" +
+        val location            = locationOf(error.source)
+        val (headline, details) = diagnosticMessage(error).span(_ != '\n')
+        s"${Console.RED}$headline at $location${Console.RESET}$details\n" +
           s"${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case SemanticError.VisibilityViolation(ref, decl, phase) =>

@@ -33,7 +33,8 @@ class OwnershipDiagnosticCauseTests extends BaseEffFunSuite:
   private def assertRootErrors(
     state:    CompilerState,
     record:   DiagnosticRecord,
-    expected: Vector[DiagnosticId]
+    expected: Vector[DiagnosticId],
+    visible:  Boolean = true
   ): Unit =
     assertEquals(record.relation, DiagnosticRelation.Consequence(expected))
     expected.foreach { id =>
@@ -41,7 +42,7 @@ class OwnershipDiagnosticCauseTests extends BaseEffFunSuite:
       assertEquals(root.relation, DiagnosticRelation.Primary)
       assert(state.visibleErrors.contains(root.error))
     }
-    assert(!state.visibleErrors.contains(record.error))
+    assertEquals(state.visibleErrors.contains(record.error), visible)
     assert(state.errors.contains(record.error))
 
   for independent <- List(false, true) do
@@ -73,11 +74,11 @@ class OwnershipDiagnosticCauseTests extends BaseEffFunSuite:
         val dependent = captures.filter(_._1.relation != DiagnosticRelation.Primary)
         assert(dependent.nonEmpty, state.errors)
         dependent.foreach { (record, _) => assertRootErrors(state, record, Vector(root.id)) }
-        val visible = captures.filter(_._1.relation == DiagnosticRelation.Primary)
-        assertEquals(visible.size, if independent then 1 else 0, state.errors)
+        val independentCaptures = captures.filter(_._1.relation == DiagnosticRelation.Primary)
+        assertEquals(independentCaptures.size, if independent then 1 else 0, state.errors)
         if independent then
           assertEquals(
-            visible.head._2.ref.spanOpt.map(_.start.index),
+            independentCaptures.head._2.ref.spanOpt.map(_.start.index),
             Some(source.indexOf("f 1 2"))
           )
       }
@@ -328,7 +329,7 @@ class OwnershipDiagnosticCauseTests extends BaseEffFunSuite:
         val errors = shapeRecords(state)
         assertEquals(errors.size, 1, state.errors)
         val record = errors.head._1
-        if evidence == "known" then assertRootErrors(state, record, roots)
+        if evidence == "known" then assertRootErrors(state, record, roots, visible = false)
         else
           assertEquals(record.relation, DiagnosticRelation.Primary)
           assert(state.visibleErrors.contains(record.error))

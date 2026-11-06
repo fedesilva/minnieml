@@ -106,7 +106,16 @@ class ElaborationRecoveryTests extends BaseEffFunSuite:
         !result.semanticErrors.exists(_.isInstanceOf[SemanticError.CapturedBorrowedHeapBinding]),
         result.semanticErrors
       )
-      assertEquals(result.visibleErrors.size, 2, result.visibleErrors)
+      assertEquals(result.visibleErrors.size, 3, result.visibleErrors)
+      val unresolved = result.visibleErrors.collect {
+        case SemanticError.TypeCheckingError(error: TypeError.UnresolvableType) => error
+      }
+      assertEquals(unresolved.size, 1)
+      val references = unresolved.head.node match
+        case lambda: Lambda => TermTraversal.collect(lambda.body) { case ref: Ref => ref }
+        case other => fail(s"Expected the unavailable captured result, got $other")
+      assertEquals(references.size, 1)
+      assert(references.head.resolvedId.nonEmpty)
     }
 
   List("missing", "true").foreach { argument =>

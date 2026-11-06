@@ -122,6 +122,10 @@ class DiagnosticPresentationTests extends BaseEffFunSuite:
     ).mkString("\n")
     val expectedSpan = SrcSpan(SrcPoint(2, 5, 15), SrcPoint(2, 18, 28))
     val message      = "Type mismatch: expected Int, got String"
+    val useMessage   = "Cannot resolve type for argument"
+    val useStart     = code.lastIndexOf("b;")
+    val sourceInfo   = SourceInfo(code)
+    val useSpan      = SrcSpan(sourceInfo.pointAt(useStart), sourceInfo.pointAt(useStart + 1))
 
     withSourceFixture(code, "binding-boundary.mml") { (path, config) =>
       for
@@ -130,7 +134,7 @@ class DiagnosticPresentationTests extends BaseEffFunSuite:
         exit <- CompilerApi.processAstOnly(path, config, text => output.update(_ :+ text))
         messages <- output.get
       yield
-        assertEquals(state.visibleErrors.map(diagnosticMessage), Vector(message))
+        assertEquals(state.visibleErrors.map(diagnosticMessage), Vector(message, useMessage))
         val roots = state.diagnostics.records.filter(_.relation == DiagnosticRelation.Primary)
         assertEquals(roots.size, 1)
         val root = roots.head
@@ -147,9 +151,12 @@ class DiagnosticPresentationTests extends BaseEffFunSuite:
         assert(consequences.forall(_.causes == Vector(root.id)), consequences)
 
         val diagnostics = Diagnostics.fromCompilerState(state)
-        assertEquals(diagnostics.map(_.message), List(message))
-        assertEquals(diagnostics.map(_.range), List(Range(Position(1, 4), Position(1, 17))))
-        assertEquals(diagnostics.map(_.severity), List(DiagnosticSeverity.Error))
+        assertEquals(diagnostics.map(_.message), List(message, useMessage))
+        assertEquals(
+          diagnostics.map(_.range),
+          List(Range(Position(1, 4), Position(1, 17)), Range.fromSrcSpan(useSpan))
+        )
+        assert(diagnostics.forall(_.severity == DiagnosticSeverity.Error))
 
         assertEquals(exit, ExitCode.Error)
         val rendered = messages.mkString("\n")
@@ -165,7 +172,7 @@ class DiagnosticPresentationTests extends BaseEffFunSuite:
         val highlighted = s"${Console.RED}${Console.BOLD}b: Int = \"2\";${Console.RESET}"
         assert(rendered.contains(highlighted), rendered)
         val commentLines = rendered.linesIterator.filter(_.contains(comment)).toList
-        assertEquals(commentLines.size, 1, rendered)
+        assert(commentLines.nonEmpty, rendered)
         assert(commentLines.forall(line => !line.contains(Console.RED)), rendered)
         assert(commentLines.forall(line => !line.contains(Console.BOLD)), rendered)
         assert(!rendered.contains("Invalid expression"), rendered)

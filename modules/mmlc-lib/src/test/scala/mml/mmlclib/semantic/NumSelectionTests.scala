@@ -486,7 +486,7 @@ class NumSelectionTests extends BaseEffFunSuite:
 
       result.visibleErrors match
         case Vector(
-              SemanticError.ProtocolErrorFound(ProtocolError.MissingInstance(ref, found, tpe), _)
+              SemanticError.ProtocolErrorFound(ProtocolError.MissingInstance(ref, found, tpe, _), _)
             ) =>
           assertEquals(ref.source, original.source)
           assertEquals(found.id, protocol.id)

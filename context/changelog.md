@@ -2,6 +2,16 @@
 
 Durable product changes belong here. Current task state belongs in task files.
 
+## 2026-11-06
+
+- Infer local protocol partial applications from initializer and later-call arguments together,
+  retaining constraints from every use. Preserve conflicting concrete types and their source sites.
+
+- Report protocol conflicts at the initializer and missing implementations at the affected calls.
+  Keep useful dependent diagnostics at distinct source uses in CLI and editor output, while
+  coalescing repeated reports and suppressing generated recovery noise. Preserve raw diagnostic
+  evidence and cause links.
+
 ## 2026-11-05
 
 - Navigate protocol calls to their signatures, list concrete implementations, and find references

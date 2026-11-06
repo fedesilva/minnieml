@@ -1,8 +1,9 @@
 package mml.mmlclib.errors
 
-import mml.mmlclib.ast.{SourceOrigin, SrcSpan}
+import mml.mmlclib.ast.{Ref, SourceOrigin, SrcSpan}
 import mml.mmlclib.compiler.{CompilerConfig, CompilerState}
 import mml.mmlclib.parser.SourceInfo
+import mml.mmlclib.semantic.{SemanticError, TypeError, UnresolvableTypeContext}
 import mml.mmlclib.test.BaseEffFunSuite
 
 class DiagnosticStoreTests extends BaseEffFunSuite:
@@ -12,6 +13,85 @@ class DiagnosticStoreTests extends BaseEffFunSuite:
     def message: String = "Diagnostic store fixture"
 
   private def failure(subject: String): CompilationError = FixtureError(subject)
+
+  private val locations = SourceInfo("broken    use     another")
+
+  private def origin(start: Int, end: Int): SourceOrigin =
+    SourceOrigin.Loc(SrcSpan(locations.pointAt(start), locations.pointAt(end)))
+
+  private def specific(name: String, source: SourceOrigin): CompilationError =
+    SemanticError.TypeCheckingError(TypeError.UntypedHoleInBinding(name, source, "fixture"))
+
+  private def unresolved(source: SourceOrigin, phase: String = "fixture"): CompilationError =
+    SemanticError.TypeCheckingError(
+      TypeError.UnresolvableType(
+        Ref(source, "value"),
+        Some(UnresolvableTypeContext.NamedValue("value")),
+        phase
+      )
+    )
+
+  test("distinct written uses remain visible while repeated consequences at one use coalesce") {
+    val root           = specific("broken", origin(0, 6))
+    val firstUse       = unresolved(origin(10, 13))
+    val laterUse       = unresolved(origin(17, 24))
+    val (first, roots) = DiagnosticStore().emit(root)
+    val (second, _)    = first.emit(firstUse, roots)
+    val (third, _)     = second.emit(unresolved(origin(10, 13), "later phase"), roots)
+    val (last, _)      = third.emit(laterUse, roots)
+
+    assertEquals(last.errors.size, 4)
+    assertEquals(last.visibleErrors, Vector(root, firstUse, laterUse))
+    assert(last.records.tail.forall(_.causes == roots))
+  }
+
+  test("a specific failure covers its own generic fallback without hiding an independent cause") {
+    val local                = specific("local", origin(10, 17))
+    val elsewhere            = specific("elsewhere", origin(0, 6))
+    val unknown              = unresolved(origin(10, 13))
+    val (first, localRoots)  = DiagnosticStore().emit(local)
+    val (second, otherRoots) = first.emit(elsewhere)
+    val (third, _)           = second.emit(unknown, localRoots)
+    val (last, _)            = third.emit(unknown, otherRoots)
+
+    assertEquals(last.visibleErrors, Vector(local, elsewhere, unknown))
+    assertEquals(last.visibleRecords.last.causes, otherRoots)
+    assertEquals(last.records.size, 4)
+  }
+
+  test("a smaller use covers its enclosing generic fallback regardless of emission order") {
+    val root           = specific("broken", origin(0, 6))
+    val enclosing      = unresolved(origin(10, 24))
+    val use            = unresolved(origin(10, 13))
+    val (first, roots) = DiagnosticStore().emit(root)
+    val (second, _)    = first.emit(enclosing, roots)
+    val (last, _)      = second.emit(use, roots)
+
+    assertEquals(last.visibleErrors, Vector(root, use))
+    assertEquals(last.errors, Vector(root, enclosing, use))
+  }
+
+  test("derived recovery locations do not replace a written use at the same span") {
+    val root           = specific("broken", origin(0, 6))
+    val written        = unresolved(origin(10, 13))
+    val recovery       = unresolved(origin(10, 13).derived)
+    val (first, roots) = DiagnosticStore().emit(root)
+    val (second, _)    = first.emit(recovery, roots)
+    val (last, _)      = second.emit(written, roots)
+
+    assertEquals(last.visibleErrors, Vector(root, written))
+    assertEquals(last.errors, Vector(root, recovery, written))
+  }
+
+  test("a repeated primary message is covered only when it carries that same cause") {
+    val error               = specific("broken", origin(0, 6))
+    val (first, roots)      = DiagnosticStore().emit(error)
+    val (second, _)         = first.emit(error, roots)
+    val (last, independent) = second.emit(error)
+
+    assertEquals(last.visibleRecords.map(_.id), roots ++ independent)
+    assertEquals(last.errors, Vector(error, error, error))
+  }
 
   test("diagnostic occurrences keep original payloads and emission order") {
     val source                  = SourceInfo("bad")

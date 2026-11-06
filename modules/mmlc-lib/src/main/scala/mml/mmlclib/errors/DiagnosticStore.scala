@@ -2,6 +2,9 @@ package mml.mmlclib.errors
 
 import cats.data.State
 import cats.syntax.all.*
+import mml.mmlclib.ast.{Bnd, FromSource, SrcSpan}
+import mml.mmlclib.semantic.{SemanticError, TypeError}
+import mml.mmlclib.util.error.print.diagnosticMessage
 
 /** Identity of a diagnostic occurrence within one compilation. */
 final case class DiagnosticId(value: Long) derives CanEqual
@@ -51,12 +54,76 @@ final case class DiagnosticStore(
       }
       .map(_.flatten.distinct.sortBy(_.value))
 
-  /** Invalid causal references cannot make a diagnostic disappear. */
-  def visibleRecords: Vector[DiagnosticRecord] = records.filter { record =>
-    record.relation match
-      case DiagnosticRelation.Primary => true
-      case DiagnosticRelation.Consequence(_) => primaryRoots(record).isEmpty
-  }
+  /** Written uses retain their consequences. For one failure, a specific diagnostic covers a
+    * generic fallback in the same expression, and smaller fallback locations cover enclosing ones.
+    * Repeated consequences are coalesced; raw records and independent primary errors stay intact.
+    */
+  def visibleRecords: Vector[DiagnosticRecord] =
+
+    val roots = records.map(record => record.id -> primaryRoots(record)).toMap
+    val sources = records.map { record =>
+      record.id -> diagnosticSources(record.error).filter(_.isFromSource).flatMap(_.spanOpt)
+    }.toMap
+
+    def contains(outer: SrcSpan, inner: SrcSpan): Boolean =
+      outer.start.index <= inner.start.index && inner.end.index <= outer.end.index
+
+    def covered(record: DiagnosticRecord): Boolean =
+      fallbackSpan(record.error).exists { area =>
+        records.exists { other =>
+          val related = roots(record.id).exists { known =>
+            roots(other.id).exists(_.exists(known.contains))
+          }
+          record.id != other.id && related && sources(other.id).nonEmpty &&
+          (fallbackSpan(other.error) match
+            case Some(smaller) =>
+              contains(area, smaller) &&
+              (!contains(smaller, area) || other.id.value < record.id.value)
+            case None =>
+              sources(other.id).exists { specific =>
+                contains(area, specific) || contains(specific, area)
+              })
+        }
+      }
+
+    records
+      .filter { record =>
+        record.relation match
+          case DiagnosticRelation.Primary => true
+          case DiagnosticRelation.Consequence(_) =>
+            roots(record.id).isEmpty || (sources(record.id).nonEmpty && !covered(record))
+      }
+      .distinctBy { record =>
+        roots(record.id) match
+          case Some(known) =>
+            (known, sources(record.id), diagnosticMessage(record.error)).asRight
+          case None => record.id.asLeft
+      }
+
+  /** Fallback diagnostics describe an unavailable enclosing result. A binding's failure area
+    * includes its annotation and value even when the diagnostic points only at the binding's name.
+    */
+  private def fallbackSpan(error: CompilationError): Option[SrcSpan] =
+    def covering(spans: List[SrcSpan]): Option[SrcSpan] =
+      spans.reduceOption { (left, right) =>
+        SrcSpan(
+          List(left.start, right.start).minBy(_.index),
+          List(left.end, right.end).maxBy(_.index)
+        )
+      }
+
+    error match
+      case SemanticError.TypeCheckingError(error) => fallbackSpan(error)
+      case TypeError.UnresolvableType(binding: Bnd, _, _) =>
+        covering(
+          binding.spanOpt.toList ++ binding.typeAsc.flatMap(_.spanOpt) ++ binding.value.spanOpt
+        )
+      case TypeError.UnresolvableType(node: FromSource, _, _) =>
+        covering(node.spanOpt.toList ++ node.typeAsc.flatMap(_.spanOpt))
+      case TypeError.ConditionalBranchTypeUnknown(cond, _) => cond.spanOpt
+      case SemanticError.InvalidExpressionFound(error, _) => error.originalExpr.spanOpt
+      case SemanticError.InvalidExpression(expr, _, _) => expr.spanOpt
+      case _ => None
 
   def visibleErrors: Vector[CompilationError] = visibleRecords.map(_.error)
 

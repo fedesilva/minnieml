@@ -1006,13 +1006,13 @@ class ProtocolCheckerTests extends BaseEffFunSuite:
 
       val result = TypeChecker.rewriteModule(initial)
 
-      assertEquals(result.visibleErrors, initial.visibleErrors)
       val consequences = result.diagnostics.records.filter { record =>
         record.error match
           case SemanticError.ProtocolErrorFound(_: ProtocolError.MissingInstance, _) => true
           case _ => false
       }
       assertEquals(consequences.size, 1)
+      assertEquals(result.visibleErrors, initial.visibleErrors ++ consequences.map(_.error))
       assertEquals(consequences.head.relation, DiagnosticRelation.Consequence(Vector(root)))
     }
 
@@ -1102,7 +1102,12 @@ class ProtocolCheckerTests extends BaseEffFunSuite:
       let after = 40 + 2;
     """
     semVisibleState(source).map { result =>
-      result.errors match
+      assertEquals(result.errors.size, 4)
+      val unknowns = result.errors.collect {
+        case SemanticError.TypeCheckingError(error: TypeError.UnresolvableType) => error
+      }
+      assertEquals(unknowns.size, 3)
+      result.errors.filter(_.isInstanceOf[SemanticError.ProtocolErrorFound]) match
         case List(SemanticError.ProtocolErrorFound(error: ProtocolError.DuplicateSignature, _)) =>
           assertEquals(error.signature.meta.originalName, "identity")
           assert(error.signature.source.isFromSource)
@@ -1146,7 +1151,12 @@ class ProtocolCheckerTests extends BaseEffFunSuite:
       let after = 40 + 2;
     """
     semVisibleState(source).map { result =>
-      result.errors match
+      assertEquals(result.errors.size, 2)
+      val unknowns = result.errors.collect {
+        case SemanticError.TypeCheckingError(error: TypeError.UnresolvableType) => error
+      }
+      assertEquals(unknowns.size, 1)
+      result.errors.filter(_.isInstanceOf[SemanticError.ProtocolErrorFound]) match
         case List(SemanticError.ProtocolErrorFound(error: ProtocolError.DuplicateSignature, _)) =>
           assertEquals(error.signature.meta.originalName, "<&>")
           assert(error.signature.source.isFromSource)

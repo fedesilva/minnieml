@@ -335,8 +335,8 @@ must match it, even if the written value is the usual free-operator default.
 
 Function values and partial calls must select a concrete instance where they are bound.
 Their expected function type can supply missing information, as in `show_int` and `add_ten`.
-For a local binding initialized with a protocol reference, later uses in the same function
-body can also supply that information:
+For a local binding initialized with a protocol reference or call, later uses in the same
+function body can also supply that information:
 
 ```mml
 fn describe(): String =
@@ -351,15 +351,28 @@ Inference follows simple local aliases and examines both conditional branches. I
 independently known argument types, written annotations, and the parameter types of known
 functions receiving the binding. Parentheses around the reference preserve this behavior.
 
+Partial calls gather the same evidence for their remaining parameters. Given a protocol member
+`render(label: String, value: 'T): Unit`, `let render_again = render "partial: "; render_again 15;`
+selects the Int instance from the later argument. An argument supplied before the binding and
+arguments supplied by later uses must all agree on the instance.
+
 The inference boundary is local: stored or separately evaluated function and lambda bodies,
 global uses, and callers do not supply evidence. An immediately applied unary lambda extends
-its local scope and can supply evidence from its body. Partial-call and conditional initializers
-do not gather evidence from later uses. Inference makes one pass through local uses and does not repeatedly solve dependencies
-between unresolved bindings; add a type annotation when that boundary leaves too little evidence.
+its local scope and can supply evidence from its body. Conditional initializers do not gather
+evidence from later uses. Inference makes one pass through local uses and does not repeatedly
+solve dependencies between unresolved bindings; add a type annotation when that boundary leaves
+too little evidence.
 Explicit annotations remain constraints on every use.
 
 An unconstrained reference is an error even if only one instance happens to be declared.
 Missing instances, incompatible operands, and multiple applicable signatures also produce errors.
+Conflicts discovered during local instance inference point to the initializer and report the
+required concrete types and the source locations supplying them. Each use requiring a missing
+implementation receives its own diagnostic. Other affected uses retain an unresolved-type error.
+For an otherwise unconstrained binding, Int and Bool uses conflict even when both instances exist;
+Int and unsupported Float uses also report the missing Float instance at the Float call.
+When a call initializer already selects one implementation, later uses are checked against its
+remaining type. Incompatible arguments then receive ordinary type-mismatch errors.
 Insufficient-information and ambiguity errors list every remaining concrete callable alternative,
 regardless of how many are available. Each listed alternative shows its callable type and protocol
 name where applicable.

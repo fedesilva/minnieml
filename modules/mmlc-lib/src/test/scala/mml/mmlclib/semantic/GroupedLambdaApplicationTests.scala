@@ -141,9 +141,14 @@ class GroupedLambdaApplicationTests extends BaseEffFunSuite:
           case SemanticError.TypeCheckingError(error: TypeError.TypeMismatch) => error
         }
         assertEquals(mismatches.size, 1)
-        assertEquals(state.errors.size, 1, state.errors.toString)
+        assertEquals(state.errors.size, 2, state.errors.toString)
+        val unresolved = state.errors.collect {
+          case SemanticError.TypeCheckingError(error: TypeError.UnresolvableType) => error
+        }
+        assertEquals(unresolved.size, 1)
         val mismatch = mismatches.head
         val second   = sourceParameter(binding(state.module), source, "y: Int")
+        sameType(state.module, unresolved.head.node.typeSpec, second.typeAsc)
         sameType(state.module, mismatch.expected.some, second.typeAsc)
         assertEquals(TypeQueries.getTypeName(mismatch.actual), "Bool".some)
         val argument = mismatch.node match

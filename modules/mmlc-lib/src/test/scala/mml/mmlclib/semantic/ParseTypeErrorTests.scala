@@ -24,6 +24,7 @@ class ParseTypeErrorTests extends BaseEffFunSuite:
     error match
       case SemanticError.ParseTypeErrorFound(recovered, _) => recovered.reason
       case SemanticError.UndefinedRef(reference, _, _) => reference.name
+      case SemanticError.TypeCheckingError(_: TypeError.UnresolvableType) => "unresolved use"
       case other => fail(s"Unexpected recovery diagnostic: $other")
 
   private val code = "fn example(value: Int): Int = value;; let after = 7;"
@@ -243,7 +244,7 @@ class ParseTypeErrorTests extends BaseEffFunSuite:
     val updated = lambda.copy(params = lambda.params.map(_.copy(typeAsc = annotation)))
     replaceFirst(module, binding.copy(value = binding.value.copy(terms = List(updated))))
 
-  test("malformed parameter types survive semantics and suppress only dependent diagnostics") {
+  test("malformed parameter types survive semantics and retain unresolved uses") {
     val source = code + " let independent = missing;"
     parseNotFailed(source).map { module =>
       val recovered = withParameterType(module, malformed.some)
@@ -261,7 +262,7 @@ class ParseTypeErrorTests extends BaseEffFunSuite:
       assertEquals(missingParameters, Vector.empty)
       assertEquals(
         visible.map(recoveryRoot),
-        Vector[SyntaxError | String](SyntaxError.InvalidTypeSyntax, "missing")
+        Vector[SyntaxError | String](SyntaxError.InvalidTypeSyntax, "missing", "unresolved use")
       )
       assert(result.diagnostics.records.exists(_.causes == Vector(root)))
       val surviving = result.module.members.collect {

@@ -1141,18 +1141,23 @@ types when possible.
   lookup; equal source names alone do not make two nominal declarations equal. Source type
   grouping remains in the AST.
 - Immediately applied lambdas check arguments first so local bindings can infer their types.
-  A local binding initialized with a bare protocol reference first gathers type evidence from
-  its continuation. One structural pass follows resolved binding IDs through simple aliases,
-  sequences, and conditional branches. Independently known call arguments, annotations, and
+  A local binding initialized with a protocol reference or call can gather type evidence from
+  its continuation. Calls already constrained to one concrete member skip this collection;
+  ordinary continuation checking validates their uses. One structural pass follows resolved
+  binding IDs through simple aliases, sequences, and conditional branches. Independently known
+  call arguments, annotations, and
   known consumer parameter types constrain the same concrete member across all supported uses.
   Parentheses preserve the reference; shadowed and separately bound names retain distinct IDs.
   Shared protocol selection combines this evidence while checking the initializer and gives
-  the binding a concrete function type. Ordinary continuation checking validates every use.
+  the binding a concrete type. For call initializers, signature inference and diagnostic alternatives
+  include the supplied arguments before each later use's arguments. Concrete candidate checking
+  validates those uses against the initializer's remaining type. Ordinary continuation checking
+  validates every use.
   Candidate probes retain isolated diagnostics; no instance is chosen by registration count or order.
   This collection enters immediately applied unary lambda bodies, which extend the local scope.
   It does not enter stored or separately evaluated function bodies, cross module boundaries,
-  or iterate unresolved binding dependencies. Partial-call and conditional initializers do not
-  collect continuation evidence. Insufficient, incompatible, missing-instance, and ambiguous selections
+  or iterate unresolved binding dependencies. Conditional initializers do not collect continuation
+  evidence. Insufficient, incompatible, missing-instance, and ambiguous selections
   remain distinct diagnostics. The selected binding stays monomorphic and resolves before
   callable lowering and ownership analysis.
 - Ensures zero-argument functions in call position accept `Unit`.
@@ -1166,6 +1171,14 @@ types when possible.
   retain typed display alternatives, filtered by known constraints and applicable binding IDs.
   Their shared CLI/LSP message displays every remaining alternative;
   diagnostics do not perform another round of candidate checking or change selection.
+  Local conflicts retain each required concrete type and the argument, annotation, or expected-use
+  location that supplied it. Fixed-parameter mismatches remain separate from conflicting requirements
+  on the protocol parameter. The conflict diagnostic points to the initializer and includes every
+  retained requirement's use site. Each use requiring an unregistered implementation receives its
+  own missing-instance diagnostic.
+  Requirement collection preserves all-use inference and normalizes repeated source/type pairs once
+  before presentation. Dependent unresolved-type reports remain visible at distinct written uses;
+  a specific missing-instance report covers the generic unresolved type at that call.
   A successful module contains no executable reference to an unselected protocol signature.
 - The parser retains the magnitude `2147483648` so `-2147483648` can be represented. Type checking
   folds that call only after selecting the built-in Int negation by binding identity. Other
@@ -1290,8 +1303,9 @@ Use-after-move diagnostics distinguish the current use, moved-owner identity, an
 Field aliases and borrowed dependencies share move-evidence resolution. Repeated evidence for
 one owner at one use produces one diagnostic; distinct uses and owners remain distinct.
 A dependency with its own reported invalid use links downstream reports to that primary ID.
-Raw reports remain in the diagnostic store; presentation hides proven consequences. CLI and
-LSP diagnostics use the explicit current-use origin.
+Raw reports remain in the diagnostic store. Presentation retains consequences at distinct written
+uses and hides generated recovery noise and repeated reports for the same failure at one use.
+CLI and LSP diagnostics use the explicit current-use origin.
 
 **Call stages**: `ast.queries.ApplicationQueries` reads left-associated application chains in
 argument order and reads canonical callee signatures. A callee node's type takes precedence over
@@ -1762,6 +1776,13 @@ records. Unknown or invalid references cannot make a diagnostic disappear.
 and codegen gating. `visibleErrors` selects diagnostics before CLI, quiet API, and LSP
 conversion. Bare-error formatting APIs do not have the context needed for suppression.
 Compilation continues after errors so editor queries can use partial results.
+
+Known causes do not by themselves hide a diagnostic at a written use. Presentation coalesces
+repeated consequences with the same roots, source spans, and message. For related failures at one
+expression, a specific diagnostic covers a generic unresolved-result fallback; a smaller fallback
+location covers an enclosing fallback. Primary diagnostics remain visible. Proven consequences
+without written locations, including generated recovery wrappers, are hidden. Shared diagnostic
+source extraction keeps visibility decisions and LSP ranges consistent without changing raw errors.
 
 ### Invalid nodes
 

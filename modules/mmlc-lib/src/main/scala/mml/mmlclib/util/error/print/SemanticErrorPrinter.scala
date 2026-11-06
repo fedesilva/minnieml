@@ -1,9 +1,9 @@
 package mml.mmlclib.util.error.print
 
 import mml.mmlclib.ast.{FromSource, Resolvable}
+import mml.mmlclib.errors.typeErrorContext
 import mml.mmlclib.parser.SourceInfo
 import mml.mmlclib.semantic.{SemanticError, TypeError}
-// Removed Ordering import
 
 /** Pretty printer for semantic errors */
 object SemanticErrorPrinter:

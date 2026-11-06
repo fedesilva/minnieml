@@ -196,10 +196,14 @@ object TypeChecker:
       case _ => id
 
   private def bareRef(expr: Expr): Option[Ref] =
+    singleCallee(expr).collect { case ref: Ref => ref }
+
+  @tailrec
+  private def singleCallee(expr: Expr): Option[Callee] =
     expr.terms match
-      case List(ref: Ref) => Some(ref)
-      case List(group: TermGroup) => bareRef(group.inner)
-      case List(inner: Expr) => bareRef(inner)
+      case List(callee: Callee) => callee.some
+      case List(group: TermGroup) => singleCallee(group.inner)
+      case List(inner: Expr) => singleCallee(inner)
       case _ => None
 
   private def trackedParamId(
@@ -310,7 +314,8 @@ object TypeChecker:
               applications.zip(known).map { (application, tpe) =>
                 ProtocolSelection.ApplicationEvidence(
                   tpe,
-                  calleeAscriptions(application).filterNot(failedType(_, context))
+                  calleeAscriptions(application).filterNot(failedType(_, context)),
+                  application.arg.source
                 )
               },
               None,
@@ -696,7 +701,7 @@ object TypeChecker:
     expr:         Expr,
     context:      CheckContext,
     expectedType: Option[Type],
-    localUses:    List[ProtocolSelection.UseEvidence] = Nil
+    localUses:    => List[ProtocolSelection.UseEvidence] = Nil
   ): Check[Expr] =
     expr.terms.zipWithIndex
       .traverse { (term, index) =>
@@ -727,7 +732,7 @@ object TypeChecker:
     term:         Term,
     context:      CheckContext,
     expectedType: Option[Type],
-    localUses:    List[ProtocolSelection.UseEvidence] = Nil
+    localUses:    => List[ProtocolSelection.UseEvidence] = Nil
   ): Check[Term] = term match
 
     case callee: Callee =>
@@ -799,7 +804,7 @@ object TypeChecker:
     callee:       Callee,
     context:      CheckContext,
     expectedType: Option[Type],
-    localUses:    List[ProtocolSelection.UseEvidence] = Nil
+    localUses:    => List[ProtocolSelection.UseEvidence] = Nil
   ): Check[Checked[Callee]] = callee match
 
     case ref: Ref if ref.qualifier.isDefined => checkSelection(ref, context).widen
@@ -814,7 +819,7 @@ object TypeChecker:
       root match
 
         case ref: Ref if needsProtocolSelection(ref, context.module.resolvables) =>
-          selectCallable(ref, applications, context, expectedType)
+          selectCallable(ref, applications, context, expectedType, localUses)
 
         case lambda: Lambda
             if lambda.params.nonEmpty && applications.head.calleeAscriptions.nonEmpty =>
@@ -1002,12 +1007,15 @@ object TypeChecker:
     // cannot favor another implementation with the same signature.
     SelectionTrial(bindingId, checked, diagnostics, !newFailure && expectedMatches)
 
+  /** Select a concrete callable from supplied arguments and, when needed, uses of its result.
+    * Local-use evidence is lazy so already constrained calls do not scan their continuation.
+    */
   private def selectCallable(
     ref:          Ref,
     applications: List[App],
     context:      CheckContext,
     expectedType: Option[Type],
-    localUses:    List[ProtocolSelection.UseEvidence] = Nil
+    localUses:    => List[ProtocolSelection.UseEvidence]
   ): Check[Checked[Callee]] =
     import ProtocolSelection.SignatureEvidence
 
@@ -1035,16 +1043,46 @@ object TypeChecker:
           val applicationEvidence = applications.zip(probes).map { (application, probe) =>
             ProtocolSelection.ApplicationEvidence(
               probe.knownType,
-              calleeAscriptions(application).filterNot(failedType(_, context))
+              calleeAscriptions(application).filterNot(failedType(_, context)),
+              application.arg.source
             )
           }
-          val evidence = ProtocolSelection.matchSignatures(
+          val suppliedEvidence = ProtocolSelection.matchSignatures(
             choices,
             applicationEvidence,
             selectionExpected,
             context.module.resolvables,
-            localUses
+            expectedSource = selectionExpected.fold(ref.source)(_.source)
           )
+          val suppliedCandidates = choices.declarationIds ++
+            suppliedEvidence.flatMap(_.implementationIds)
+
+          // A call with one concrete choice needs no continuation scan. Ordinary checking
+          // validates its uses; unresolved choices need their constraints before selection.
+          val uses =
+            if applications.isEmpty ||
+              suppliedEvidence.exists(_.evidence == SignatureEvidence.Unknown) ||
+              suppliedCandidates.distinct.size > 1
+            then localUses
+            else Nil
+
+          // Later uses constrain the initializer's result. Signature matching needs the supplied
+          // prefix as well, while concrete candidate checks start at the remaining type.
+          val signatureUses = uses.map { use =>
+            use.copy(applications = applicationEvidence ++ use.applications)
+          }
+          val evidence =
+            if signatureUses.isEmpty then suppliedEvidence
+            else
+              ProtocolSelection.matchSignatures(
+                choices,
+                applicationEvidence,
+                selectionExpected,
+                context.module.resolvables,
+                signatureUses,
+                selectionExpected.fold(ref.source)(_.source)
+              )
+
           val matching = evidence.flatMap(_.implementationIds)
           // An expected parameter type cannot repair an independent operand error. Trying each
           // candidate would only repeat the same failed subtree, once at every enclosing call.
@@ -1056,7 +1094,7 @@ object TypeChecker:
               }
           val applicable = trials.filter { trial =>
             trial.applicable && trial.checked.value.typeSpec.exists { tpe =>
-              ProtocolSelection.matchesUses(tpe, localUses, context.module.resolvables)
+              ProtocolSelection.matchesUses(tpe, uses, context.module.resolvables)
             }
           }
           val needsEvidence = evidence.exists(_.evidence == SignatureEvidence.Unknown)
@@ -1067,7 +1105,7 @@ object TypeChecker:
               val missing = evidence.collectFirst {
                 case ProtocolSelection.SignatureMatch(
                       registered,
-                      SignatureEvidence.Concrete(tpe),
+                      SignatureEvidence.Concrete(tpe, _),
                       Nil
                     ) =>
                   ProtocolError.MissingInstance(ref, registered.protocol, tpe)
@@ -1090,7 +1128,7 @@ object TypeChecker:
                     ProtocolSelection.UseEvidence(
                       applicationEvidence,
                       selectionExpected
-                    ) :: localUses
+                    ) :: signatureUses
                   selectionAlternatives(
                     choices,
                     ids,
@@ -1101,8 +1139,64 @@ object TypeChecker:
                 if applicable.size > 1 then ProtocolError.AmbiguousSelection(ref, alternatives)
                 else if needsEvidence then
                   ProtocolError.InsufficientTypeInformation(ref, alternatives)
-                else missing.getOrElse(ProtocolError.IncompatibleArguments(ref))
+                else
+                  val conflict = Option
+                    .when(uses.nonEmpty)(
+                      conflictingProtocolUses(ref, context, evidence, uses)
+                    )
+                    .flatten
+                  conflict.orElse(missing).getOrElse(ProtocolError.IncompatibleArguments(ref))
               failedSelection(ref, applications, probes, error, expectedType, context)
+    }
+
+  /** Explain incompatible local requirements at their initializer. Requirements retain their
+    * evidence locations, and missing implementations retain the enclosing calls that require them.
+    */
+  private def conflictingProtocolUses(
+    ref:      Ref,
+    context:  CheckContext,
+    evidence: List[ProtocolSelection.SignatureMatch],
+    uses:     List[ProtocolSelection.UseEvidence]
+  ): Option[ProtocolError] =
+
+    val index = context.module.resolvables
+
+    // A requirement inside nested calls belongs to its innermost use.
+    def useSource(requirement: ProtocolTypeRequirement): SourceOrigin =
+      uses
+        .filter { use =>
+          use.source.spanOpt.exists { outer =>
+            requirement.spanOpt.exists { inner =>
+              outer.start.index <= inner.start.index && inner.end.index <= outer.end.index
+            }
+          }
+        }
+        .minByOption(_.source.spanOpt.map(span => span.end.index - span.start.index))
+        .fold(requirement.source)(_.source)
+
+    val conflicts = evidence.flatMap { matched =>
+      matched.evidence match
+
+        case ProtocolSelection.SignatureEvidence.Conflicting(requirements) =>
+          NonEmptyList.fromList(requirements).map { required =>
+            val available = matched.registered.implementations.map(_.typeKey).toSet
+            val missing = requirements
+              .flatMap { requirement =>
+                ProtocolRegistry
+                  .typeKey(requirement.concreteType, index)
+                  .toOption
+                  .map(_ -> requirement.copy(source = useSource(requirement)))
+              }
+              .distinctBy { (key, requirement) => (key, requirement.source) }
+              .collect { case (key, requirement) if !available.contains(key) => requirement }
+            ProtocolUseConflict(matched.registered.protocol, required, missing)
+          }
+
+        case _ => Nil
+    }
+
+    NonEmptyList.fromList(conflicts).map { groups =>
+      ProtocolError.ConflictingUses(ref, context.bindingName, groups)
     }
 
   /** Diagnostic choices use only concrete signatures compatible with the evidence already known.
@@ -1148,6 +1242,9 @@ object TypeChecker:
       false
     case _ => true
 
+  /** Retain failed operands and their causes. Local conflicts and missing implementations at
+    * distinct uses each receive a report; their combined roots follow the unavailable result.
+    */
   private def failedSelection(
     ref:          Ref,
     applications: List[App],
@@ -1164,23 +1261,45 @@ object TypeChecker:
           .flatMap(context.causes.knownRootsOfType)
           .toVector
       case _ => Vector.empty
-    val instanceRoots = error match
-      case ProtocolError.MissingInstance(_, protocol, concreteType) =>
+    def instanceRoots(error: ProtocolError): Vector[DiagnosticId] = error match
+      case ProtocolError.MissingInstance(_, protocol, concreteType, _) =>
         protocol.id.toVector.flatMap { id =>
           context.protocols.instanceFailureCauses(id, concreteType, context.module.resolvables)
         }
       case _ => Vector.empty
+
+    val missing = error match
+      case ProtocolError.ConflictingUses(ref, _, conflicts) =>
+        conflicts.toList.flatMap { conflict =>
+          conflict.missingInstances.map { requirement =>
+            ProtocolError.MissingInstance(
+              ref,
+              conflict.protocol,
+              requirement.concreteType,
+              requirement.source.some
+            )
+          }
+        }
+      case _ => Nil
+
     for
       argumentRoots <- independentErrors.traverse(DiagnosticStore.report(_))
       knownRoots = probes.flatMap(probe => context.knownRootsOf(probe.original)).toVector
       selectionRoots =
-        argumentRoots.flatten ++ knownRoots ++ expectedRoots ++ instanceRoots ++
+        argumentRoots.flatten ++ knownRoots ++ expectedRoots ++ instanceRoots(error) ++
           context.enclosingFailure
-      roots <- DiagnosticStore.report(
+      conflictRoots <- DiagnosticStore.report(
         SemanticError.ProtocolErrorFound(error, phaseName),
         selectionRoots.distinct.toVector
       )
+      missingRoots <- missing.traverse { detail =>
+        DiagnosticStore.report(
+          SemanticError.ProtocolErrorFound(detail, phaseName),
+          instanceRoots(detail)
+        )
+      }
     yield
+      val roots      = (conflictRoots ++ missingRoots.flatten).distinct
       val unresolved = ref.copy(resolvedId = None, typeSpec = None)
       val result = applications.zip(probes).foldLeft[Callee](unresolved) {
         case (function, (original, probe)) =>
@@ -1311,7 +1430,7 @@ object TypeChecker:
     ): List[UseEvidence] = term match
 
       case ref: Ref if tracked(ref, aliases) =>
-        List(UseEvidence(Nil, usable(ref.typeAsc.orElse(expected), scope)))
+        List(UseEvidence(Nil, usable(ref.typeAsc.orElse(expected), scope), ref.source))
 
       case app: App =>
         app.fn match
@@ -1334,10 +1453,12 @@ object TypeChecker:
                     applications.map { application =>
                       ApplicationEvidence(
                         known(application.arg, scope),
-                        calleeAscriptions(application).filterNot(failedType(_, scope))
+                        calleeAscriptions(application).filterNot(failedType(_, scope)),
+                        application.arg.source
                       )
                     },
-                    usable(app.typeAsc.orElse(expected), scope)
+                    usable(app.typeAsc.orElse(expected), scope),
+                    app.source
                   )
                 )
               case _ => Nil
@@ -1406,12 +1527,21 @@ object TypeChecker:
 
     for
       checkpoint <- State.get[DiagnosticStore]
-      localUses = bareRef(app.arg)
-        .filter(needsProtocolSelection(_, context.module.resolvables))
-        .fold(List.empty[ProtocolSelection.UseEvidence]) { _ =>
-          collectLocalProtocolUses(parameter, lambda.body, context, expectedType, checkpoint)
-        }
-      initialArg <- checkExpr(app.arg, seededContext, parameter.typeAsc, localUses)
+      initializerCallee = singleCallee(app.arg).map {
+        case application: App => ApplicationQueries.applicationNodes(application)._1
+        case other => other
+      }
+      initialArg <- checkExpr(
+        app.arg,
+        seededContext,
+        parameter.typeAsc,
+        initializerCallee
+          .collect {
+            case ref: Ref if needsProtocolSelection(ref, context.module.resolvables) =>
+              collectLocalProtocolUses(parameter, lambda.body, context, expectedType, checkpoint)
+          }
+          .getOrElse(Nil)
+      )
       arg <- validateExpectedResult(
         initialArg,
         parameter.typeAsc,

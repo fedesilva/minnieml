@@ -69,9 +69,22 @@ def protocolMessage(error: ProtocolError): String =
       s"Operator '${sourceName(other)}' has conflicting precedence or " +
         "associativity for the same arity"
 
-    case MissingInstance(ref, protocol, concreteType) =>
-      s"No instance of protocol '${protocol.name}' for ${showType(concreteType)} " +
-        s"provides '${ref.name}'"
+    case MissingInstance(ref, protocol, concreteType, _) =>
+      missingInstanceDescription(ref, protocol, concreteType)
+
+    case ConflictingUses(_, bindingName, conflicts) =>
+      val details = conflicts.toList.flatMap { conflict =>
+        conflict.requirements.toList.map { requirement =>
+          val location = requirement.spanOpt.fold("") { span =>
+            s"${span.start.line}:${span.start.col}: "
+          }
+          s"  ${location}requires ${conflict.protocol.name} ${showType(requirement.concreteType)}"
+        }
+      }
+      details
+        .prepended(s"Cannot infer type of '$bindingName': conflicting uses")
+        .appended("This binding must select one implementation for all uses.")
+        .mkString("\n")
 
     case IncompatibleArguments(ref) =>
       s"No signature of '${ref.name}' matches the arguments and expected type"
@@ -83,6 +96,10 @@ def protocolMessage(error: ProtocolError): String =
     case AmbiguousSelection(ref, alternatives) =>
       s"More than one signature of '${ref.name}' matches the arguments and expected type" +
         formatAlternatives(alternatives)
+
+private def missingInstanceDescription(ref: Ref, protocol: Protocol, concreteType: Type): String =
+  s"No instance of protocol '${protocol.name}' for ${showType(concreteType)} " +
+    s"provides '${ref.name}'"
 
 /** Show every remaining concrete choice when alternatives are available. */
 private def formatAlternatives(alternatives: List[ProtocolAlternative]): String =

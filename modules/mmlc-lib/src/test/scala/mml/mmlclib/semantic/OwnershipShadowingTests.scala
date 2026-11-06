@@ -85,12 +85,13 @@ class OwnershipShadowingTests extends BaseEffFunSuite:
           }
           val moves = visible.collect { case error: SemanticError.UseAfterMove => error }
           assertEquals(lastUses.size, 1, result.errors.toString)
-          assertEquals(moves.size, 1, result.errors.toString)
-          assertEquals(visible.size, 2, result.errors.toString)
+          assertEquals(moves.size, if form == "captured" then 2 else 1, result.errors.toString)
+          assertEquals(visible.size, 1 + moves.size, result.errors.toString)
           val rawMoves = result.semanticErrors.collect { case error: SemanticError.UseAfterMove =>
             error
           }
           assertEquals(rawMoves.size, if form == "captured" then 2 else 1)
+          assertEquals(moves, rawMoves)
 
           assertEquals(lastUses.head.ref.resolvedId, Some(bindingId))
           assertEquals(lastUses.head.ref.source, moved.source)
@@ -99,8 +100,9 @@ class OwnershipShadowingTests extends BaseEffFunSuite:
             Some(resolvedBindingId(result.module, "consume", "value"))
           )
 
-          assertEquals(moves.head.ref.resolvedId, Some(bindingId))
-          assertEquals(moves.head.ref.source, used.source)
-          assertEquals(moves.head.movedAt, moved.source)
+          val directUses = moves.filter(_.ref.resolvedId.contains(bindingId))
+          assertEquals(directUses.size, 1)
+          assertEquals(directUses.head.ref.source, used.source)
+          assert(moves.forall(_.movedAt == moved.source))
       }
   }

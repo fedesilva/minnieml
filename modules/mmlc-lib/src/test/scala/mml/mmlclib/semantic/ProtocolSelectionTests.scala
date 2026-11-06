@@ -881,7 +881,7 @@ class ProtocolSelectionTests extends BaseEffFunSuite:
       result.visibleErrors match
         case Vector(
               SemanticError.ProtocolErrorFound(
-                ProtocolError.MissingInstance(ref, expected, concreteType),
+                ProtocolError.MissingInstance(ref, expected, concreteType, _),
                 _
               )
             ) =>
@@ -947,9 +947,11 @@ class ProtocolSelectionTests extends BaseEffFunSuite:
               SemanticError.ProtocolErrorFound(
                 ProtocolError.InsufficientTypeInformation(ref, _),
                 _
-              )
+              ),
+              SemanticError.TypeCheckingError(use: TypeError.UnresolvableType)
             ) =>
           assertEquals(ref.source, original.source)
+          assertEquals(use.context, Some(UnresolvableTypeContext.NamedValue("undecided")))
         case other => fail(s"Expected the unresolved binding to remain the error, got $other")
     }
 
@@ -990,7 +992,7 @@ class ProtocolSelectionTests extends BaseEffFunSuite:
       assertEquals(initial.visibleErrors.size, 1)
       assert(original.error.isInstanceOf[SemanticError.UndefinedTypeRef])
       assertEquals(original.relation, DiagnosticRelation.Primary)
-      assertEquals(result.visibleErrors, initial.visibleErrors)
+      assertEquals(result.visibleErrors, initial.visibleErrors ++ selection.map(_.error))
       assertEquals(selection.size, 1)
       assertEquals(selection.head.relation, DiagnosticRelation.Consequence(Vector(original.id)))
       assertEquals(result.diagnostics.lookup(original.id), Some(original))
@@ -1186,7 +1188,9 @@ class ProtocolSelectionTests extends BaseEffFunSuite:
       assertEquals(computedType(value, result.module), int)
     }
 
-  test("a failed left operand stays one error without repeated candidate checking"):
+  test(
+    "a failed left operand retains its root and enclosing use without repeated candidate checking"
+  ):
     val source = """
       let invalid =
         1.0 + 2 + 3.0 + 4.0 + 5.0 + 6.0 + 7.0 + 8.0 +
@@ -1203,13 +1207,18 @@ class ProtocolSelectionTests extends BaseEffFunSuite:
       val elapsedSeconds = (System.nanoTime() - started).toDouble / 1_000_000_000
 
       assertEquals(initial.errors, Vector.empty)
-      result.visibleErrors match
+      val primary =
+        result.diagnostics.visibleRecords.filter(_.relation == DiagnosticRelation.Primary)
+      primary.map(_.error) match
         case Vector(
               SemanticError.ProtocolErrorFound(ProtocolError.IncompatibleArguments(ref), _)
             ) =>
           assertEquals(ref.spanOpt.get.start.index, source.indexOf("+"))
         case other => fail(s"Expected only the mixed first pair to fail, got $other")
-      assertEquals(result.diagnostics.visibleRecords.head.relation, DiagnosticRelation.Primary)
+      assertEquals(result.visibleErrors.size, 2)
+      val consequence = result.diagnostics.visibleRecords.last
+      assertEquals(consequence.causes, primary.map(_.id))
+      assert(consequence.error.isInstanceOf[SemanticError.ProtocolErrorFound])
       assert(
         result.diagnostics.records.flatMap(_.causes).forall(result.diagnostics.lookup(_).nonEmpty)
       )
@@ -1220,7 +1229,9 @@ class ProtocolSelectionTests extends BaseEffFunSuite:
       assert(elapsedSeconds < 5.0, s"Checking 24 terms took $elapsedSeconds seconds")
     }
 
-  test("a failed right operand stays one error without repeated candidate checking"):
+  test(
+    "a failed right operand retains its root and enclosing use without repeated candidate checking"
+  ):
     val source = """
       protocol Combine 'T = op <+>(left: 'T, right: 'T): 'T 60 right; ;
       instance Combine Float = op <+>(left, right) = left + right;; ;
@@ -1239,13 +1250,18 @@ class ProtocolSelectionTests extends BaseEffFunSuite:
       val elapsedSeconds = (System.nanoTime() - started).toDouble / 1_000_000_000
 
       assertEquals(initial.errors, Vector.empty)
-      result.visibleErrors match
+      val primary =
+        result.diagnostics.visibleRecords.filter(_.relation == DiagnosticRelation.Primary)
+      primary.map(_.error) match
         case Vector(
               SemanticError.ProtocolErrorFound(ProtocolError.IncompatibleArguments(ref), _)
             ) =>
           assertEquals(ref.spanOpt.get.start.index, source.indexOf("<+> 24"))
         case other => fail(s"Expected only the mixed last pair to fail, got $other")
-      assertEquals(result.diagnostics.visibleRecords.head.relation, DiagnosticRelation.Primary)
+      assertEquals(result.visibleErrors.size, 2)
+      val consequence = result.diagnostics.visibleRecords.last
+      assertEquals(consequence.causes, primary.map(_.id))
+      assert(consequence.error.isInstanceOf[SemanticError.ProtocolErrorFound])
       assert(
         result.diagnostics.records.flatMap(_.causes).forall(result.diagnostics.lookup(_).nonEmpty)
       )
@@ -1323,9 +1339,13 @@ class ProtocolSelectionTests extends BaseEffFunSuite:
       assertEquals(binding(result.module, "value").typeSpec, None)
       result.visibleErrors match
         case Vector(
-              SemanticError.TypeCheckingError(TypeError.UninferrableLambdaParam(parameter, _))
+              SemanticError.TypeCheckingError(TypeError.UninferrableLambdaParam(parameter, _)),
+              SemanticError.TypeCheckingError(use: TypeError.UnresolvableType)
             ) =>
           assertEquals(parameter.id, original.params.head.id)
+          use.node match
+            case ref: Ref => assertEquals(ref.resolvedId, parameter.id)
+            case other => fail(s"Expected the unresolved parameter use, got $other")
         case other => fail(s"Expected the identity lambda to need an expected type, got $other")
     }
 
@@ -1499,7 +1519,7 @@ class ProtocolSelectionTests extends BaseEffFunSuite:
 
       assertEquals(original.size, 1)
       assertEquals(original.head.relation, DiagnosticRelation.Primary)
-      assertEquals(result.visibleErrors, original.map(_.error))
+      assertEquals(result.visibleErrors, original.map(_.error) ++ selection.map(_.error))
       assertEquals(result.diagnostics.lookup(original.head.id), Some(original.head))
       assertEquals(selection.size, 1)
       assertEquals(

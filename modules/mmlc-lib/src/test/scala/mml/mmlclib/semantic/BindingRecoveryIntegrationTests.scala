@@ -43,6 +43,12 @@ class BindingRecoveryIntegrationTests extends BaseEffFunSuite:
   private def references(value: Term): List[Ref] =
     TermTraversal.collect(value) { case reference: Ref => reference }
 
+  private def unresolvedReferences(state: CompilerState): Vector[Ref] =
+    state.visibleErrors.collect {
+      case SemanticError.TypeCheckingError(TypeError.UnresolvableType(reference: Ref, _, _)) =>
+        reference
+    }
+
   private def parseErrors(value: Term): List[ParseTermError] =
     TermTraversal.collect(value) { case error: ParseTermError => error }
 
@@ -205,7 +211,8 @@ class BindingRecoveryIntegrationTests extends BaseEffFunSuite:
         val causes       = DiagnosticCauses.fromModule(state.module)
         val roots        = onlyParseError(retained).causes
         assertEquals(roots.size, 1)
-        assertEquals(state.visibleErrors.size, 1, state.visibleErrors)
+        assertEquals(state.visibleErrors.size, 2, state.visibleErrors)
+        assertEquals(unresolvedReferences(state).map(_.resolvedId), Vector(broken.id))
         assert(retained.typeSpec.isEmpty)
         assert(broken.meta.isEmpty)
         assert(retained.params.head.id.nonEmpty)
@@ -234,7 +241,11 @@ class BindingRecoveryIntegrationTests extends BaseEffFunSuite:
       val availability = ValueAvailability.fromModule(state.module)
       assert(!availability.isAvailable(binding(state.module, "alias").value))
       assert(availability.isAvailable(binding(state.module, "after").value))
-      assertEquals(state.visibleErrors.size, 1, state.visibleErrors)
+      assertEquals(state.visibleErrors.size, 2, state.visibleErrors)
+      assertEquals(
+        unresolvedReferences(state).map(_.resolvedId),
+        Vector(binding(state.module, "broken").id)
+      )
 
   test(
     "partial local functions retain recursive and parameter identities beside independent errors"
@@ -260,7 +271,11 @@ class BindingRecoveryIntegrationTests extends BaseEffFunSuite:
         state.module.resolvables.lookup(retained.parameter.id.get),
         retained.parameter.some
       )
-      assertEquals(state.visibleErrors.size, 2, state.visibleErrors)
+      assertEquals(state.visibleErrors.size, 4, state.visibleErrors)
+      assertEquals(
+        unresolvedReferences(state).map(_.resolvedId),
+        Vector.fill(2)(retained.parameter.id)
+      )
       assertEquals(state.visibleErrors.count(_.isInstanceOf[SemanticError.ParseTermErrorFound]), 1)
       assertEquals(state.visibleErrors.count(_.isInstanceOf[SemanticError.UndefinedRef]), 1)
       val availability = ValueAvailability.fromModule(state.module)
@@ -520,7 +535,11 @@ class BindingRecoveryIntegrationTests extends BaseEffFunSuite:
       )
       assertEquals(state.visibleErrors.count(_.isInstanceOf[SemanticError.ParseTermErrorFound]), 1)
       assertEquals(state.visibleErrors.count(_.isInstanceOf[SemanticError.UseAfterMove]), 1)
-      assertEquals(state.visibleErrors.size, 2, state.visibleErrors)
+      assertEquals(state.visibleErrors.size, 5, state.visibleErrors)
+      assertEquals(
+        unresolvedReferences(state).map(_.resolvedId),
+        Vector(incomplete.parameter.id, alias.parameter.id, partial.parameter.id)
+      )
       val validPaps = TermTraversal.collect(binding(state.module, "make").value) {
         case lambda: Lambda if lambda.meta.exists(_.isPartialApplication) => lambda
       }

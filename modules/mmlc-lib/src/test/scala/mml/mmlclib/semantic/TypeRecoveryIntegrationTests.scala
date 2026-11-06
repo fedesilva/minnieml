@@ -19,6 +19,7 @@ class TypeRecoveryIntegrationTests extends BaseEffFunSuite:
     error match
       case SemanticError.ParseTypeErrorFound(recovered, _) => recovered.reason
       case SemanticError.UndefinedRef(reference, _, _) => reference.name
+      case SemanticError.TypeCheckingError(_: TypeError.UnresolvableType) => "unresolved use"
       case other => fail(s"Unexpected recovery diagnostic: $other")
 
   private val source =
@@ -99,7 +100,7 @@ class TypeRecoveryIntegrationTests extends BaseEffFunSuite:
       val aliasRefs    = TermTraversal.collect(alias.value) { case reference: Ref => reference }
       val laterRefs    = TermTraversal.collect(later.value) { case reference: Ref => reference }
 
-      assertEquals(state.visibleErrors.map(recoveryRoot), rootReasons)
+      assertEquals(state.visibleErrors.map(recoveryRoot), rootReasons :+ "unresolved use")
       assert(!state.semanticErrors.exists(_.isInstanceOf[SemanticError.UndefinedTypeRef]))
       assertEquals(aliasRefs.map(_.resolvedId), List(broken.id))
       assert(broken.id.nonEmpty)
@@ -224,7 +225,10 @@ class TypeRecoveryIntegrationTests extends BaseEffFunSuite:
         val parseRoots = state.diagnostics.records.collect {
           case record if record.error.isInstanceOf[SemanticError.ParseTypeErrorFound] => record.id
         }
-        assertEquals(state.visibleErrors.map(recoveryRoot), rootReasons)
+        assertEquals(
+          state.visibleErrors.map(recoveryRoot),
+          rootReasons ++ (if available then Vector.empty else Vector.fill(2)("unresolved use"))
+        )
         assertEquals(parseRoots.size, 1)
         assertEquals(DiagnosticCauses.fromModule(state.module).knownRootsOf(function), parseRoots)
         assert(!availability.isAvailable(function))
@@ -271,10 +275,14 @@ class TypeRecoveryIntegrationTests extends BaseEffFunSuite:
   test("LSP reports the malformed fragment and independent error at their original ranges") {
     compile().map { state =>
       val diagnostics = Diagnostics.fromCompilerState(state)
-      assertEquals(diagnostics.map(_.message), List(parseMessage, "Undefined reference: 'missing'"))
+      assertEquals(
+        diagnostics.map(_.message),
+        List(parseMessage, "Undefined reference: 'missing'", "Cannot resolve type")
+      )
       assertEquals(
         diagnostics.map(_.range),
-        List("wrong ", "missing").map(fragment => Range.fromSrcSpan(spanOf(source, fragment)))
+        List("wrong ", "missing", "alias = broken;")
+          .map(fragment => Range.fromSrcSpan(spanOf(source, fragment)))
       )
       assert(diagnostics.forall(_.severity == DiagnosticSeverity.Error))
     }
@@ -308,7 +316,9 @@ class TypeRecoveryIntegrationTests extends BaseEffFunSuite:
         }
         assert(!rendered.contains("Type mismatch"), rendered)
         assert(!rendered.contains("Invalid expression"), rendered)
-        val expected = Vector(parseMessage, "Undefined reference: 'missing'").mkString("\n").some
+        val expected = Vector(parseMessage, "Undefined reference: 'missing'", "Cannot resolve type")
+          .mkString("\n")
+          .some
         assertEquals(ast.left.toOption, expected)
         assertEquals(ir.left.toOption, expected)
         assertEquals(native.left.toOption, expected)
@@ -325,7 +335,7 @@ class TypeRecoveryIntegrationTests extends BaseEffFunSuite:
         outputExists <- IO.blocking(Files.exists(config.outputDir))
       yield
         assert(state.hasErrors)
-        assertEquals(state.visibleErrors.map(recoveryRoot), rootReasons)
+        assertEquals(state.visibleErrors.map(recoveryRoot), rootReasons :+ "unresolved use")
         assert(!validated.canEmitCode)
         assertEquals(validated.diagnostics, state.diagnostics)
         assertEquals(emitted.diagnostics, state.diagnostics)
