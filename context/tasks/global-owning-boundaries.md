@@ -5,7 +5,7 @@
 - **Owner:** The Author
 - **Status:** design
 - **Kind:** feature
-- **Priority:** unassigned
+- **Priority:** HIGH
 - **Created:** 2026-10-30
 - **Target Branch:** unassigned
 
@@ -136,6 +136,8 @@ Open decisions:
 
 - Choose static specialization, runtime mode metadata, or a combination. Define how modes
   survive function results and separately compiled boundaries without relying on inlining.
+  - no runtime metadata as much as possible. needs to work with not owned native values and types.
+  - 
 - Define field-level cleanup representation. The borrowing-struct proposal excludes partially
   owning records, while this design must handle owned records containing global-backed fields.
 - Define mixed-mode explicit-drop behavior: a value with a possible global alternative must
@@ -153,7 +155,7 @@ Open decisions:
 
 Related tasks and designs (optional context):
 
-- [Explicit Clone and global ownership transfers](explicit-clone.md): explicit copying, global
+- [Explicit Clone and global ownership transfers](completed/explicit-clone.md): explicit copying, global
   provenance analysis, and the mandatory-cloning policy this design replaces.
 - [Revisit implicit cloning](implicit-cloning.md): overlapping promotion, literal/global,
   and mixed-witness policy; reconcile scope to avoid competing ownership rules.
@@ -164,7 +166,7 @@ Related tasks and designs (optional context):
 - [Document and encode the ownership rules](ownership-rules.md): durable ownership reference
   and elimination of hidden global cloning.
 - [Owned Strings](owned-strings.md): shareable literals and older global-cloning assumptions.
-- [Implement protocols](protocols.md): protocol infrastructure; full Unique integration is
+- [Implement protocols](completed/protocols.md): protocol infrastructure; full Unique integration is
   outside its initial slice.
 
 ## Signoff
