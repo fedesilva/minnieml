@@ -6,6 +6,10 @@ protocol Combine 'T =
   op <+>(left: 'T, right: 'T): 'T 60 left;
 ;
 
+op <+>(left: String, right: String): String 60 left =
+  concat left right;
+;
+
 instance Combine Int =
   // The signature supplies the types, precedence, and associativity.
   op <+>(left, right) = left + right;;
@@ -34,8 +38,14 @@ pub fn main() =
   println (to_str (combine_int 2 3));
 
   // Applying one argument creates an ordinary partial application.
-  let add_ten: Int -> Int = (<+>) 10;
+  let add_ten = (<+>) 10;
+  let add_ten_f = (<+>) 10.0;
+  let add_strings = (<+>) "Hola, ";
+
+
   println (to_str (add_ten 5) );
+  println (to_str (add_ten_f 5.0));
+  println ( add_strings "MML" <+> "!" );
 
   // Num supplies the same + and * spellings for Int and Float.
   println (to_str (2 + 3 * 4));
@@ -49,5 +59,6 @@ pub fn main() =
 // true
 // 5
 // 15
+// Hola, MML!
 // 14
 // 14
