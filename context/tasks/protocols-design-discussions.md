@@ -8,7 +8,7 @@
 - **Priority:** MID
 - **Created:** 2026-10-27
 - **Target Branch:** unassigned
-- **Parent:** [Implement protocols](protocols.md)
+- **Parent:** [Implement protocols](completed/protocols.md)
 
 ## Execution Checklist
 
@@ -86,7 +86,7 @@ evidence handling belong to this same discussion where their surrounding API cha
 ## Scope
 
 These are design decisions, separate from
-[repairing protocol errors and missing tests](protocols-review-repairs.md). Local corrections may
+[repairing protocol errors and missing tests](completed/protocols-review-repairs.md). Local corrections may
 simplify code needed for a bug fix, but do not settle these broader questions implicitly.
 
 ## Verification

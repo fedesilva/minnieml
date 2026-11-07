@@ -40,9 +40,9 @@ retains omission of parser, API-wrapper, backend, toolchain, and other unsupport
 
 ## Evidence and verification
 
-[Diagnostics.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/lsp/Diagnostics.scala)
+[Diagnostics.scala](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/lsp/Diagnostics.scala)
 maps both variants to their reference spans and existing semantic messages.
-[DiagnosticsTests.scala](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/lsp/DiagnosticsTests.scala)
+[DiagnosticsTests.scala](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/lsp/DiagnosticsTests.scala)
 checks exact source ranges, messages, normal CLI reporting/highlights, and omission of synthetic
 references. The moved-capture fixture uses `CompilerApi.processAstOnly`; the constructed visibility
 payload uses `ErrorPrinter` directly.
@@ -69,7 +69,7 @@ Verification on macOS arm64 with Clang/LLVM 23.1.1:
   from the adjacent use-after-move report; the 12 focused tests pass again.
 - Independent primary review and all four dedicated checks are complete: code style/QA,
   test quality, readability, and code documentation. Both confirmed test gaps are corrected;
-  the final narrow re-review has no actionable findings. See [QA-003 and QA-004](qa-misses.md#qa-003-exercise-normal-cli-reporting-in-diagnostic-agreement-tests).
+  the final narrow re-review has no actionable findings. See [QA-003 and QA-004](../qa-misses.md#qa-003-exercise-normal-cli-reporting-in-diagnostic-agreement-tests).
 - Full-suite, smoke, publishing, and benchmark-build results cover the production change.
   Test-only review corrections received fresh formatting, linting, and focused test runs.
   No interactive editor was exercised; move-site assertions verify presentation of existing

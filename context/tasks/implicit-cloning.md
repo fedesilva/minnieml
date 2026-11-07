@@ -33,7 +33,7 @@ exactly-once cleanup, with explicit cloning available through `Clone` and `^`.
   require unconditional ownership. Stack, heap, and static storage alone do not determine
   the ownership contract.
 - Keep explicit `Clone` and `^`. Their implementation and the explicit global-cloning
-  requirement belong to [Explicit Clone and global ownership transfers](explicit-clone.md).
+  requirement belong to [Explicit Clone and global ownership transfers](completed/explicit-clone.md).
 
 ## Plan (Approval Gate)
 
@@ -62,5 +62,5 @@ on every return path. Removing a clone must not silently change either contract.
 
 ## Task Working Memory
 
-Follow-up to [Implement protocols](protocols.md). Next action: inspect the remaining implicit
+Follow-up to [Implement protocols](completed/protocols.md). Next action: inspect the remaining implicit
 cloning and promotion boundaries, then propose the policy and bounded plan.

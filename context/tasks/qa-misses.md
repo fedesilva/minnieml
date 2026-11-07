@@ -34,7 +34,7 @@ item needs its own plan. A cleanup campaign can work through several approved gr
 ### QA-001: Preserve resolved type identity in type utilities
 
 - **Status:** complete
-- **Implementation and verification:** [Unify type-property alias resolution](type-property-alias-resolution.md).
+- **Implementation and verification:** [Unify type-property alias resolution](completed/type-property-alias-resolution.md).
 - **Source:** [TypeQueries.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/queries/TypeQueries.scala),
   [NativeTypeQueries.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/queries/NativeTypeQueries.scala),
   [TypeMemoryQueries.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/queries/TypeMemoryQueries.scala),
@@ -67,7 +67,7 @@ item needs its own plan. A cleanup campaign can work through several approved gr
 ### QA-003: Exercise normal CLI reporting in diagnostic agreement tests
 
 - **Status:** complete
-- **Implementation and verification:** [Moved-capture and visibility diagnostics](lsp-missing-semantic-diagnostics.md).
+- **Implementation and verification:** [Moved-capture and visibility diagnostics](completed/lsp-missing-semantic-diagnostics.md).
 - **Source:** [DiagnosticsTests.scala](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/lsp/DiagnosticsTests.scala),
   [CompilerApi.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/api/CompilerApi.scala),
   and [ErrorPrinter.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/util/error/print/ErrorPrinter.scala).
@@ -84,7 +84,7 @@ item needs its own plan. A cleanup campaign can work through several approved gr
 ### QA-004: Isolate diagnostic-specific evidence in CLI assertions
 
 - **Status:** complete
-- **Implementation and verification:** [Moved-capture and visibility diagnostics](lsp-missing-semantic-diagnostics.md).
+- **Implementation and verification:** [Moved-capture and visibility diagnostics](completed/lsp-missing-semantic-diagnostics.md).
 - **Source:** [DiagnosticsTests.scala](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/lsp/DiagnosticsTests.scala).
 - **Problem:** Searching combined CLI output for a moved site and highlighted reference lets
   a neighboring use-after-move diagnostic satisfy assertions intended for the moved-capture report.
@@ -99,7 +99,7 @@ item needs its own plan. A cleanup campaign can work through several approved gr
 ### QA-005: Describe lowercase operator references in the parser contract
 
 - **Status:** complete
-- **Implementation and verification:** [B23 parser repair](parser-parenthesized-expression-performance.md).
+- **Implementation and verification:** [B23 parser repair](completed/parser-parenthesized-expression-performance.md).
 - **Source:** [expressions.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/parser/expressions.scala),
   `opRefP`, and [identifiers.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/parser/identifiers.scala),
   `operatorIdP`.

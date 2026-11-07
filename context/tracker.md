@@ -41,7 +41,7 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 - **Tracker:** [Protocol derivation](tasks/protocol-derivation.md)
 - **Status:** design
 - **Current focus:** General derivation after the initial protocol task; targeted Clone
-  generation belongs to [explicit Clone](tasks/explicit-clone.md).
+  generation belongs to [explicit Clone](tasks/completed/explicit-clone.md).
 
 ### Implicit cloning
 

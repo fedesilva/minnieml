@@ -1814,7 +1814,7 @@ are in `context/history/` for Author review. No compiler slice is authorized by 
   [cleanup placement findings](../ownership-cleanup-placement.md) are deferred quality work.
   The [parenthesized-lambda parser bug](../parser-parenthesized-lambda-arguments.md) and
   [grouped callable-result repair](typecheck-grouped-callable-results.md) retain their own scope.
-- **Post-lambda review:** [type-property alias resolution](../type-property-alias-resolution.md)
+- **Post-lambda review:** [type-property alias resolution](type-property-alias-resolution.md)
   reviews consistent identity across heap/clone/free queries; implementation approval is pending.
 
 ## Checkpoint Evidence

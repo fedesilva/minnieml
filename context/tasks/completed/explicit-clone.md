@@ -37,14 +37,14 @@ explicit copy of global-backed values while ordinary borrowing and scalar copies
   existing memory-functions phase to generate Clone instances for eligible concrete types,
   reusing its cloning machinery. This does not require a general derivation facility.
   `^value` borrows its input and returns a separate owned value, leaving the input valid.
-  Follow the contract in [Memory evolution](../../docs/brainstorming/mem/mem-evolution.md#layer-2-clone-protocol).
+  Follow the contract in [Memory evolution](../../../docs/brainstorming/mem/mem-evolution.md#layer-2-clone-protocol).
   Include the native clone implementations needed by generated instances.
 - Remove implicit cloning of globals at ownership sinks. Reject transfers of global-backed
   values into owned storage; the programmer must explicitly use `^` to produce an owned copy.
   This applies to transfers requiring ownership, not ordinary scalar value copies.
 
 General derivation, Unique integration, and broader literal-cloning policy are out of scope.
-Follow [memory evolution](../../docs/brainstorming/mem/mem-evolution.md#layer-2-clone-protocol).
+Follow [memory evolution](../../../docs/brainstorming/mem/mem-evolution.md#layer-2-clone-protocol).
 
 ## Plan (Approval Gate)
 
@@ -106,8 +106,8 @@ original global storage and explicit copies are cleaned up exactly once.
 ### Documentation and final verification
 
 Update the language reference, compiler design, memory model, and executable examples for
-Clone and explicit global transfers. Follow [coding rules](../coding-rules.md) and
-[development tools](../dev-tools.md), including local post-chores, smoke tests, full tests,
+Clone and explicit global transfers. Follow [coding rules](../../coding-rules.md) and
+[development tools](../../dev-tools.md), including local post-chores, smoke tests, full tests,
 publishing, benchmark compilation, memory checks, and independent review. Apply required
 Linux checks if ABI/C interoperability changes; offer optional cloud verification when applicable.
 Record actual results and resolve scoped findings before signoff.
@@ -204,7 +204,7 @@ P8 verification (2026-10-30):
 
 Global provenance must survive aliases and aggregates. Heap representation alone does not
 establish Clone support. Preserve literal promotion, mixed ownership witnesses, and cleanup.
-General derivation and [implicit cloning policy](implicit-cloning.md) remain separate tasks.
+General derivation and [implicit cloning policy](../implicit-cloning.md) remain separate tasks.
 
 ## Signoff
 

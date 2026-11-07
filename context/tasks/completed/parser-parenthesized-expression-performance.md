@@ -11,7 +11,7 @@
 ## Execution Checklist
 
 1. [x] **complete** — Reproduce parser-time growth with bounded nested-expression fixtures;
-   see [measurements and reproduction](parser-parenthesized-expression-performance-evidence.md).
+   see [measurements and reproduction](../parser-parenthesized-expression-performance-evidence.md).
 2. [x] **complete** — Identify repeated parser work and approve the
    [focused repair plan](#focused-repair-plan).
 3. [x] **complete** — Repair the repeated work while preserving parsing and recovery behavior.
@@ -33,13 +33,13 @@ source spans, valid callable groups, and malformed-input recovery. Do not change
 
 ## Evidence and reproduction
 
-The [bounded reproduction](parser-parenthesized-expression-performance-evidence.md) records
+The [bounded reproduction](../parser-parenthesized-expression-performance-evidence.md) records
 the source revision, JVM, exact input generator and hashes, commands, rule counts, and timing
 samples. All 15 inputs parse without recovered errors, with equal instrumented and ordinary
 ASTs. Two warmed measurement forks agree on rule counts: 12 arithmetic terms use 521,228
 callbacks, 14 use 2,084,876, and 16 use 8,339,468. Median parse times at 16 terms are 49.09 ms
 and 49.50 ms. Tuple controls expose a second shared-prefix problem; selected groups provide
-a linear control. [Repair measurements](parser-parenthesized-expression-performance-evidence.md#repair-measurements)
+a linear control. [Repair measurements](../parser-parenthesized-expression-performance-evidence.md#repair-measurements)
 record 3,452 callbacks for the repaired 16-term case, with 420 added callbacks per two added
 terms. All 15 measured inputs and 68 compatibility cases retain exact raw AST hashes and
 diagnostic counts. Compiler checks, independent review, and Author signoff are complete.
@@ -67,7 +67,7 @@ Verification on macOS aarch64 with JDK 25.0.4.1:
 - Local QA enforcement and `git diff --check` pass. Independent primary review and all four
   dedicated checks are complete. They identify one independently confirmed documentation
   finding: `opRefP` also accepts lowercase operator names. The corrected comment is recorded
-  as [QA-005](qa-misses.md#qa-005-describe-lowercase-operator-references-in-the-parser-contract).
+  as [QA-005](../qa-misses.md#qa-005-describe-lowercase-operator-references-in-the-parser-contract).
   A fresh focused run passes all 92 parser/span/recovery/execution tests. Fresh narrow primary
   review and all four dedicated checks accept the one-sentence documentation correction with
   no actionable findings. No executable code changes follow the successful compiler checks.
@@ -104,13 +104,13 @@ size; allow headroom instead of pinning exact rule names or callback totals. Reu
 
 Retain and extend the directly relevant controls:
 
-- [ParserCommitmentTests](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/grammar/ParserCommitmentTests.scala):
+- [ParserCommitmentTests](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/grammar/ParserCommitmentTests.scala):
   grouped lambda applications, tuple alternatives, lexical parameter identities, selections,
   and missing delimiters.
-- [ExpressionSourceSpanTests](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/parser/ExpressionSourceSpanTests.scala):
+- [ExpressionSourceSpanTests](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/parser/ExpressionSourceSpanTests.scala):
   group and field spans, annotations and their expression endpoints, and the distinction
   between `()` and the empty-tuple error `( )`.
-- [ConditionalRecoveryTests](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/parser/ConditionalRecoveryTests.scala):
+- [ConditionalRecoveryTests](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/parser/ConditionalRecoveryTests.scala):
   recovered conditionals inside groups, tuples, and parameterized lambdas; preserve later members.
 
 Characterize incomplete field suffixes, missing tuple elements, trailing commas, and missing
@@ -121,7 +121,7 @@ termination-sensitive malformed cases.
 ### 2. Factor shared prefixes in expression parsing
 
 Keep the repair within
-[expressions.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/parser/expressions.scala)
+[expressions.scala](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/parser/expressions.scala)
 and its directly affected tests/documentation:
 
 - Parse each parenthesized base once, then attach zero or more `.field` suffixes. With no suffix,

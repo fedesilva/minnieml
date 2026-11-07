@@ -69,14 +69,14 @@ an exhaustive audit of private helpers or evidence that similarly named queries 
 
 | Family | Current home and consumers | Proposed treatment |
 | --- | --- | --- |
-| Operator classification, candidates, precedence, and associativity | [OperatorQueries](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/queries/OperatorQueries.scala); consumed by OperatorCoherence and ExpressionRewriter | Shared query extraction implemented; preserve the division between facts, diagnostics, and AST construction. |
-| Declaration metadata, source names, and instance-member IDs | [DeclarationQueries](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/queries/DeclarationQueries.scala); used by registration, coherence, ID assignment, diagnostics, and entry-point selection | AST facts extracted; registry operations retain their owner. |
-| Protocol visibility, candidates, and concrete implementations | [ValueScope](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/queries/ValueScope.scala), DeclarationQueries, and ProtocolRegistry instance methods | Shared AST scope/name queries; registry retains strict lookup, typed failures, and authoritative associations. |
-| Type canonicalization, declarations, native representation, and destruction requirements | [TypeQueries](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/queries/TypeQueries.scala), NativeTypeQueries, TypeFailureQueries, and TypeMemoryQueries; used across parsing, semantics, and codegen | Four shared domain owners extracted in [step 9](#step-9-type-query-domains); execution checks, independent review, and Author signoff are complete. |
-| Clone target selection and call construction | [CloneTargets](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/CloneTargets.scala) and [CloneCalls](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/CloneCalls.scala); used by struct generation and ownership analysis | Registry-backed selection is separate from call construction; missing or rejected instances remain unavailable targets. |
-| Destruction targets and memory-function lookup | [DestructionTargets](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/queries/DestructionTargets.scala) and [MemoryFunctions](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/queries/MemoryFunctions.scala); used by ownership, destructor generation, and codegen | Both focused query owners live in ast.queries; selection order and pending-generation behavior are preserved. |
-| Callable origins, application structure, and parameter ownership | [ApplicationQueries](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/queries/ApplicationQueries.scala), CallableValues, and CallStages | Shared structural queries serve semantic and codegen consumers; value-flow, parameter agreement, and invocation availability retain their analysis owners. |
-| Cursor lookup, definitions, references, and source spans | [AstLookup](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/lsp/AstLookup.scala); used by LSP features | Share source-span facts and canonical alias traversal; keep cursor selection, reference policy, and guarded source-name recovery in LSP. |
+| Operator classification, candidates, precedence, and associativity | [OperatorQueries](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/queries/OperatorQueries.scala); consumed by OperatorCoherence and ExpressionRewriter | Shared query extraction implemented; preserve the division between facts, diagnostics, and AST construction. |
+| Declaration metadata, source names, and instance-member IDs | [DeclarationQueries](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/queries/DeclarationQueries.scala); used by registration, coherence, ID assignment, diagnostics, and entry-point selection | AST facts extracted; registry operations retain their owner. |
+| Protocol visibility, candidates, and concrete implementations | [ValueScope](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/queries/ValueScope.scala), DeclarationQueries, and ProtocolRegistry instance methods | Shared AST scope/name queries; registry retains strict lookup, typed failures, and authoritative associations. |
+| Type canonicalization, declarations, native representation, and destruction requirements | [TypeQueries](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/queries/TypeQueries.scala), NativeTypeQueries, TypeFailureQueries, and TypeMemoryQueries; used across parsing, semantics, and codegen | Four shared domain owners extracted in [step 9](#step-9-type-query-domains); execution checks, independent review, and Author signoff are complete. |
+| Clone target selection and call construction | [CloneTargets](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/CloneTargets.scala) and [CloneCalls](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/CloneCalls.scala); used by struct generation and ownership analysis | Registry-backed selection is separate from call construction; missing or rejected instances remain unavailable targets. |
+| Destruction targets and memory-function lookup | [DestructionTargets](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/queries/DestructionTargets.scala) and [MemoryFunctions](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/queries/MemoryFunctions.scala); used by ownership, destructor generation, and codegen | Both focused query owners live in ast.queries; selection order and pending-generation behavior are preserved. |
+| Callable origins, application structure, and parameter ownership | [ApplicationQueries](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/queries/ApplicationQueries.scala), CallableValues, and CallStages | Shared structural queries serve semantic and codegen consumers; value-flow, parameter agreement, and invocation availability retain their analysis owners. |
+| Cursor lookup, definitions, references, and source spans | [AstLookup](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/lsp/AstLookup.scala); used by LSP features | Share source-span facts and canonical alias traversal; keep cursor selection, reference policy, and guarded source-name recovery in LSP. |
 
 ### Query-family boundaries
 
@@ -146,7 +146,7 @@ by `ProtocolRegistry`. No second query package or forwarding compatibility layer
    include OperatorCoherence, ExpressionRewriter, and ProtocolGroupingTests. Remove the old
    helper definitions and old package imports after migration.
 4. Update the operator-query description and source-tree overview in
-   [compiler-design.md](../../docs/design/compiler-design.md), plus this task's current inventory
+   [compiler-design.md](../../../docs/design/compiler-design.md), plus this task's current inventory
    links, to match the implemented locations. Document the AST-only dependency boundary and
    preserve caller ownership of diagnostics, AST construction, and entry-point policy.
 5. Verify behavior and complete compiler handoff review, then stop for scoped signoff.
@@ -250,23 +250,23 @@ Contracts to preserve:
 
 Retained boundaries and follow-ups:
 
-- [TypeResolver](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/TypeResolver.scala)
+- [TypeResolver](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/TypeResolver.scala)
   constructs alias metadata from reference chains and preserves nominal targets. It is not a query
   relocation. TypeChecker's struct lookup also includes name recovery and NativeStruct-to-TypeStruct
   construction; its value-alias inference is a separate operation.
-- [ProtocolRegistry.typeKey](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/ProtocolRegistry.scala)
+- [ProtocolRegistry.typeKey](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/ProtocolRegistry.scala)
   validates indexed identities, rejects quantified schemes, normalizes built-in Unit, and reports
   typed failures. TypeCompatibility and ValueAvailability retain comparison and usability policy.
-- [DestructionValidator](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/DestructionValidator.scala)
+- [DestructionValidator](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/DestructionValidator.scala)
   rejects missing nominal references and does not unwrap schemes. Its proposed canonicalization
-  unification belongs to [destruction contract generalization](destruction-contract-generalization.md),
+  unification belongs to [destruction contract generalization](../destruction-contract-generalization.md),
   where those differences need an explicit decision.
-- [Backend type helpers](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/emitter/package.scala)
+- [Backend type helpers](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/emitter/package.scala)
   retain LLVM mapping and NativeStruct construction. `resolveToTypeFn` also differs from canonical:
   it leaves schemes intact, retries alias `typeRef` after an unsuitable cached result, and has no
   cycle guard. Step 12 retains that distinct callable-query contract instead of substituting
   canonicalization; application-chain collection is shared independently.
-- [PreCodegenValidator](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/PreCodegenValidator.scala)
+- [PreCodegenValidator](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/PreCodegenValidator.scala)
   uses name recovery and entry-type policy. Retain that behavior in this migration; replacing its
   alias resolver needs a separate contract decision. AstLookup uses shared canonical traversal
   and retains guarded source-name recovery for incomplete editor indexes, as described in step 13.
@@ -279,7 +279,7 @@ Approved implementation and acceptance:
    recursion. Migrate all production and test callers and remove TypeUtils without a forwarding
    layer. Add concise public contracts where needed; introduce no query cache or policy switches.
 2. Replace the equivalent constructor-result lookup in
-   [CallableTargetAnalysis](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/emitter/CallableTargetAnalysis.scala)
+   [CallableTargetAnalysis](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/codegen/emitter/CallableTargetAnalysis.scala)
    with `TypeQueries.declaration(...).collect { case struct: TypeStruct => struct }`. Its current
    canonicalization followed by direct-struct or indexed-reference selection has the same result.
    Keep value-flow analysis and constructor eligibility in the caller; no new struct adapter is needed.
@@ -301,10 +301,10 @@ Approved implementation and acceptance:
    2026-11-03 authorization to continue through the remaining phases.
 
 Relevant behavior-preservation suites are
-[TypeUtilsTests](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/TypeUtilsTests.scala),
-[ParseTypeErrorTests](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/ParseTypeErrorTests.scala),
-[FunctionSignatureTest](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/FunctionSignatureTest.scala),
-and [LocalCallableCodegenTests](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/LocalCallableCodegenTests.scala).
+[TypeUtilsTests](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/TypeUtilsTests.scala),
+[ParseTypeErrorTests](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/ParseTypeErrorTests.scala),
+[FunctionSignatureTest](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/FunctionSignatureTest.scala),
+and [LocalCallableCodegenTests](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/LocalCallableCodegenTests.scala).
 Execution and review results are recorded below. Steps 10–13 follow the query-family boundaries
 above. The separate destruction task retains its own scope and approval gate.
 
@@ -399,7 +399,7 @@ where unification exposes a gap. Check identity-based lookup, coherent and confl
 unresolved candidates, and partial/error ASTs. Run applicable compiler verification and independent
 review under the repository rules. Operator-extraction results are recorded below.
 
-[ProtocolGroupingTests](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/ProtocolGroupingTests.scala)
+[ProtocolGroupingTests](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/ProtocolGroupingTests.scala)
 already covers declaration order, mixed free/protocol operators, unary/binary selection,
 shadowing, unresolved candidates, and grouping conflicts. Preserve those assertions and add
 focused regression coverage only for uncovered query contracts. Source inspection supports the

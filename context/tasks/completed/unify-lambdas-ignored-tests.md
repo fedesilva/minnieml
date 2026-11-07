@@ -292,7 +292,7 @@ recorded separately.
   order/counts, environment metadata, and basic-block inspection use shared helpers. Owned cleanup
   returns the already-checked capture with its destructor; named fields keep operand roles explicit.
   The native heap-declaration predicate is shared without changing alias resolution or ownership.
-  [Alias-resolution consistency](../type-property-alias-resolution.md) is a separate review-first
+  [Alias-resolution consistency](type-property-alias-resolution.md) is a separate review-first
   follow-up after Unify lambdas.
 - **Correction verification:** `sbtn 'scalafmtAll; scalafixAll; testFull'` passes 1,403 library
   tests and nine CLI tests, zero ignores, with no warnings. An initial run's single failure was

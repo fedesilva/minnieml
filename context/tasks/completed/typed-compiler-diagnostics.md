@@ -194,9 +194,9 @@ Follow-up after [Implement protocols](protocols.md). The protocol foundation is 
 Protocol completion remains independent of this migration.
 
 Coordinate source-field contracts with
-[diagnostic contract documentation](compiler-diagnostic-contract-documentation.md) and ownership
-construction with [diagnostic maintainability](ownership-diagnostic-maintainability.md).
-[Toolchain error boundaries](qa-toolchain-error-boundaries.md) owns broader exception-boundary
+[diagnostic contract documentation](../compiler-diagnostic-contract-documentation.md) and ownership
+construction with [diagnostic maintainability](../ownership-diagnostic-maintainability.md).
+[Toolchain error boundaries](../qa-toolchain-error-boundaries.md) owns broader exception-boundary
 cleanup; this task owns typed failure identity and presentation at those boundaries.
 
 The inventory below records the migration scope. Rendering checks and external-output checks

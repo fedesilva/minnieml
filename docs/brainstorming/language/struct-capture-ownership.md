@@ -70,6 +70,6 @@ not define current syntax.
 ## Scope
 
 This proposal is separate from [Explicit Clone and global ownership transfers](
-../../../context/tasks/explicit-clone.md). Whether to implement it, and when, remain open.
+../../../context/tasks/completed/explicit-clone.md). Whether to implement it, and when, remain open.
 The [struct capture ownership task](../../../context/tasks/struct-capture-ownership.md)
 holds the reminder to resume design.

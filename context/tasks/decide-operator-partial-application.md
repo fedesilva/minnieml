@@ -108,7 +108,7 @@ confirm the example table and establish evaluation timing for each proposed part
 
 ## Task Working Memory
 
-Deferred design, placed after [Protocols](protocols.md) in the tracker. Next action: review the
+Deferred design, placed after [Protocols](completed/protocols.md) in the tracker. Next action: review the
 example table with the Author when discussion is selected. Keep implementation unchanged until
 the design and a separate implementation plan are approved. Neither coexistence nor removal is
 decided. Keep function-value representation separate from operator syntax, and coordinate

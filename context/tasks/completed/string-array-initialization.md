@@ -21,7 +21,7 @@
 Allocating StringArray slots without initializing them leaves invalid values for destruction.
 `__free_StringArray` destroys every slot, including slots that have never been assigned.
 The reproduction and controls are recorded below and in
-[RuntimeTests.scala](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/RuntimeTests.scala).
+[RuntimeTests.scala](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/RuntimeTests.scala).
 
 ## Outcome
 
@@ -33,7 +33,7 @@ destroyed before all slots have been assigned, while assigned slots retain their
 - Initialize slots in `ar_str_new` without changing public signatures, layout, or allocation
   failure handling.
 - Add runtime and compiled-MML sanitizer regressions in
-  [RuntimeTests.scala](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/RuntimeTests.scala).
+  [RuntimeTests.scala](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/RuntimeTests.scala).
 - Preserve nonpositive-size behavior and fully initialized array behavior.
 - Document the StringArray initialization contract in the language reference.
 - Replacing an already owned array element remains outside this initialization repair.

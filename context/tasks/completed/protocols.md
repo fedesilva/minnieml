@@ -40,7 +40,7 @@ the foundation for [explicit Clone and global ownership transfers](explicit-clon
 
 ## Scope
 
-The [Protocols draft](../../docs/brainstorming/language/protocols.md) describes the full
+The [Protocols draft](../../../docs/brainstorming/language/protocols.md) describes the full
 design. This task implements only the smallest end-to-end slice needed for the outcomes
 below. Completing this slice does not mean implementing the entire specification.
 
@@ -69,14 +69,14 @@ Deliver the protocol system through `Num`, then local binding inference and fina
   [Explicit Clone and global ownership transfers](explicit-clone.md).
 
 The operator inventory above follows `injectStandardOperators` in
-[StandardOperators.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/StandardOperators.scala),
+[StandardOperators.scala](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/StandardOperators.scala),
 which supplies the compiler's built-in operators. `prelude.mml` is an unused placeholder,
 not the source of those declarations. Integer remainder and shifts have no Float counterparts;
 the plan keeps them as free operators.
 
 ### Beyond the first slice
 
-- General [protocol derivation](protocol-derivation.md), including compiler-derived enum
+- General [protocol derivation](../protocol-derivation.md), including compiler-derived enum
   equality, is separate follow-up work. Targeted Clone generation
   belongs to [Explicit Clone and global ownership transfers](explicit-clone.md).
 - General parametric functions and data types, parameterized instances, higher-kinded
@@ -112,10 +112,10 @@ grouping before proceeding to type-directed selection in P4.
 Function members use named, typed parameters; instance headers omit `for`. The first slice
 allows the protocol's single type parameter in member signatures and concrete types in
 instance headers. It does not introduce member-local type variables or constraints.
-See the [protocol syntax](../../docs/brainstorming/language/protocols.md#syntax) for examples;
+See the [protocol syntax](../../../docs/brainstorming/language/protocols.md#syntax) for examples;
 the standard-library sketch includes deferred features beyond this slice.
 
-[Instance identity and member resolution](../../docs/brainstorming/language/protocols.md#instance-identity-and-member-resolution)
+[Instance identity and member resolution](../../../docs/brainstorming/language/protocols.md#instance-identity-and-member-resolution)
 requires a single instance per protocol and concrete type combination, rejecting duplicates.
 Protocol members join ordinary function-name lookup as candidates without requiring the
 protocol name. The type checker uses argument and expected result types to select the
@@ -125,19 +125,19 @@ and unresolved ambiguity are errors. Functions and operators share this resoluti
 The protocol supplies member types and metadata, including operator precedence and
 associativity. Instances may omit them or repeat them. Check every explicit restatement
 against the concrete signature and reject any divergence.
-[Operator syntax](../../docs/brainstorming/language/protocols.md#operator-declaration-syntax)
+[Operator syntax](../../../docs/brainstorming/language/protocols.md#operator-declaration-syntax)
 uses the ordinary declaration shape: name, named parameters, return type, precedence and
 associativity. A required member omits the body. Instance members supply Lambda bodies.
 
 Instance members follow normal function ownership rules and must honor the declared parameter
-and return ownership contract. See [Ownership](../../docs/brainstorming/language/protocols.md#ownership).
+and return ownership contract. See [Ownership](../../../docs/brainstorming/language/protocols.md#ownership).
 
 ### Deferred features
 
 The AST can represent an optional default Lambda body, but the first slice rejects default
 members in source. Default checking, prerequisite protocols, member-local type variables,
 and constraints remain outside this plan. Their broader semantics are described in the
-[Protocols draft](../../docs/brainstorming/language/protocols.md).
+[Protocols draft](../../../docs/brainstorming/language/protocols.md).
 
 ## Plan (Approval Gate)
 
@@ -181,7 +181,7 @@ update the execution checklist before advancing. Stage completion does not autho
 - Remove the injected dotted Float spellings and migrate their uses. Do not reserve those
   spellings against user-defined operators or introduce compatibility aliases.
 - Preserve literal promotion and mixed ownership witnesses. The broader policy belongs to
-  [Revisit implicit cloning](implicit-cloning.md); P8 changes only global-backed transfers.
+  [Revisit implicit cloning](../implicit-cloning.md); P8 changes only global-backed transfers.
 
 ### P0: AST nodes and Author review
 
@@ -325,7 +325,7 @@ explicitly declared by the program. Current shipped programs use the supported s
 
 - [Protocol error recovery and integration repairs](protocols-review-repairs.md) are complete
   and signed off. The child task records the corrections and renewed compiler-gate results.
-- Resolve broader choices through [separate design discussions](protocols-design-discussions.md),
+- Resolve broader choices through [separate design discussions](../protocols-design-discussions.md),
   one topic per iteration. Function-value wrapping stays in place pending its discussion.
 - Run the applicable compiler verification and review gates described under P9 for P0 through
   P5, including P0b. Record actual results, outstanding failures, and any explicit waivers.
@@ -340,7 +340,7 @@ Exit: Num is verified and signed off; unresolved required checks or findings kee
 - Prepare and approve a bounded design for propagating local use-site type information back
   to a protocol function binding. Define the local inference boundary and stopping conditions.
 - Accept `let render_int = render;` followed by `render_int "function value: " 5;` in the
-  local body of [protocol-functions.mml](../../mml/samples/protocol-functions.mml), selecting
+  local body of [protocol-functions.mml](../../../mml/samples/protocol-functions.mml), selecting
   the `Render Int` member without an explicit function-type annotation.
 - Select one concrete member and function type for the binding, consistent with all its local
   uses. Do not select different instances at different uses of the same binding.
@@ -375,7 +375,7 @@ Implementation, verification, independent review, and stage signoff are complete
 - Update the language reference, compiler design, memory-model documentation, and current
   examples to describe implemented protocol syntax, resolution, Num, and local binding inference.
   Keep broader derivation and implicit-cloning proposals identified as separate work.
-- Follow [coding rules](../coding-rules.md) and [development tools](../dev-tools.md): formatting
+- Follow [coding rules](../../coding-rules.md) and [development tools](../../dev-tools.md): formatting
   and linting, smoke collection before publishing or expensive checks, full `testFull`, local
   publish, benchmarks, and the memory harness for ownership/lambda changes. Run sbtn sequentially.
 - If ABI/C interoperability changes are required, run affected fixtures in both required Linux
@@ -417,13 +417,13 @@ one concrete instance member and have a concrete function type.
 
 Implementation anchors:
 
-- [RefResolver](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/RefResolver.scala)
+- [RefResolver](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/RefResolver.scala)
   retains multiple matches in `candidateIds`.
-- [TypeChecker](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/TypeChecker.scala):
+- [TypeChecker](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/TypeChecker.scala):
   checks retained candidates using the full enclosing application chain, independently known
   argument types, and expected types. Candidate-local trees and diagnostics are committed only
   for a unique applicable concrete member.
-- [PartialApplicationElaborator](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/PartialApplicationElaborator.scala):
+- [PartialApplicationElaborator](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/PartialApplicationElaborator.scala):
   `rewriteApplication` uses the callee's concrete `TypeFn` to elaborate partial applications.
   Resolution must supply that concrete callable before this phase.
 
@@ -532,7 +532,7 @@ P3 verification:
   passed all 2,108 library and 9 CLI tests. No compiler warnings were reported.
 - Repeated reference resolution clears a stale binding target when a signature becomes visible;
   the rerun regression in
-  [ProtocolRefResolverTests](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/ProtocolRefResolverTests.scala)
+  [ProtocolRefResolverTests](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/ProtocolRefResolverTests.scala)
   passes.
 
 P4 verification:
@@ -662,7 +662,7 @@ Initial P6 verification (baseline for the review repairs):
   repeated-checking findings. The repair child records the additional verification and review.
 
 The definitions in
-[protocols.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/protocols.scala)
+[protocols.scala](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/protocols.scala)
 represent protocols, signatures, and instances as declarations. P0 is verified and
 signed off. P0b is verified and signed off; P1 parsing and P2 signature checking/lowering are
 complete. P3 lookup and operator grouping are verified and complete. P4 type-directed selection
@@ -761,12 +761,12 @@ final verification are recorded below.
 
 ## Risks / Notes
 
-[Enums](enums.md) depends on protocol instance resolution for derived equality, but derivation
-is outside this slice and tracked in [Protocol derivation](protocol-derivation.md).
+[Enums](../enums.md) depends on protocol instance resolution for derived equality, but derivation
+is outside this slice and tracked in [Protocol derivation](../protocol-derivation.md).
 The separate [explicit Clone task](explicit-clone.md) adapts the memory-functions phase. It does not
 approve a general derivation facility or the full memory evolution design. The global-cloning change must
 cover global provenance through aliases and aggregates; broader literal-cloning policy
-is tracked separately in [Revisit implicit cloning](implicit-cloning.md).
+is tracked separately in [Revisit implicit cloning](../implicit-cloning.md).
 The language draft defines semantics beyond the approved bounded plan.
 
 Incidental findings and their fix status are collected in [Bug notes](bug-notes.md).
@@ -791,11 +791,11 @@ or conflicting evidence produces a diagnostic. Final evidence is recorded
 
 The conversion, diagnostic, sample-comment, shared-type, workflow, and QA-recording errands
 are delivered as separate commits. The QA-002 string-builder repair remains deferred in
-[QA misses](qa-misses.md); recording it does not implement the repair.
+[QA misses](../qa-misses.md); recording it does not implement the repair.
 
 [Explicit Clone and global ownership transfers](explicit-clone.md) owns P7/P8. General
-[protocol derivation](protocol-derivation.md), broader
-[implicit-cloning policy](implicit-cloning.md), and
+[protocol derivation](../protocol-derivation.md), broader
+[implicit-cloning policy](../implicit-cloning.md), and
 [protocol navigation](lsp-protocol-navigation.md) remain separate tasks. Arrays have no
 ToString instance; their conversion policy is deferred.
 

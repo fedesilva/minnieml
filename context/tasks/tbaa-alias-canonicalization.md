@@ -85,7 +85,7 @@ distinct nominal declarations, and the applicable compiler gates and independent
 
 ## Risks / Notes
 
-[Unify type-property alias resolution](type-property-alias-resolution.md) concerns
+[Unify type-property alias resolution](completed/type-property-alias-resolution.md) concerns
 heap/clone/free queries; [Unify alias resolution](unify-alias-resolution.md) concerns
 shared resolution helpers. Neither records this TBAA correctness requirement.
 Avoid broadening the repair into either consolidation effort without an approved plan.

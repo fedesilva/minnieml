@@ -23,7 +23,7 @@ fit. Copying the entire payload after that flush exceeds the allocation. String 
 writers need bounded copies; newline variants also need room for their final byte.
 
 Sanitizer failures cover a five-byte string written to a four-byte buffer and numeric/newline
-writes with capacity one in the [runtime](../../modules/mmlc-lib/src/main/resources/mml_runtime.c).
+writes with capacity one in the [runtime](../../../modules/mmlc-lib/src/main/resources/mml_runtime.c).
 The reproduction and verification results are recorded below.
 
 ## Outcome
@@ -35,7 +35,7 @@ length within capacity and preserving byte order. Buffer allocation size remains
 
 - String, integer, float, newline, and byte writers in `mml_runtime.c`.
 - Runtime sanitizer regressions and a compiled-MML integration regression in
-  [RuntimeTests.scala](../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/RuntimeTests.scala).
+  [RuntimeTests.scala](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/codegen/RuntimeTests.scala).
 - Preserve public signatures, buffer layout, numeric formatting, and byte truncation semantics.
 - B29 StringArray initialization and B30 destruction-time flushing remain separate repairs.
   Tests explicitly flush local buffers. OS write-error and short-write handling are outside
@@ -62,7 +62,7 @@ length within capacity and preserving byte order. Buffer allocation size remains
    UndefinedBehaviorSanitizer, and a compiled-MML program with AddressSanitizer and explicit
    flushing. Verify output ordering across automatic flushes. Run formatting, lint, smoke,
    the full suite, publishing, benchmark compilation, and the memory harness in the order
-   required by [coding rules](../coding-rules.md). Complete QA enforcement and independent
+   required by [coding rules](../../coding-rules.md). Complete QA enforcement and independent
    code review. No ABI change is planned.
 
 Implementation approval: granted for this fix plan and its verification.

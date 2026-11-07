@@ -22,7 +22,7 @@
 The shared walkers now live in
 [ApplicationQueries](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/queries/ApplicationQueries.scala),
 with semantic and codegen callers migrated under
-[AST query centralization](centralize-and-unify-ast-queries.md#step-12-callable-structure-and-analysis).
+[AST query centralization](completed/centralize-and-unify-ast-queries.md#step-12-callable-structure-and-analysis).
 The remaining reconstruction helpers disagree for short lists, although no current caller reaches
 that difference. Define one rebuilding contract before consolidating those helpers.
 

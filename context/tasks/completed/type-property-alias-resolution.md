@@ -23,7 +23,7 @@ Type-property queries must preserve declaration identity through aliases and the
 Reducing a resolved type to a short name permits another declaration to be selected when names
 collide, including with stdlib declarations. Name-based recursion guards can also conflate
 separate recursive types. This is the scope of
-[QA-001](qa-misses.md#qa-001-preserve-resolved-type-identity-in-type-utilities).
+[QA-001](../qa-misses.md#qa-001-preserve-resolved-type-identity-in-type-utilities).
 
 ## Outcome
 
@@ -34,12 +34,12 @@ or unresolved types do not silently select a declaration with the same short nam
 ## Scope
 
 - Review `cloneFnFor`, `isStructWithHeapFields`, `freeFnFor`, and `isHeapType` in
-  [type memory queries](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/queries/TypeMemoryQueries.scala),
+  [type memory queries](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/queries/TypeMemoryQueries.scala),
   their shared resolution helpers, and the identity available at their callers.
 - Establish the smallest consistent repair and its relationship to the broader QA-001 work.
 - Preserve explicit free functions, nominal type distinctions, recursive-struct termination,
   and the prohibition on cloning function-containing structs.
-- Review after [Unify lambdas](completed/unify-lambdas.md). This is a follow-up, not a lambda-completion gate.
+- Review after [Unify lambdas](unify-lambdas.md). This is a follow-up, not a lambda-completion gate.
 
 ## Plan (Approval Gate)
 

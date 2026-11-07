@@ -100,7 +100,7 @@ framed JSON-RPC requests.
 - Neovim 0.12.5: `tooling/nvim-syntax/test/navigation-server.lua` passed through the real LSP
   client, plugin commands/mappings, native cursor/quickfix destinations, and unsaved edits.
   Server exit code and signal were both zero. The reproducible headless commands, including
-  writable test-state configuration, are in [the plugin guide](../../tooling/nvim-syntax/README.md).
+  writable test-state configuration, are in [the plugin guide](../../../tooling/nvim-syntax/README.md).
 - Zed 1.27.0 GUI: Definition followed immediately by Implementation succeeds from selected names.
   `protocol-functions.mml` shows both `render` implementations; references from the selected Int
   member show its declaration and Int uses, excluding the Bool call. `protocol-operators.mml`

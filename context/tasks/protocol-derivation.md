@@ -18,22 +18,22 @@
 
 ## Problem
 
-The [initial protocol task](protocols.md) provides concrete instances. The
-[explicit Clone task](explicit-clone.md) adapts memory-function generation to Clone. A general
+The [initial protocol task](completed/protocols.md) provides concrete instances. The
+[explicit Clone task](completed/explicit-clone.md) adapts memory-function generation to Clone. A general
 derivation facility needs separate rules
 for eligibility, generated member bodies, and interaction with explicit instances.
 
 ## Outcome
 
 A defined and verified protocol derivation mechanism builds on the initial protocol system.
-The targeted generation of Clone instances belongs to [explicit Clone](explicit-clone.md).
+The targeted generation of Clone instances belongs to [explicit Clone](completed/explicit-clone.md).
 
 ## Scope
 
 - Placeholder for general protocol derivation, including compiler-derived enum equality
   described in the [Protocols draft](../../docs/brainstorming/language/protocols.md#derived-equality).
-- [Implement protocols](protocols.md) supplies the protocol mechanism;
-  [explicit Clone](explicit-clone.md) supplies targeted Clone generation, outside this facility.
+- [Implement protocols](completed/protocols.md) supplies the protocol mechanism;
+  [explicit Clone](completed/explicit-clone.md) supplies targeted Clone generation, outside this facility.
 - Broader ownership requirements remain in
   [Memory evolution](../../docs/brainstorming/mem/mem-evolution.md#aggregate-derivation).
 
@@ -51,7 +51,7 @@ Implementation verification and acceptance cases will be defined with the bounde
 ## Risks / Notes
 
 Depends on the declaration, instance checking, resolution, and lowering mechanisms delivered
-by [Implement protocols](protocols.md). This placeholder does not select a derivation API
+by [Implement protocols](completed/protocols.md). This placeholder does not select a derivation API
 or approve compiler changes.
 
 ## Signoff
@@ -64,5 +64,5 @@ or approve compiler changes.
 
 Protocol derivation is separate from the initial protocol slice. General derivation and
 enum equality need a bounded design. Targeted Clone generation belongs to [explicit
-Clone](explicit-clone.md) and does not depend on this general facility.
+Clone](completed/explicit-clone.md) and does not depend on this general facility.
 Next action: after the initial protocol system, define the general derivation scope and plan.

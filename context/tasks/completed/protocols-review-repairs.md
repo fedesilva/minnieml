@@ -101,7 +101,7 @@ Use readable, literal regressions and bounded measurements that separate parsing
   count without the exact source/test selection is not proof of a missing test.
 
 Broader representation and phase-boundary choices are in
-[Protocol design discussions](protocols-design-discussions.md). They are not automatic refactors
+[Protocol design discussions](../protocols-design-discussions.md). They are not automatic refactors
 within these repairs. Unrelated parser-time growth and missing editor diagnostics have separate tasks.
 
 ## Review cross-reference
