@@ -26,9 +26,7 @@ The same actions work for named functions and operators. Navigation sends pendin
 editor changes before its request, including during `mml.didChangeDebounceMs`.
 Restart the language server after installing an updated compiler.
 
-For a manual check, open [protocol-functions.mml](../../mml/samples/protocol-functions.mml)
-and [protocol-operators.mml](../../mml/samples/protocol-operators.mml). Navigate from a call
-to its signature, list implementations, and find references from each implementation.
+
 
 ## Requirements
 
