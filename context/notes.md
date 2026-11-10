@@ -6,6 +6,9 @@ Do not read or act on them unless directed to do so explicitely.
 
 ## Notes
 
+
+* vim plugin does not work with comments.nvim
+
 * On struct ownership:
   * change to non move by default
     * have them work like lambdas
