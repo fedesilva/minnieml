@@ -24,9 +24,12 @@ instance Combine Bool =
 ;
 
 pub fn main() =
+
   println (to_str (20 <+> 22));
   println (to_str (1.5 <+> 2.5));
-  if false <+> true then println "true";
+
+  if false <+> true
+  then println "true";
   else println "false";
   ;
 
