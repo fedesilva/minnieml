@@ -8,20 +8,14 @@ Allow a function to work with different types while preserving the relationships
 its parameters and result. Use the same type-variable notation and protocol constraints
 as the [protocols design](protocols.md).
 
-All array intrinsics motivate generic typing. Construction, reads, writes, and length
-operate on arrays of any element type. Their signatures express the relationships
-between `Array 'T`, element values, and results, whether their implementations are
-compiler-provided or written in MML. Generic function typing is the foundation to
-address before [intrinsic arrays](intrinsic-arrays.md).
-
 This document describes proposed language behavior. Ordinary generic functions and
 `where` constraints are not current compiler features.
 
 ## Scope
 
-Type variables range over ordinary value types, including concrete structs, arrays, and
-function types. Generic functions may accept functions as arguments. A fixed constructor
-such as `Array` may be applied to a type variable.
+Type variables range over ordinary value types, including concrete structs and function
+types. Generic functions may accept functions as arguments. Fixed type constructors may
+be applied to a type variable.
 
 Higher-kinded variables such as `'F 'T`, user-defined generic data types, and nested
 modules are separate work. Passing a function that must itself remain polymorphic is
@@ -32,8 +26,8 @@ required.
 ## Signatures
 
 A type variable has an apostrophe-prefixed name. Variables appearing in a function
-signature belong to that function unless already bound in the enclosing type-variable
-scope, such as by a protocol. There is no separate type-parameter declaration list.
+signature belong to that function unless already bound by an enclosing function.
+There is no separate type-parameter declaration list.
 
 ```text
 fn identity(~value: 'T): 'T = value;;
@@ -43,15 +37,17 @@ Every occurrence of `'T` refers to the same type. The consuming parameter makes 
 ownership-preserving identity: an owned argument transfers into the function and back
 to its caller. It does not implicitly duplicate a non-scalar argument.
 
-For the initial draft, generic declarations specify their parameter and result types.
-Whether to infer omitted generic result annotations is a separate decision below.
+Generic functions follow ordinary function annotation rules. When the result annotation
+is omitted, infer it from the body using the declared parameter types and constraints,
+independently of concrete callers. Inference does not introduce undeclared constraints.
+For example, `fn identity(~value: 'T) = value;;` has inferred result type `'T`.
 
 ### Type-variable resolution
 
 Resolve type-variable occurrences before checking the body or inferring call-site type
 arguments. Each variable has a stable identity within its declaring scope. Two unrelated
-functions may both use the spelling `'T` without referring to the same variable; a member
-using its enclosing protocol's `'T` refers to that protocol variable.
+functions may both use the spelling `'T` without referring to the same variable. A nested
+function using its enclosing function's `'T` refers to that enclosing variable.
 
 For each function signature, collect variables not already bound in the enclosing
 type-variable scope and assign them identities. Resolve occurrences throughout the
@@ -71,7 +67,7 @@ is needed.
 
 ### Protocol constraints
 
-A `where` clause follows the result type and precedes `=`:
+A `where` clause follows the parameter list and optional result annotation, and precedes `=`:
 
 ```text
 fn render(value: 'T): String
@@ -89,7 +85,11 @@ Multiple requirements on one variable use `&`, for example
 `where 'T: Show & Clone`. Constraints are minimum requirements: a type may implement
 additional protocols. Protocol names describe constraints, not parameter value types.
 The clause constrains variables already in scope; it does not introduce unrelated ones.
-Syntax for constraints on several distinct variables remains to be specified.
+Separate constraints on distinct variables with commas:
+
+```text
+where 'T: Show & Clone, 'U: Show
+```
 
 ## Type arguments and inference
 
@@ -109,13 +109,12 @@ let int_identity = identity Int;
 
 Supply all function type arguments explicitly or infer them all. Type arguments cannot
 follow value arguments. Partial explicit type application and `_` placeholders are
-deferred. Parentheses group compound type arguments, as in `identity (Array Int)`.
+deferred. Parentheses group compound type arguments, as in `identity (Int -> Int)`.
 
-For functions with several type variables, the proposed argument order is first
-appearance in the signature: parameter types from left to right, then the result type.
-Enclosing type variables do not become additional explicit arguments of an inner
-function. This ordering proposal needs review because changing signature order could
-change explicit calls.
+Type arguments follow first appearance in the signature: traverse parameter types left
+to right, including nested type expressions, then the result type. Count each distinct
+variable once. Enclosing type variables do not become additional explicit arguments of
+an inner function.
 
 Inference produces a local substitution for each call candidate. All occurrences of
 one variable must agree. Conflicting evidence is an error; unresolved variables require
@@ -133,59 +132,41 @@ concrete calls that happen to exist. A type variable cannot silently become `Int
 the body uses an operation available only for `Int`.
 
 Calls, returns, and protocol operations must preserve the declared type relationships.
-Ownership checking also applies to the generic body: specialization must not make an
-otherwise invalid duplication or transfer acceptable for selected callers.
 
-The implementation may specialize checked bodies for concrete types. Specialization
-determines layout, selected protocol implementations, and required cleanup; it does not
-add undeclared requirements to the source signature.
+The execution strategy is monomorphization: instantiate checked generic bodies for the
+concrete type arguments used, and reuse the implementation for the same function and
+resolved type arguments. Each concrete instance determines layout, selected protocol
+implementations, and required cleanup; it does not add undeclared requirements to the
+source signature.
 
 ## Ownership and closures
 
 Generic functions use the existing parameter, return, capture, and invocation rules.
-Parameters borrow by default; consuming parameters use `~`. A type variable is not
-permission to copy a value. Operations requiring explicit duplication need the appropriate
-clone contract. Substituting a concrete type preserves these obligations.
+Parameters borrow by default; consuming parameters use `~`. Concrete instances pass
+through the existing ownership analysis after monomorphization. Generic functions do not
+introduce a separate abstract ownership checker or a new callable-ownership model.
 
 Closures may borrow or own captures under the ordinary rules. Moving a capture out makes
 the closure call-once; owning captures alone does not. Generic typing introduces no new
 capture mode. See the [memory model](../../memory-model.md#move-closures-).
 
-### Array initialization
+The existing representation separates callable types from parameter ownership:
 
-Array initialization is one example of a generic array intrinsic. Its proposed signature is:
+- `TypeFn` contains parameter types and a result type.
+- `FnParam.consuming` records the declaration's `~` marker.
+- `CallableValues` follows callable origins through bindings, arguments, returns, and
+  partial applications to recover remaining parameter contracts. Conflicting consuming
+  and borrowing alternatives are rejected by ownership analysis.
 
-```text
-fn array_init(size: Int, init: Int -> 'T): Array 'T;
-```
+A parameter written `f: String -> Int` can therefore receive a function declared with
+`~text: String`; callable-flow analysis recovers that consuming argument contract.
+Writing `~f: String -> Int` instead transfers ownership of the function value itself.
+Monomorphization must preserve parameter markers, callable origins, captures, and result
+metadata so the existing analyses retain their evidence. Abstract type and constraint
+checking does not require caller-independent inference of callback ownership contracts.
 
-Assuming `make_person: Int -> Person`, both calls describe the same operation:
-
-```text
-let people = array_init 10 make_person;
-let people_explicit = array_init Person 10 make_person;
-```
-
-`Array` is a fixed type constructor and `'T` is an ordinary element type. Accepting a
-function makes `array_init` higher-order; it does not require higher-kinded type variables.
-
-The initializer is reusable. Each call supplies the value for one slot, transferring
-ownership of non-scalar results into the array. Construction does not duplicate a seed
-value and requires no `Clone` constraint.
-
-The array owns the results, not the initializer or its captures. A borrowing closure may
-read configuration and construct a fresh owned result on every call. A move closure is
-also suitable when reusable. A closure that transfers an owned capture on invocation is
-call-once and cannot satisfy this reusable-initializer contract. Enforce the ordinary
-closure rules; do not require move capture merely because the array owns its elements.
-
-The signature above shows the type relationship. The compiler must also preserve the
-initializer's invocation and result-ownership contract across function boundaries; the
-arrow spelling alone is not evidence that a result is owned. How existing callable
-metadata carries that contract is an implementation concern, not a new closure rule.
-
-Array allocation, index invocation order, invalid lengths, and overflow belong to the
-array specification.
+See [CallableValues](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/CallableValues.scala)
+and the [recursive callable ownership tests](../../../modules/mmlc-lib/src/test/scala/mml/mmlclib/semantic/RecursiveCallableOwnershipTests.scala).
 
 ## Function values, partial application, and recursion
 
@@ -199,35 +180,83 @@ arguments have been determined. Arguments and the expected remaining function ty
 jointly provide that type information. Capturing an argument in a partial application
 preserves its ordinary ownership and call-once behavior.
 
-The proposed first implementation supports recursion at the same type substitution.
-Recursion that changes type arguments, including through mutual recursion, needs a
-separate decision and must not cause unbounded specialization. Generic local functions
-must preserve enclosing type-variable identity and ordinary capture behavior.
+The first implementation supports recursion at the same type substitution, including
+mutual recursion. When a dependency chain returns to the same generic function, its
+resolved type arguments must match. Changing-type recursion is rejected, even when it
+would produce only a finite set of specializations.
+
+For example, `f Int -> g String -> f Int` is allowed; `f Int -> g Int -> f String`
+is rejected. Separate nonrecursive uses of `f Int` and `f String` remain valid.
+
+During monomorphization, track function identities and resolved type arguments along
+the active expansion chain. Reuse a matching specialization when recursion returns to
+it; report a changed substitution with the dependency chain. Check all specialization
+dependencies, including function-value creation, not only direct calls.
+
+Generic local functions preserve enclosing type-variable identity and ordinary capture
+behavior.
+
+## Pipeline placement
+
+`FnMonomorphizer` runs immediately after `TypeChecker` and before
+`PartialApplicationElaborator` in the semantic pipeline:
+
+```text
+CaptureAnalyzer
+TypeChecker
+FnMonomorphizer
+PartialApplicationElaborator
+ClosureMemoryFnGenerator
+StructDestructorBodyGenerator
+OwnershipAnalyzer
+```
+
+Type checking establishes generic type relationships, declared constraints, and use-site
+substitutions. `FnMonomorphizer` emits concrete typed bodies and resolves their protocol
+operations before partial-application lowering makes type-dependent capture decisions
+and closure generation builds environment fields. The existing ownership analyzer then
+checks concrete bodies and inserts cleanup.
+
+Generated instances need fresh binding identities, remapped references and captures,
+substituted type metadata, and refreshed indexes. Generic templates remain available for
+instantiation but do not enter downstream executable-body processing.
+
+See [SemanticStage](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/compiler/SemanticStage.scala),
+[PartialApplicationElaborator](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/PartialApplicationElaborator.scala),
+and [ClosureMemoryFnGenerator](../../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/ClosureMemoryFnGenerator.scala).
 
 ## Implementation decisions
 
 The compiler already represents protocol type variables, substitutes concrete instance
 types into member signatures, and selects concrete protocol members. Ordinary generic
-functions additionally need abstract body checking and instantiation at use sites.
+functions additionally need abstract type and constraint checking and instantiation at use sites.
 See [compiler design](../../design/compiler-design.md).
 
-Concrete specialization is a candidate execution strategy. Before implementation, trace
-`identity`, `render`, and an array-initializer wrapper through type resolution, body
+The constraint model uses an extensible type alias:
+
+```scala
+type TypeConstraint = ProtocolRef
+```
+
+Reuse `ProtocolRef` directly: it carries the protocol's name, resolved identity, and source
+information. Each `where` entry associates a scoped `TypeVariable` with a
+`List[TypeConstraint]`; the listed requirements are combined with `&`.
+
+Protocols are the only constraint form in the initial scope. Future structural requirements
+could reuse `TypeOpenRecord`, extending the alias to `ProtocolRef | TypeOpenRecord` for forms
+such as `'T: Show & { field: Type }`. Structural constraints remain outside this implementation.
+
+Before implementing monomorphization, trace
+`identity`, `render`, and a generic higher-order function through type resolution, body
 checking, calls, ownership analysis, and code generation. Settle:
 
-- Representation of resolved type-variable identities and declared constraints, and the
-  proposed scoped environment in `TypeResolver`.
-- Explicit type-argument ordering and parsing, including compound types.
-- Constraint syntax for multiple variables and policy for omitted result annotations.
+- Representation of resolved type-variable identities and the scoped environment in
+  `TypeResolver`.
+- Parsing explicit type arguments and constraints, including compound types.
 - Shared call inference for intrinsics, ordinary functions, and protocol members.
-- Representation of reusable callable and result-ownership facts through generic calls.
-- Specialization identity, reuse, recursion handling, and phase placement relative to
-  ownership analysis and closure generation.
-- Whether member-local generic functions ship with ordinary generic functions.
-
-An `Array` module may later provide qualified wrappers such as `Array.init`. Module
-qualification does not provide generic typing, and nested-module implementation is not
-part of this proposal.
+- Preservation of existing callable-flow and ownership metadata when instantiating bodies.
+- Representation of monomorphization keys, instance reuse, recursion checks, template storage,
+  and remapping of generated identities and references.
 
 ## Acceptance examples
 
@@ -235,13 +264,18 @@ The implementation plan should demonstrate:
 
 - Inferred and explicit calls agree, including compound and function type arguments.
 - Repeated occurrences of a variable reject inconsistent concrete types.
+- Explicit type arguments follow first-appearance order and are supplied all or none.
+- Omitted result annotations infer the same types as equivalent annotated functions.
+- Comma-separated variable constraints and `&`-separated requirements are checked.
 - Expected types resolve function values and partial applications; insufficient evidence
   produces a focused diagnostic.
 - Missing constraints fail in the generic body; missing instances fail at concrete calls.
 - Constraints propagate through calls between generic functions.
 - Consuming identity transfers an owned aggregate without duplication or double cleanup.
-- Borrowed captures can produce owned array elements; a call-once initializer is rejected.
-- Recursive calls reuse a specialization; unsupported changing-type recursion is diagnosed.
+- Generic higher-order calls preserve capture ownership and call-once restrictions.
+- Same-substitution direct and mutual recursion reuse specializations. Changing-type
+  cycles are diagnosed, including finite cycles and dependencies through function values.
+- Independent nonrecursive uses may instantiate the same function at different types.
 - Names, shadowing, captures, and source diagnostics survive specialization.
 
-These are requirements for a future implementation plan, not claims of passing tests.
+These are implementation acceptance requirements, not claims of passing tests.

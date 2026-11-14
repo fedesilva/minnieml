@@ -459,12 +459,52 @@ plan; they do not reopen construction without cloning or invalidation through ca
 
 [Generic functions](generic-functions.md) specifies the typing foundation to address
 before intrinsic arrays, including inference, explicit type arguments, constraints,
-and the `array_init` example. Initializers follow ordinary closure ownership rules;
-construction requires a reusable initializer supplying owned non-scalar results, not
-move capture or cloning.
+and abstract body checking. Array intrinsic signatures relate `Array 'T`, element
+values, and results, whether their implementations are compiler-provided or written in MML.
 
 The intrinsic-array scope does not itself implement ordinary generic functions. Their
 implementation stages and relationship to the array plan need to be planned together.
+
+#### Array initialization
+
+Array initialization is one example of a generic array intrinsic. Its proposed signature is:
+
+```text
+fn array_init(size: Int, init: Int -> 'T): Array 'T;
+```
+
+Assuming `make_person: Int -> Person`, both calls describe the same operation:
+
+```text
+let people = array_init 10 make_person;
+let people_explicit = array_init Person 10 make_person;
+```
+
+`Array` is a fixed type constructor and `'T` is an ordinary element type. Accepting a
+function makes `array_init` higher-order; it does not require higher-kinded type variables.
+
+The initializer is reusable. Each call supplies the value for one slot, transferring
+ownership of non-scalar results into the array. Construction does not duplicate a seed
+value and requires no `Clone` constraint.
+
+The array owns the results, not the initializer or its captures. A borrowing closure may
+read configuration and construct a fresh owned result on every call. A move closure is
+also suitable when reusable. A closure that transfers an owned capture on invocation is
+call-once and cannot satisfy this reusable-initializer contract. Enforce the ordinary
+closure rules; do not require move capture merely because the array owns its elements.
+
+The signature above shows the type relationship. The compiler must also preserve the
+initializer's invocation and result-ownership contract across function boundaries; the
+arrow spelling alone is not evidence that a result is owned. How existing callable
+metadata carries that contract is an implementation concern, not a new closure rule.
+
+The sized-construction plan must settle index invocation order, invalid lengths, and
+allocation-size overflow. Its acceptance checks must demonstrate that borrowed captures
+can produce owned array elements and that a call-once initializer is rejected. Trace an
+initializer wrapper through generic calls to verify that these contracts survive function
+boundaries.
+
+#### Array module
 
 Nested modules offer a home for the operations. A file is a module, and the proposed
 inner-module form is:

@@ -21,6 +21,13 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 
 ## Active Tasks
 
+### Generic functions
+
+- **Tracker:** [Generic functions](tasks/generic-functions.md)
+- **Status:** planned
+- **Current focus:** Review the six-stage implementation plan; begin with AST and parser
+  extensions after approval. Reuse existing type and ownership machinery.
+
 ### Intrinsic arrays
 
 - **Tracker:** [Intrinsic arrays](tasks/intrinsic-arrays.md)
