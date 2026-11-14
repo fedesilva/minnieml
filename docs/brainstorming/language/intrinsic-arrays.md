@@ -17,12 +17,12 @@ of operations.
 - `Array` takes one invariant element type parameter.
 - Arrays own their elements.
 - Array operations are intrinsics with dedicated AST nodes.
-- Codegen chooses storage using size, scope, and escape information.
+- Initial backing storage is heap allocated; storage placement optimization is a later subtask.
 - General polymorphism is not required for this step.
 
 
-Note: we should make strings be Arrays under this scheme, so we generalize string
-codegen. right now the codegen knows about string literals for example.
+String unification is out of scope. `String` remains a distinct type; arrays may still
+contain strings as elements.
 
 ---
 
@@ -42,7 +42,7 @@ In scope:
 - Type checking for array types and array literals.
 - Code generation for all of the above.
 - Ownership of storage and elements, destruction, and element-dependent cloning.
-- Mutation effects and element-borrow tracking; the invalidation policy remains open.
+- Mutation effects and element-borrow tracking, including propagation through calls.
 
 Not in scope:
 
@@ -51,7 +51,9 @@ Not in scope:
   but cannot yet write one function that works for any element type. That waits for
   the polymorphic type system.
 - User-defined generic types.
-- Optimizer work beyond storage placement and straightforward literal construction.
+- Storage placement optimization in the initial implementation. It has a
+  [later subtask](../../../context/tasks/intrinsic-arrays.md#storage-placement-optimization).
+- String unification and optimizer work beyond straightforward literal construction.
 
 ---
 
@@ -164,7 +166,8 @@ an ascription, or the expected type at its use site:
 let xs: Array Int = [];
 ```
 
-An `[]` with no such context is a compile error. There is no `Array Nothing` fallback.
+An `[]` with no such context is a compile error. MML has no `Nothing` type; there is no
+`Array Nothing` fallback.
 
 ### Indexed access
 
@@ -175,6 +178,14 @@ let z = xs[1];
 
 `xs[i]` is checked element access, equivalent to `array_get xs i`.
 This sequence-notation subset includes literals and indexing only.
+
+
+### Indexed mutation
+
+```mml
+let xs = [ 0, 2 ];
+xs[0] = 1;;
+```
 
 ---
 
@@ -196,11 +207,15 @@ let ys = array_new 100 0.0;   // Array Float
 - Scalars can be repeated across slots.
 - Non-scalar elements require a separate owned value per slot, including scalar-only
   aggregates.
-- Non-scalar initialization remains open: explicit cloning or per-element construction.
-- Repetition must not silently duplicate ownership or require every element type to clone.
+- Sized non-scalar construction uses an initializer that supplies an owned value for
+  each element. Its surface syntax remains to be specified.
+- Construction does not clone elements or require `Clone`. Repeating one non-scalar
+  seed value is not a construction operation.
 
 Array literals evaluate elements once, in source order, and transfer non-scalar elements
 into their slots. The existing ownership rules for aggregate construction apply.
+The literal is represented directly by a `Sequence` AST node; it does not require
+an initializer lambda.
 
 ### Element access
 
@@ -249,15 +264,35 @@ let n = xs.length;
 
 ### Term AST
 
-- Array literals have a node containing their element expressions.
+- A `Sequence` node contains an ordered list of expressions, with an empty list for `[]`.
+  Every element is an expression: a literal, constructor call, function call, conditional,
+  or any other expression whose result becomes an array element.
 - Construction, reads, writes, and length have intrinsic nodes.
 - Access nodes retain whether bounds checking is required.
-- Binding, scoping, and sequencing retain the lambda/application representation.
+- Binding, scoping, and expression sequencing retain the lambda/application representation.
+  `Sequence` represents collection literals, not statement sequencing.
+
+For example, `let a = [1, 2, 3]` has a `Sequence` initializer with three literal
+children. `[(Struct a b), (Struct c d)]` has two constructor-application children.
+Type checking establishes their common element type and the resulting array type.
+
+Keep `Sequence` directly in the AST initially. If reusing lambda type checking or
+ownership analysis is useful, the compiler may lower it to a generated lambda that
+calls array intrinsics. Generated construction code may receive uninitialized array
+storage internally. It must initialize every slot exactly once before exposing the
+finished array, and must not read or destroy uninitialized elements. This is an
+internal lowering choice, not a user-facing initialization API or required desugaring.
+Either representation preserves source evaluation order and ownership transfers.
+
+The node also provides a place to support the broader [sequence notation](seq-notation.md)
+proposal: retain the element expressions before choosing how to construct a container.
+Only array construction is included here. Alternative containers, their desugaring
+protocol, and sequence patterns remain separate work.
 
 ### Parser
 
 - In type position, parse `Array <type>` as the applied type.
-- In term position, parse `[ e1, e2, ... ]` as an array literal.
+- In term position, parse `[ e1, e2, ... ]` into `Sequence`.
 - Parse `xs[i]` as checked array access.
 - Do not add sequence patterns or alternative-container desugaring in this step.
 
@@ -278,16 +313,13 @@ let n = xs.length;
 - Cache concrete element layout information and reuse generated destruction and clone
   helpers for the same element type within a compilation. Reads and writes lower directly;
   they do not require generated accessor functions.
-- Codegen chooses backing storage using size, scope, and escape information.
-- Known-length local storage can use LLVM `alloca [N x T]`.
-- Runtime-length local storage can use `alloca T, count`.
-- Storage that must outlive the invocation requires heap allocation.
+- Initial backing storage is heap allocated, matching the existing array families.
 - A candidate heap-allocation interface takes the element count, slot size, and required
   alignment. The compiler supplies target-derived layout information; the runtime helper
   allocates backing storage without knowing the source element type.
-- Stack placement requires proof that uses stay within the storage lifetime.
-- A length/data-pointer representation can describe either storage choice.
-- `getelementptr` addresses elements in either representation.
+- Arrays use a length/data-pointer representation; `getelementptr` addresses elements.
+- A later storage optimization may use size, scope, and escape information to select
+  stack storage. It requires lifetime proof and bounded stack use.
 - Checked access emits a bounds check; unchecked access omits it.
 - Reads and writes emit loads and stores, plus required element cleanup on replacement.
 - Literals allocate storage and initialize each slot. Scalar constants may use a block
@@ -300,11 +332,12 @@ let n = xs.length;
 
 ### Memory and ownership
 
-- Arrays own their storage and elements, including on the stack.
+- Arrays own their heap backing storage and elements.
 - Existing ownership, borrowing, transfer, and escape rules apply.
 - Storage placement does not change ownership semantics.
 - Array destruction runs required element cleanup, then releases heap backing storage.
-- Stack-backed arrays run required element cleanup; their storage expires automatically.
+- Future stack placement must preserve element cleanup while letting backing storage
+  expire automatically.
 - Cloning produces independently owned storage and elements.
 - Cloning copies scalar elements and explicitly invokes the clone contract for each
   non-scalar element, including scalar-only aggregates.
@@ -319,22 +352,28 @@ let n = xs.length;
 - Effects and borrow dependencies must survive aliases, captures, and function calls.
 - Checking only direct writes in the caller is insufficient.
 
-Proposed first rule — not settled:
+Initial invalidation rule:
 
 1. Track the owning array of each non-scalar element borrow.
 2. Any write to that array invalidates all existing element borrows from it.
-3. Reject later uses of invalidated borrows; a fresh read is allowed.
+3. Reject later uses of invalidated borrows; a fresh read is allowed. Reads alone do
+   not invalidate borrows.
 4. Copied scalar values remain valid.
 5. Index-specific tracking is optional later precision.
 
 ```mml
 let x = xs[0];
 array_set xs 0 replacement;
-println x;                  // Rejected under the proposed rule.
+println x;                  // Rejected: x was invalidated by the write.
 ```
 
-The complete rule must also cover mutation through aliases during an active call.
-Borrow invalidation remains an open design decision.
+Enforcement follows calls, including transitive calls, aliases, and captured arrays.
+A helper that writes an array invalidates its caller's existing element borrows from
+that array. A callee must also be checked when it receives both an array and a borrow
+of an element: writing the array and then using that borrow is invalid even if the
+caller never uses the borrow again. The same requirement applies to captured borrows.
+The analysis must carry the information needed to enforce this rule across call
+boundaries; checking direct writes or only uses after a call is insufficient.
 
 See [Backward liveness for borrow invalidation](../mem/backward-liveness.md) for a
 candidate analysis using borrow provenance, mutation effects, and future uses.
@@ -370,22 +409,75 @@ Intermediate breakage between these steps is fine.
 
 ---
 
-## Open questions
-
-1. Final names for the operations (`array_new`, `array_get`, and the rest).
-2. Whether to also allow a one-argument `array_new n` for element types that have a
-   natural zero, as a shorthand.
-3. Non-scalar initialization: explicit cloning or per-element construction; syntax and
-   ownership of the initializer.
-4. Borrow invalidation policy, mutation-effect contracts, and propagation through calls.
-5. Whether constant array literals get the single-copy optimization in the first
-   version or a later one.
-
----
-
 ## Related documents
 
 - [Sequence notation](seq-notation.md): broader sequence syntax and other container types.
   This design covers array literals and indexing only.
 - [Struct field mutation](../../../context/tasks/struct-field-mutation.md): the shared
   replacement and borrow-invalidation problem.
+
+---
+
+## Appendix: Open questions
+
+The core array decisions above are settled. The following questions guide the execution
+plan; they do not reopen construction without cloning or invalidation through calls.
+
+1. **Sized-construction API.** What is the initializer's signature and invocation contract?
+   The candidate signature is `Int -> (Int -> 'T) -> Array 'T`: a size and a function
+   producing an owned element from its index. Specify invocation order,
+   zero and negative lengths, and allocation-size overflow. Literals already supply their
+   expressions through `Sequence`; this question concerns runtime-sized construction.
+
+2. **Call-effect analysis.** How will mutation effects and borrow dependencies be represented
+   and propagated through recursion, higher-order functions, native calls, and captures?
+   Following calls is required. The plan must explain how it enforces invalidation both
+   within a call and in its continuation.
+
+3. **Implementation order.** How should the work be split into small executable stages?
+   Each stage needs its required ownership handling and cleanup. Aggregate replacement
+   must arrive together with borrow invalidation. Refine the implementation outline above
+   into stages with explicit dependencies and review points.
+
+4. **Planning gate.** Which details should the execution plan propose rather than require
+   settled before drafting? These include operation names, analysis representation, and
+   whether to defer constant-literal block-copy optimization. The task currently requires
+   open decisions settled before preparing stages; reconcile that wording with a plan
+   that can present concrete proposals. Also settle whether scalar construction needs a
+   one-argument zero-initialization shorthand.
+
+5. **Verification and signoff.** What are the acceptance checks for each stage? Separate
+   initial heap-backed array signoff from later storage-optimization signoff. Include
+   typing, evaluation order, initialization, bounds, ownership, replacement cleanup,
+   calls and captures, and migration in the relevant stages.
+
+6. **Supporting-document consistency.** The backward-liveness draft still describes the
+   array invalidation policy as open. The policy is settled here; the analysis approach
+   remains a candidate. Reconcile that distinction when updating the supporting draft.
+
+### Generic functions and an Array module
+
+[Generic functions](generic-functions.md) specifies the typing foundation to address
+before intrinsic arrays, including inference, explicit type arguments, constraints,
+and the `array_init` example. Initializers follow ordinary closure ownership rules;
+construction requires a reusable initializer supplying owned non-scalar results, not
+move capture or cloning.
+
+The intrinsic-array scope does not itself implement ordinary generic functions. Their
+implementation stages and relationship to the array plan need to be planned together.
+
+Nested modules offer a home for the operations. A file is a module, and the proposed
+inner-module form is:
+
+```text
+module X =
+  ...
+;
+```
+
+The compiler could synthesize an `Array` module containing intrinsic operations, exposing
+`Array.init` rather than a naked `array_init`. Names remain provisional. Name resolution
+must support `Array` as the type constructor in `Array Person` and the module in
+`Array.init`. Module qualification does not itself provide generic typing.
+
+Nested-module implementation remains a separate scope decision.

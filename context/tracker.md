@@ -21,6 +21,14 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 
 ## Active Tasks
 
+### Intrinsic arrays
+
+- **Tracker:** [Intrinsic arrays](tasks/intrinsic-arrays.md)
+- **Status:** design
+- **Current focus:** Specify the sized-initializer API and call-effect analysis for heap-backed
+  intrinsic arrays. Literals use `Sequence`; construction does not clone elements.
+  Storage optimization follows as a later subtask.
+
 ### Allow globals at owning boundaries without cloning
 
 - **Tracker:** [Allow globals at owning boundaries without cloning](tasks/global-owning-boundaries.md)
