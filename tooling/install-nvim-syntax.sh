@@ -41,12 +41,17 @@ echo "[3/4] Installing plugin files..."
 
 # Create target directories
 mkdir -p "$NVIM_CONFIG/ftdetect"
+mkdir -p "$NVIM_CONFIG/ftplugin"
 mkdir -p "$NVIM_CONFIG/syntax"
 mkdir -p "$NVIM_CONFIG/after/plugin"
 
 # Copy ftdetect file
 echo "   Copying ftdetect/mml.vim..."
 cp "$PLUGIN_DIR/ftdetect/mml.vim" "$NVIM_CONFIG/ftdetect/mml.vim"
+
+echo "   Copying ftplugin/mml.vim and ftplugin/mml.lua..."
+cp "$PLUGIN_DIR/ftplugin/mml.vim" "$NVIM_CONFIG/ftplugin/mml.vim"
+cp "$PLUGIN_DIR/ftplugin/mml.lua" "$NVIM_CONFIG/ftplugin/mml.lua"
 
 # Copy syntax file
 echo "   Copying syntax/mml.vim..."
@@ -62,9 +67,12 @@ echo "   Files installed successfully."
 echo "[4/4] Verifying installation..."
 
 if [ -f "$NVIM_CONFIG/ftdetect/mml.vim" ] && \
+   [ -f "$NVIM_CONFIG/ftplugin/mml.vim" ] && \
+   [ -f "$NVIM_CONFIG/ftplugin/mml.lua" ] && \
    [ -f "$NVIM_CONFIG/syntax/mml.vim" ] && \
    [ -f "$NVIM_CONFIG/after/plugin/mml_lsp.lua" ]; then
     echo "   ✓ ftdetect/mml.vim installed"
+    echo "   ✓ ftplugin/mml.vim and ftplugin/mml.lua installed"
     echo "   ✓ syntax/mml.vim installed"
     echo "   ✓ after/plugin/mml_lsp.lua installed"
 else

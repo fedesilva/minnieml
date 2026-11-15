@@ -24,6 +24,7 @@ Syntax highlighting and LSP support for MinnieML (`.mml`) files in Neovim.
 - **LSP commands** for compiling, cleaning, AST/IR generation, and server restart
 
 - **File type detection** for `.mml` files
+- **Comment toggling**: buffer-local `//` comments and optional Comment.nvim line/block support
 - Syntax highlighting works with Neovim and Vim 7.0+; navigation requires Neovim's LSP client
   and nvim-lspconfig
 
@@ -39,11 +40,13 @@ Copy the plugin files to your Neovim configuration directory:
 
 # Create directories if they don't exist
 mkdir -p ~/.config/nvim/ftdetect
+mkdir -p ~/.config/nvim/ftplugin
 mkdir -p ~/.config/nvim/syntax
 mkdir -p ~/.config/nvim/after/plugin
 
 # Copy the files
 cp ftdetect/mml.vim ~/.config/nvim/ftdetect/
+cp ftplugin/mml.vim ftplugin/mml.lua ~/.config/nvim/ftplugin/
 cp syntax/mml.vim ~/.config/nvim/syntax/
 cp after/plugin/mml_lsp.lua ~/.config/nvim/after/plugin/
 ```
@@ -153,6 +156,15 @@ You should see: `filetype=mml`
 
 ### Testing
 
+Verify filetype comment settings and cleanup without optional plugins:
+
+```sh
+NVIM_LOG_FILE=/dev/null nvim --headless -u NONE -i NONE -l tooling/nvim-syntax/test/comments.lua
+```
+
+To also exercise real Comment.nvim line and block toggles, set `COMMENT_NVIM` to
+its checkout directory when running that command.
+
 From the repository root, verify command and keymap wiring without a running server:
 
 ```sh
@@ -188,6 +200,22 @@ nvim mml/samples/cond1.mml
 ```
 
 ## Customization
+
+### Comment toggling
+
+Enable filetype plugins (`:filetype plugin on`) to load MML's `commentstring` and
+`comments` settings. Comment.nvim is optional; when available, the MML filetype
+plugin registers `//` line comments and `/* ... */` block comments. Existing custom
+Comment.nvim settings for MML are preserved. With Comment.nvim's default mappings,
+use `gcc` for a line and `gbc` for a block comment.
+
+When no custom Comment.nvim `pre_hook` is configured, MML supplies one that returns
+its registered comment strings directly. This avoids Comment.nvim's missing-parser
+lookup failure on Neovim 0.12. If you supply your own `pre_hook`, return the MML
+comment string there (`require('Comment.ft').get('mml', ctx.ctype)`) for MML buffers.
+
+After updating a manual installation, rerun the installer and reopen Neovim.
+Check `:setlocal commentstring?` in an MML buffer; it should show `// %s`.
 
 ### Adjusting Colors
 

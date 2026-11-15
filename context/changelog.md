@@ -4,6 +4,10 @@ Durable product changes belong here. Current task state belongs in task files.
 
 ## 2026-11-15
 
+- Support MML line and block comment toggling in Comment.nvim, with buffer-local comment
+  settings and a default MML pre-hook that avoids missing-parser failures on Neovim 0.12.
+  Include the filetype plugins in manual installation and the installer.
+
 - Add a bounds-checked C matrix multiplication benchmark with the same 500×500 workload
   as the naive baseline, included in both matrix multiplication timing targets.
 
