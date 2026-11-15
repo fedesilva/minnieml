@@ -58,7 +58,7 @@ class StructTests extends BaseEffFunSuite:
             case List(ref: Ref) =>
               assertEquals(ref.name, "name")
               ref.qualifier match
-                case Some(Ref(_, "person", _, _, _, _, _)) => ()
+                case Some(ref: Ref) if ref.name == "person" => ()
                 case other =>
                   fail(s"Expected qualifier Ref(person), got: $other")
             case other =>

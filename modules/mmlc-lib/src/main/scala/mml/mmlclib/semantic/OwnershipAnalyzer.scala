@@ -5,6 +5,7 @@ import cats.syntax.all.*
 import mml.mmlclib.ast.*
 import mml.mmlclib.ast.queries.{
   ApplicationQueries,
+  DeclarationQueries,
   DestructionTargets,
   NativeTypeQueries,
   TypeMemoryQueries,
@@ -356,10 +357,16 @@ object OwnershipAnalyzer:
         termReturnsOwned(term, env, scope.resolvables, scope.callableValues, scope.returningOwned)
       else none
 
+    /** Infers owned return types for callables from their bodies and callable value flow. Expects
+      * module.members to exclude generic templates. The shared index may retain those checked
+      * declarations; they do not participate in ownership inference.
+      */
     def discover(module: Module, values: CallableValues): Map[CallableIdentity, ReturnContract] =
       val resolvables = module.resolvables
       val boundLambdas = resolvables.resolvables.toList.flatMap { (id, declaration) =>
-        values.lambdas(Ref(SourceOrigin.Synth, declaration.name, resolvedId = id.some))
+        declaration match
+          case binding: Bnd if DeclarationQueries.isGenericFunction(binding) => Nil
+          case _ => values.lambdas(Ref(SourceOrigin.Synth, declaration.name, resolvedId = id.some))
       }
       val inlineLambdas = module.members.collect { case bnd: Bnd => bnd }.flatMap { bnd =>
         TermTraversal.collect(bnd.value) { case lambda: Lambda => lambda }

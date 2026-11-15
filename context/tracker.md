@@ -21,12 +21,12 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 
 ## Active Tasks
 
-### Generic functions
+### Protocol member constraints
 
-- **Tracker:** [Generic functions](tasks/generic-functions.md)
-- **Status:** planned
-- **Current focus:** Review the six-stage implementation plan; begin with AST and parser
-  extensions after approval. Reuse existing type and ownership machinery.
+- **Tracker:** [Protocol member constraints](tasks/protocol-member-constraints.md)
+- **Status:** design
+- **Current focus:** Define `where` constraints on protocol member signatures, including variable
+  scope, instance conformance, and call-site obligations, using the generic function machinery.
 
 ### Intrinsic arrays
 

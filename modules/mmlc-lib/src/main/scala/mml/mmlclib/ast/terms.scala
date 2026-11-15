@@ -16,6 +16,7 @@ sealed trait Term extends AstNode, Typeable, FromSource:
     case x: Expr => x.copy(typeAsc = Some(t))
     case x: Cond => x.copy(typeAsc = Some(t))
     case x: App => x.copy(typeAsc = Some(t))
+    case x: FnTypeApp => x.copy(typeAsc = Some(t))
     case x: YieldOwnership => x.copy(typeAsc = Some(t))
     case x: BindOwnership => x.copy(typeAsc = Some(t))
     case x: Lambda => x.copy(typeAsc = Some(t))
@@ -102,6 +103,19 @@ object App:
   ): App =
     new App(SourceOrigin.Loc(span), fn, arg, None, None)
 
+/** Retains a callable and ordered candidate type arguments without invoking it. A syntactically
+  * certain argument, such as `'T`, can be followed by an ambiguous name: in `f 'T Person`, `Person`
+  * remains in args until semantic analysis chooses its type or constructor interpretation. An
+  * entirely ambiguous sequence such as `f Person` retains ordinary reference/group syntax.
+  */
+case class FnTypeApp(
+  source:   SourceOrigin,
+  fn:       Term,
+  args:     List[Type],
+  typeAsc:  Option[Type] = None,
+  typeSpec: Option[Type] = None
+) extends Term
+
 /** Supplies a value and its cleanup witness within an ownership binding's initializer. */
 case class YieldOwnership(
   source:   SourceOrigin,
@@ -132,10 +146,15 @@ enum Capture:
 
   def ref: Ref
 
-/** Capture identities describe the partial application's storage and invocation obligations.
+/** A lambda's lexical role, optimization flags, and captured-storage obligations.
   *
   * @param borrowedCaptures
   *   IDs of captures whose storage remains owned elsewhere.
+  * @param isBindingScope
+  *   Parser-lowered local binding or statement continuation. These wrappers introduce no type
+  *   parameters; cached local-function annotations retain the initializer's own binders.
+  * @param templateId
+  *   Source binding ID of the generic declaration instantiated by this lambda.
   * @param retainedCaptures
   *   IDs of temporary callee bindings retained by a partial application. Ownership analysis
   *   classifies them in their lexical scope, updates borrowedCaptures, and clears this pending set.
@@ -148,18 +167,27 @@ case class LambdaMeta(
   borrowedCaptures:      Set[String]     = Set.empty,
   retainedCaptures:      Set[String]     = Set.empty,
   environmentParam:      Option[FnParam] = None,
-  isInvocationParameter: Boolean         = false
+  isInvocationParameter: Boolean         = false,
+  isBindingScope:        Boolean         = false,
+  templateId:            Option[String]  = None
 )
 
+/** A callable's parameters, body, captures, and generic requirements. Type resolution collects
+  * typeParams from signature annotations, excluding variables bound by enclosing functions. Each
+  * variable appears once, ordered by first appearance through parameter types and then the result.
+  * Parsing leaves this list empty, which does not establish monomorphism.
+  */
 case class Lambda(
-  source:   SourceOrigin,
-  params:   List[FnParam],
-  body:     Expr,
-  captures: List[Capture],
-  typeSpec: Option[Type]       = None,
-  typeAsc:  Option[Type]       = None,
-  meta:     Option[LambdaMeta] = None,
-  isMove:   Boolean            = false
+  source:      SourceOrigin,
+  params:      List[FnParam],
+  body:        Expr,
+  captures:    List[Capture],
+  typeSpec:    Option[Type]                  = None,
+  typeAsc:     Option[Type]                  = None,
+  meta:        Option[LambdaMeta]            = None,
+  isMove:      Boolean                       = false,
+  typeParams:  List[TypeVariable]            = Nil,
+  constraints: List[TypeVariableConstraints] = Nil
 ) extends Term:
 
   /** A fully applied source parameter retains its borrowing contract in an immediate scope. */
@@ -211,15 +239,23 @@ case class Tuple(
   typeSpec: Option[Type] = None
 ) extends Term
 
-/** Points to something declared elsewhere */
+/** Points to a declaration. Explicit type arguments select a generic use without invoking it;
+  * typeArgs retains the checked substitution in declaration order. protocolType identifies the
+  * constrained receiver of an abstract protocol operation. sourceId retains the written declaration
+  * identity when specialization redirects resolvedId to a concrete implementation or parameter.
+  */
 case class Ref(
-  source:       SourceOrigin,
-  name:         String,
-  typeAsc:      Option[Type]   = None,
-  typeSpec:     Option[Type]   = None,
-  resolvedId:   Option[String] = None,
-  candidateIds: List[String]   = Nil,
-  qualifier:    Option[Term]   = None
+  source:           SourceOrigin,
+  name:             String,
+  typeAsc:          Option[Type]       = None,
+  typeSpec:         Option[Type]       = None,
+  resolvedId:       Option[String]     = None,
+  candidateIds:     List[String]       = Nil,
+  qualifier:        Option[Term]       = None,
+  explicitTypeArgs: Option[List[Type]] = None,
+  typeArgs:         List[Type]         = Nil,
+  protocolType:     Option[Type]       = None,
+  sourceId:         Option[String]     = None
 ) extends Term,
       FromSource
 

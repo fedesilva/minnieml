@@ -4,6 +4,15 @@ import mml.mmlclib.semantic.*
 
 /** Shared wording for expression, ownership, and generated destruction requirements. */
 def expressionMessage(error: ExpressionError): String = error match
+  case ExpressionProblem.ChangingGenericRecursion(path) =>
+    val chain = path
+      .map { ref =>
+        (ref.name :: ref.typeArgs.map(showType)).mkString(" ")
+      }
+      .mkString(" -> ")
+    s"Generic recursion changes type arguments along $chain; recursive uses must preserve the same types"
+  case ExpressionProblem.UnresolvedGenericInstantiation =>
+    "Generic instantiation requires a checked function and concrete type arguments"
   case ExpressionProblem.NotCloneable => "This type cannot be cloned"
   case ExpressionProblem.IntegerOutOfRange => "Integer literal is outside the Int32 range"
   case ExpressionProblem.EmptyExpression => "Expected an expression, got empty terms"

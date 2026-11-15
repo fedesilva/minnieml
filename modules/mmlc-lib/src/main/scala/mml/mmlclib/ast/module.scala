@@ -14,7 +14,8 @@ case class Module(
       Member
 
 /** Index for soft reference lookups. Stores resolvables and resolvable types by their stable IDs.
-  * Updated alongside AST rewrites to always point to the current version of each node.
+  * Updated alongside AST rewrites to point to current definitions. Checked generic templates remain
+  * indexed when their local executable binding sites contain concrete instances.
   */
 case class ResolvablesIndex(
   resolvables:     Map[String, Resolvable]     = Map.empty,

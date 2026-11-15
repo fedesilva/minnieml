@@ -6,6 +6,8 @@ import mml.mmlclib.ast.*
 sealed trait ExpressionError derives CanEqual
 
 enum ExpressionProblem extends ExpressionError:
+  case ChangingGenericRecursion(path: List[Ref])
+  case UnresolvedGenericInstantiation
   case NotCloneable
   case IntegerOutOfRange
   case EmptyExpression

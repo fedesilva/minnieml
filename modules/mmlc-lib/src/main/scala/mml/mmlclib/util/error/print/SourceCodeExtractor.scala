@@ -56,6 +56,12 @@ object SourceCodeExtractor:
           .map(s => s"\n$s")
           .getOrElse("")
 
+      case SemanticError.UndefinedTypeVariable(variable, _, _) =>
+        spanOf(variable)
+          .flatMap(span => extractSnippet(sourceInfo, span, nameHighlightSpan = Some(span)))
+          .map(s => s"\n$s")
+          .getOrElse("")
+
       case SemanticError.AmbiguousTypeRef(typeRef, _, _, _) =>
         spanOf(typeRef)
           .flatMap(span => extractSnippet(sourceInfo, span, nameHighlightSpan = Some(span)))
@@ -231,6 +237,12 @@ object SourceCodeExtractor:
           .flatMap(extractSnippet(sourceInfo, _))
           .map(s => s"\n$s")
           .getOrElse("")
+
+      case TypeError.GenericInferenceFailed(ref, _, _) =>
+        spanOf(ref).flatMap(extractSnippet(sourceInfo, _)).map(s => s"\n$s").getOrElse("")
+
+      case TypeError.MissingGenericRequirement(ref, _, _, _) =>
+        spanOf(ref).flatMap(extractSnippet(sourceInfo, _)).map(s => s"\n$s").getOrElse("")
 
       case TypeError.TypeMismatch(node, _, _, _, _) =>
         node match

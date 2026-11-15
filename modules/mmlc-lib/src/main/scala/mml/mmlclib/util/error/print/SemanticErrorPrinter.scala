@@ -84,6 +84,14 @@ object SemanticErrorPrinter:
           case _ => "unknown"
         s"${Console.RED}${semanticErrorMessage(semantic)} at $location in $memberName [phase: $phase]${Console.RESET}"
 
+      case SemanticError.UndefinedTypeVariable(variable, member, phase) =>
+        val location = locationOf(variable)
+        val memberName = member match
+          case d: Resolvable => d.name
+          case _ => "unknown"
+        s"${Console.RED}${semanticErrorMessage(semantic)} at $location in $memberName " +
+          s"[phase: $phase]${Console.RESET}"
+
       case SemanticError.AmbiguousTypeRef(typeRef, candidates, _, phase) =>
         val locations = candidates.collect { case candidate: FromSource => locationOf(candidate) }
         s"${Console.RED}${semanticErrorMessage(semantic)} at ${locationOf(typeRef)}: " +

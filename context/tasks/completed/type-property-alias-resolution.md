@@ -23,7 +23,7 @@ Type-property queries must preserve declaration identity through aliases and the
 Reducing a resolved type to a short name permits another declaration to be selected when names
 collide, including with stdlib declarations. Name-based recursion guards can also conflate
 separate recursive types. This is the scope of
-[QA-001](../qa-misses.md#qa-001-preserve-resolved-type-identity-in-type-utilities).
+[QA-001](../../history/qa-misses-completed.md#qa-001-preserve-resolved-type-identity-in-type-utilities).
 
 ## Outcome
 

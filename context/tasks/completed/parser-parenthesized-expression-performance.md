@@ -67,7 +67,7 @@ Verification on macOS aarch64 with JDK 25.0.4.1:
 - Local QA enforcement and `git diff --check` pass. Independent primary review and all four
   dedicated checks are complete. They identify one independently confirmed documentation
   finding: `opRefP` also accepts lowercase operator names. The corrected comment is recorded
-  as [QA-005](../qa-misses.md#qa-005-describe-lowercase-operator-references-in-the-parser-contract).
+  as [QA-005](../../history/qa-misses-completed.md#qa-005-describe-lowercase-operator-references-in-the-parser-contract).
   A fresh focused run passes all 92 parser/span/recovery/execution tests. Fresh narrow primary
   review and all four dedicated checks accept the one-sentence documentation correction with
   no actionable findings. No executable code changes follow the successful compiler checks.

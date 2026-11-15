@@ -17,7 +17,16 @@ object AstLookup:
     * if available.
     */
   def findAt(module: Module, line: Int, col: Int): Option[LookupResult] =
-    findInMembers(module.members, line, col)
+    findInMembers(SourceDeclarations.members(module), line, col).map { result =>
+      val sourceName = findInnermostRefAt(module, line, col)
+        .filter(_.spanOpt.zip(result.span).exists { (reference, found) =>
+          reference.start.index == found.start.index && reference.end.index == found.end.index
+        })
+        .flatMap(_.sourceId)
+        .flatMap(module.resolvables.lookup)
+        .map(DeclarationQueries.sourceName)
+      result.copy(name = sourceName.orElse(result.name))
+    }
 
   /** Find a written definition. Selected protocol calls lead to their required signature. */
   def findDefinitionAt(state: CompilerState, line: Int, col: Int): List[SrcSpan] =
@@ -35,7 +44,7 @@ object AstLookup:
     val spans = signature match
       case Some(declaration) => declaration.nameNode.spanOpt.toList
       case None if ref.exists(isNonSourceRef(_, module)) => Nil
-      case None => findDefinitionInMembers(module.members, line, column, module)
+      case None => findDefinitionInMembers(SourceDeclarations.members(module), line, column, module)
 
     sourceOrderedSpans(spans)
 
@@ -44,7 +53,12 @@ object AstLookup:
 
     val module = state.module
     val target =
-      findReferenceTargetInMembers(module.members, line, navigationColumn(state, line, col), module)
+      findReferenceTargetInMembers(
+        SourceDeclarations.members(module),
+        line,
+        navigationColumn(state, line, col),
+        module
+      )
     val spans = target match
       case Some(value: ValueTarget) =>
         val signatureId = state.protocols.signatureIdForBinding(value.id).getOrElse(value.id)
@@ -90,12 +104,13 @@ object AstLookup:
       precedingName.getOrElse(col)
 
   private def isNonSourceRef(ref: Ref, module: Module): Boolean =
-    ref.qualifier.isEmpty && ref.resolvedId
+    ref.qualifier.isEmpty && ref.sourceId
+      .orElse(ref.resolvedId)
       .flatMap(module.resolvables.lookup)
       .exists(resolvable => spanForResolvable(resolvable, module).isEmpty)
 
   private def findInnermostRefAt(module: Module, line: Int, col: Int): Option[Ref] =
-    val refs = module.members.flatMap(findRefsInMemberAt(_, line, col))
+    val refs = SourceDeclarations.members(module).flatMap(findRefsInMemberAt(_, line, col))
     refs
       .sortBy(ref => ref.spanOpt.map(s => s.end.index - s.start.index).getOrElse(Int.MaxValue))
       .headOption
@@ -123,6 +138,8 @@ object AstLookup:
         current ++ ref.qualifier.toList.flatMap(findRefsInTermAt(_, line, col))
       case app: App =>
         findRefsInAppFnAt(app.fn, line, col) ++ findRefsInExprAt(app.arg, line, col)
+      case application: FnTypeApp =>
+        findRefsInTermAt(application.fn, line, col)
       case binding: BindOwnership =>
         findRefsInExprAt(binding.initializer, line, col) ++
           findRefsInExprAt(binding.body, line, col)
@@ -169,7 +186,12 @@ object AstLookup:
   ): List[SrcSpan] =
     val module = state.module
     val target =
-      findReferenceTargetInMembers(module.members, line, navigationColumn(state, line, col), module)
+      findReferenceTargetInMembers(
+        SourceDeclarations.members(module),
+        line,
+        navigationColumn(state, line, col),
+        module
+      )
     val spans = target
       .map {
         case value: ValueTarget =>
@@ -303,6 +325,16 @@ object AstLookup:
       case app: App =>
         findInApp(app, line, col)
 
+      case application: FnTypeApp =>
+        application.args
+          .find(containsPosition(_, line, col))
+          .map(tpe => LookupResult(Some(tpe), None, tpe.spanOpt))
+          .orElse {
+            Option
+              .when(termContains(application.fn, line, col))(application.fn)
+              .flatMap(findInTerm(_, line, col))
+          }
+
       case binding: BindOwnership =>
         findInExpr(binding.initializer, line, col)
           .orElse(findInExpr(binding.body, line, col))
@@ -320,6 +352,14 @@ object AstLookup:
         // Check body first - params may have overly broad spans
         findInExpr(lambda.body, line, col)
           .orElse(findInParams(lambda.params, line, col))
+          .orElse {
+            lambda.constraints
+              .flatMap(_.constraints)
+              .find(constraint => containsPosition(constraint.nameNode, line, col))
+              .map(constraint =>
+                LookupResult(None, Some(constraint.nameNode.value), constraint.nameNode.spanOpt)
+              )
+          }
 
       case group: TermGroup =>
         findInExpr(group.inner, line, col)
@@ -505,6 +545,13 @@ object AstLookup:
       case app: App =>
         findDefinitionInApp(app, line, col, module)
 
+      case application: FnTypeApp =>
+        application.args.flatMap(findDefinitionInType(_, line, col, module)) ++
+          Option
+            .when(termContains(application.fn, line, col))(application.fn)
+            .toList
+            .flatMap(findDefinitionInTerm(_, line, col, module))
+
       case binding: BindOwnership =>
         val definitions = findDefinitionInExpr(binding.initializer, line, col, module) ++
           findDefinitionInExpr(binding.body, line, col, module)
@@ -525,7 +572,16 @@ object AstLookup:
           else findDefinitionInExpr(cond.ifFalse, line, col, module)
 
       case lambda: Lambda =>
-        val typeDefs = lambda.typeAsc.toList.flatMap(findDefinitionInType(_, line, col, module))
+        val constraintDefs = lambda.constraints.flatMap(_.constraints).flatMap { constraint =>
+          if containsPosition(constraint.nameNode, line, col) then
+            constraint.resolvedId
+              .flatMap(module.resolvables.lookup)
+              .flatMap(spanForResolvable(_, module))
+              .toList
+          else Nil
+        }
+        val typeDefs = constraintDefs ++
+          lambda.typeAsc.toList.flatMap(findDefinitionInType(_, line, col, module))
         if typeDefs.nonEmpty then typeDefs
         else
           val bodyDefs = findDefinitionInExpr(lambda.body, line, col, module)
@@ -576,7 +632,8 @@ object AstLookup:
             Nil
       case None =>
         val resolved =
-          ref.resolvedId
+          ref.sourceId
+            .orElse(ref.resolvedId)
             .flatMap(module.resolvables.lookup)
             .toList
             .flatMap(spanForResolvable(_, module))
@@ -924,7 +981,8 @@ object AstLookup:
                   case None => None
               case None =>
                 val resolved =
-                  ref.resolvedId
+                  ref.sourceId
+                    .orElse(ref.resolvedId)
                     .flatMap(module.resolvables.lookup)
                     .flatMap(valueTargetFromResolvable)
                 resolved.orElse {
@@ -935,6 +993,16 @@ object AstLookup:
 
       case app: App =>
         findReferenceTargetInApp(app, line, col, module)
+
+      case application: FnTypeApp =>
+        application.args.iterator
+          .flatMap(findReferenceTargetInType(_, line, col, module))
+          .nextOption()
+          .orElse {
+            Option
+              .when(termContains(application.fn, line, col))(application.fn)
+              .flatMap(findReferenceTargetInTerm(_, line, col, module))
+          }
 
       case binding: BindOwnership =>
         findReferenceTargetInExpr(binding.initializer, line, col, module)
@@ -961,9 +1029,15 @@ object AstLookup:
               case None => findReferenceTargetInExpr(cond.ifFalse, line, col, module)
 
       case lambda: Lambda =>
-        findReferenceTargetInExpr(lambda.body, line, col, module) match
-          case some @ Some(_) => some
-          case None => findReferenceTargetInParams(lambda.params, line, col, module)
+        val constraintTarget = lambda.constraints
+          .flatMap(_.constraints)
+          .find(constraint => containsPosition(constraint.nameNode, line, col))
+          .flatMap(_.resolvedId)
+          .flatMap(module.resolvables.lookup)
+          .flatMap(valueTargetFromResolvable)
+        constraintTarget
+          .orElse(findReferenceTargetInExpr(lambda.body, line, col, module))
+          .orElse(findReferenceTargetInParams(lambda.params, line, col, module))
 
       case group: TermGroup =>
         findReferenceTargetInExpr(group.inner, line, col, module)
@@ -1108,7 +1182,9 @@ object AstLookup:
     target:             ReferenceTarget,
     includeDeclaration: Boolean
   ): List[SrcSpan] =
-    module.members.flatMap(collectReferencesInMember(_, target, includeDeclaration, module))
+    SourceDeclarations
+      .members(module)
+      .flatMap(collectReferencesInMember(_, target, includeDeclaration, module))
 
   private def collectReferencesInMember(
     member:             Member,
@@ -1242,6 +1318,10 @@ object AstLookup:
       case app: App =>
         collectReferencesInApp(app, target, includeDeclaration, module)
 
+      case application: FnTypeApp =>
+        collectReferencesInTerm(application.fn, target, includeDeclaration, module) ++
+          application.args.flatMap(collectReferencesInType(_, target, module))
+
       case binding: BindOwnership =>
         collectReferencesInParams(
           List(binding.valueParam, binding.witnessParam),
@@ -1261,8 +1341,15 @@ object AstLookup:
           collectReferencesInExpr(cond.ifFalse, target, includeDeclaration, module)
 
       case lambda: Lambda =>
+        val constraintReferences = lambda.constraints.flatMap(_.constraints).flatMap { constraint =>
+          target match
+            case value: ValueTarget if constraint.resolvedId.contains(value.id) =>
+              constraint.nameNode.spanOpt.toList
+            case _ => Nil
+        }
         collectReferencesInParams(lambda.params, target, includeDeclaration, module) ++
-          collectReferencesInExpr(lambda.body, target, includeDeclaration, module)
+          collectReferencesInExpr(lambda.body, target, includeDeclaration, module) ++
+          constraintReferences
 
       case group: TermGroup =>
         collectReferencesInExpr(group.inner, target, includeDeclaration, module)
@@ -1378,7 +1465,7 @@ object AstLookup:
       case value: ValueTarget =>
         val targetIds = value.implementationIds + value.id
         ref.qualifier.isEmpty && (
-          ref.resolvedId.exists(targetIds.contains) ||
+          ref.sourceId.orElse(ref.resolvedId).exists(targetIds.contains) ||
             (ref.resolvedId.isEmpty && ref.candidateIds.exists(targetIds.contains))
         )
 
@@ -1508,11 +1595,11 @@ object AstLookup:
 
       case TypeUnit(_) => "Unit"
 
-      case TypeVariable(_, name) => name
+      case TypeVariable(_, name, _) => name
 
       case TypeScheme(_, vars, body) =>
         if vars.isEmpty then formatTypeInner(body)
-        else s"∀${vars.mkString(" ")}. ${formatTypeInner(body)}"
+        else s"∀${vars.map(_.name).mkString(" ")}. ${formatTypeInner(body)}"
 
       case Union(_, types) =>
         types.map(formatTypeInner).mkString(" | ")

@@ -88,7 +88,7 @@ object ProtocolChecker:
         Option.when(signature.params.groupBy(_.name).exists(_._2.size > 1))(
           ProtocolSignatureError.DuplicateParameter
         ) ++
-        Option.when(types.exists(hasUnboundVariable(_, protocol.typeParameter.name)))(
+        Option.when(types.exists(hasUnboundVariable(_, protocol.typeParameter.resolvedId)))(
           ProtocolSignatureError.UnboundTypeVariable
         )
     details.map(ProtocolError.InvalidSignature(signature, _))
@@ -265,7 +265,9 @@ object ProtocolChecker:
     concreteType: Type
   ): Either[List[ProtocolError], ConcreteSignature] =
     def instantiate(tpe: Type): Type =
-      inheritedType(substitute(tpe, protocol.typeParameter.name, concreteType))
+      inheritedType(
+        TypeSubstitution(tpe, protocol.typeParameter.resolvedId.map(_ -> concreteType).toMap)
+      )
 
     signature.params
       .traverse(_.typeAsc.map(instantiate))
@@ -400,13 +402,6 @@ object ProtocolChecker:
       case Right(registry) => current.copy(registry = registry, index = index)
       case Left(error) => current.addError(ProtocolError.RegistryFailure(binding, error))
 
-  /** Replaces the named protocol type variable throughout a type, including nested function types.
-    */
-  private def substitute(tpe: Type, parameter: String, concrete: Type): Type =
-    TypeTraversal.rewrite(tpe) {
-      case variable: TypeVariable if variable.name == parameter => concrete
-    }
-
   /** Inherited annotations retain their diagnostic origin without becoming written type syntax. */
   private def inheritedType(tpe: Type): Type = tpe match
     case ref:      TypeRef => ref.copy(source = ref.source.derived)
@@ -418,9 +413,9 @@ object ProtocolChecker:
     case other => other
 
   /** Detects type variables that the protocol's single declared parameter does not bind. */
-  private def hasUnboundVariable(tpe: Type, parameter: String): Boolean =
+  private def hasUnboundVariable(tpe: Type, parameter: Option[String]): Boolean =
     TypeTraversal.exists(tpe) {
-      case variable: TypeVariable => variable.name != parameter
+      case variable: TypeVariable => variable.resolvedId.isEmpty || variable.resolvedId != parameter
       case _ => false
     }
 

@@ -7,6 +7,35 @@ import scala.collection.mutable.ListBuffer
 
 class SemanticTokensTests extends BaseEffFunSuite:
 
+  test("explicit generic type arguments retain source tokens") {
+    val source = """type Number = Int;
+fn identity(~value: 'T): 'T = value;;
+let result = identity Number 7;"""
+    semNotFailed(source).map { module =>
+      val tokens = decodeTokens(SemanticTokens.compute(module))
+      assertEquals(
+        tokens.filter(t => t.line == 3 && t.tokenType == TokenType.Type),
+        List(DecodedToken(3, 23, 6, TokenType.Type))
+      )
+    }
+  }
+
+  test("local generic templates supply source tokens once across multiple instances") {
+    val source = """fn main(): Int =
+  fn identity(~value: 'T): 'T = value;;
+  let flag = identity true;
+  identity 7;
+;"""
+    semNotFailed(source).map { module =>
+      val tokens = decodeTokens(SemanticTokens.compute(module))
+      assertEquals(tokens.map(t => (t.line, t.col)).distinct.size, tokens.size)
+      assert(tokens.exists(t => t.line == 2 && t.col == 6 && t.tokenType == TokenType.Function))
+      assert(tokens.exists(t => t.line == 2 && t.col == 33 && t.tokenType == TokenType.Parameter))
+      assert(tokens.exists(t => t.line == 3 && t.col == 14 && t.tokenType == TokenType.Function))
+      assert(tokens.exists(t => t.line == 4 && t.col == 3 && t.tokenType == TokenType.Function))
+    }
+  }
+
   test("grouped callee annotation tokens retain their source positions") {
     val code = """type Number = Int;
 fn identity(value: Int): Int = value;;

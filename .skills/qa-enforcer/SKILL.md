@@ -13,6 +13,12 @@ Check each changed hunk against the applicable rules and available verification 
 Report concrete rule violations with file/line, violated rule, and the smallest correction.
 Report skipped or failing required checks accurately; do not equate ignored tests with passes.
 
+Apply QA section 9's
+[purpose, clarity, and evidence checks](../../context/qa-rules-and-coding-style.md#explain-the-declaration-before-its-special-cases)
+to documentation on changed declarations, including unchanged comments affected by the change.
+Do not mark comment compliance as passed merely because comments exist, formatting passes,
+or their wording sounds plausible. Check proposed replacements against the same standard.
+
 Keep pure review requests read-only. During approved implementation, fix compliance misses
 within scope and rerun affected checks. Do not close tasks, stage, or commit merely because
 this pass succeeds.

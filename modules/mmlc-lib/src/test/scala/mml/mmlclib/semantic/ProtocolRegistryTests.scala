@@ -47,6 +47,7 @@ class ProtocolRegistryTests extends BaseEffFunSuite:
     val result = registry.instance(numId, intType, numberIndex)
 
     assertEquals(result, Right(numIntId))
+    assertEquals(registry.usableInstance(numId, intType, numberIndex), Right(numIntId))
   }
 
   test("associate Num Int's + signature with the integer addition binding") {
@@ -129,6 +130,10 @@ class ProtocolRegistryTests extends BaseEffFunSuite:
 
     assertEquals(result, Right(ProtocolSignatureCandidates(num, plus, Nil)))
     assertEquals(registry.instance(numId, intType, numberIndex), Right(numIntId))
+    assertEquals(
+      registry.usableInstance(numId, intType, numberIndex),
+      Left(ProtocolLookupError.RejectedDeclaration(causes))
+    )
     assertEquals(registry.instanceFailureCauses(numId, intType, numberIndex), causes)
     assertEquals(
       registry.memberBinding(numIntId, plusId, numberIndex),
@@ -479,7 +484,7 @@ class ProtocolRegistryTests extends BaseEffFunSuite:
   }
 
   test("a polymorphic type scheme is not a concrete instance type") {
-    val polymorphic = TypeScheme(source, List("'T"), intType)
+    val polymorphic = TypeScheme(source, List(TypeVariable(source, "'T")), intType)
 
     val result = ProtocolRegistry.typeKey(polymorphic, numberIndex)
 

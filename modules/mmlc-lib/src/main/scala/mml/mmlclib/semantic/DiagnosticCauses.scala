@@ -128,6 +128,10 @@ final case class DiagnosticCauses private (
             context.evidenceOf(scope.body)
           case _ => evidenceOf(app.fn).combine(evidenceOf(app.arg))
 
+      case application: FnTypeApp =>
+        evidenceOf(application.fn)
+          .combine(combine(application.args.map(evidenceOfType)))
+
       case ref: Ref =>
         val source = ref.qualifier match
           case Some(qualifier) => evidenceOf(qualifier)

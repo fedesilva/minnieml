@@ -9,6 +9,59 @@ class TypeCompatibilityTests extends BaseEffFunSuite:
 
   private val source = SourceOrigin.Synth
 
+  test("rigid variables compare by binder identity, including nested function arguments"):
+    val variable = TypeVariable(source, "'T", "first-binder".some)
+    val renamed  = variable.copy(name = "'U")
+    val shadowed = variable.copy(resolvedId = "second-binder".some)
+    val index    = ResolvablesIndex()
+    def function(tpe: Type): TypeFn = TypeFn(source, NonEmptyList.one(tpe), variable)
+
+    assert(TypeCompatibility.same(variable, renamed, index))
+    assert(TypeCompatibility.same(function(variable), function(renamed), index))
+    assert(!TypeCompatibility.same(variable, shadowed, index))
+    assert(!TypeCompatibility.same(function(variable), function(shadowed), index))
+    assert(!TypeCompatibility.same(variable, NativePrimitive(source, "i32"), index))
+    assert(!TypeCompatibility.same(variable.copy(resolvedId = None), variable, index))
+
+  test("fixed type constructor applications compare both constructor and argument identities"):
+    val constructor = TypeDef(
+      source   = source,
+      nameNode = Name.synth("Array"),
+      typeSpec = None,
+      id       = "array".some
+    )
+    val other    = constructor.copy(id = "another-array".some)
+    val variable = TypeVariable(source, "'T", "binder".some)
+    val application = TypeApplication(
+      source,
+      TypeRef(source, constructor.name, constructor.id),
+      List(variable)
+    )
+    val index = ResolvablesIndex().updatedType(constructor).updatedType(other)
+
+    assert(
+      TypeCompatibility.same(
+        application,
+        application.copy(args = List(variable.copy(name = "'Renamed"))),
+        index
+      )
+    )
+    assert(!TypeCompatibility.same(application, application.copy(args = Nil), index))
+    assert(
+      !TypeCompatibility.same(
+        application,
+        application.copy(args = List(variable.copy(resolvedId = "shadow".some))),
+        index
+      )
+    )
+    assert(
+      !TypeCompatibility.same(
+        application,
+        application.copy(base = TypeRef(source, other.name, other.id)),
+        index
+      )
+    )
+
   test("an alias has its target's concrete identity"):
     val number = TypeDef(
       source   = source,

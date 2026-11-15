@@ -173,7 +173,7 @@ class LambdaLitTests extends BaseEffFunSuite:
               )
               assertEquals(innerLambda.params.map(_.name), List("a"))
               assert(innerLambda.params.head.typeAsc.isDefined, "Expected typed param")
-              assert(innerLambda.typeAsc.isEmpty, "Expected return type on binding, not lambda")
+              assertEquals(innerLambda.typeAsc.collect { case t: TypeRef => t.name }, Some("Int"))
             case other =>
               fail(
                 s"Expected main body to be scoped binding application, got ${prettyPrintAst(other)}"
@@ -204,7 +204,7 @@ class LambdaLitTests extends BaseEffFunSuite:
                 "Expected synthesized binding type"
               )
               assert(innerLambda.params.isEmpty, "Expected nullary inner function")
-              assert(innerLambda.typeAsc.isEmpty, "Expected return type on binding, not lambda")
+              assertEquals(innerLambda.typeAsc.collect { case t: TypeRef => t.name }, Some("Unit"))
             case other =>
               fail(
                 s"Expected main body to be scoped binding application, got ${prettyPrintAst(other)}"

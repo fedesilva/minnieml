@@ -3,7 +3,7 @@ package mml.mmlclib.semantic
 import mml.mmlclib.ast.*
 import mml.mmlclib.ast.queries.TypeQueries
 
-/** Concrete type equality follows aliases while preserving nominal declaration identity. */
+/** Type equality follows aliases while preserving nominal declarations and rigid variable IDs. */
 object TypeCompatibility:
 
   /** Function and tuple components use the same identity rule. Native primitives also support
@@ -19,6 +19,10 @@ object TypeCompatibility:
             sameChildren(a, b, index)
           case (Some(a: TypeTuple), Some(b: TypeTuple)) if a.elements.size == b.elements.size =>
             sameChildren(a, b, index)
+          case (Some(a: TypeApplication), Some(b: TypeApplication)) if a.args.size == b.args.size =>
+            sameChildren(a, b, index)
+          case (Some(a: TypeVariable), Some(b: TypeVariable)) =>
+            a.resolvedId.nonEmpty && a.resolvedId == b.resolvedId
           case _ => false
 
   private def sameChildren(left: Type, right: Type, index: ResolvablesIndex): Boolean =

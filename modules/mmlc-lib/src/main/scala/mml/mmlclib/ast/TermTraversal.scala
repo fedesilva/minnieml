@@ -5,6 +5,7 @@ object TermTraversal:
   def children(term: Term): List[Term] = term match
     case e: Expr => e.terms
     case a: App => List(a.fn, a.arg)
+    case a: FnTypeApp => List(a.fn)
     case y: YieldOwnership => List(y.value, y.owns)
     case b: BindOwnership => List(b.initializer, b.body)
     case l: Lambda => List(l.body)

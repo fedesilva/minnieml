@@ -124,9 +124,22 @@ case class TypeGroup(
 
 /** A type variable (like 'T, 'R in the type system) */
 case class TypeVariable(
-  source: SourceOrigin,
-  name:   String // "'T", "'R", "'A", etc.
+  source:     SourceOrigin,
+  name:       String, // "'T", "'R", "'A", etc.
+  resolvedId: Option[String] = None
 ) extends Type
+
+/** A requirement that a type must satisfy, represented by a protocol reference. */
+type TypeConstraint = ProtocolRef
+
+/** Constraints attached to one variable by a where entry; every constraint must hold. Constraint
+  * entries do not introduce binders. Type resolution links each variable to its lexical binder.
+  */
+case class TypeVariableConstraints(
+  source:      SourceOrigin,
+  variable:    TypeVariable,
+  constraints: List[TypeConstraint]
+) extends FromSource
 
 /** A type scheme: ∀'T 'R 'A. Type
   *
@@ -139,7 +152,7 @@ case class TypeVariable(
   */
 case class TypeScheme(
   source:   SourceOrigin,
-  vars:     List[String], // ["'T", "'R"] - the quantified variables
+  vars:     List[TypeVariable], // Quantified variables in first-appearance order
   bodyType: Type // The actual type with variables
 ) extends Type
 

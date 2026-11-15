@@ -555,6 +555,7 @@ object LlvmToolchain:
     case CompilationMode.Ast | CompilationMode.Ir | CompilationMode.Dev =>
       IO.pure(0.asRight)
 
+  // TODO:QA the following two vars are the same. dedupe.
   /** Path to the MML runtime file in resources */
   private val mmlRuntimeResourcePath = "mml_runtime.c"
 
@@ -1076,10 +1077,11 @@ object LlvmToolchain:
     if verbose then println(s"  ${message}")
 
   private def invalidateToolsMarker(buildDir: Path): IO[Unit] = IO.blocking {
-    val timestamp = java.time.LocalDateTime
-      .now()
-      .format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME)
-      .replace(":", "-")
+    val timestamp =
+      java.time.LocalDateTime
+        .now()
+        .format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+        .replace(":", "-")
     val currentMarker  = buildDir.resolve(llvmInfoFile)
     val archivedMarker = buildDir.resolve(s"$llvmInfoFile-$timestamp")
     if Files.exists(currentMarker) then {
@@ -1093,7 +1095,7 @@ object LlvmToolchain:
         case e: Exception =>
           logError(s"Failed to archive LLVM tools marker: ${e.getMessage}")
           try Files.deleteIfExists(currentMarker)
-          // TODO: do not swallow exceptions
+          // TODO:QA do not swallow exceptions
           catch { case _: Exception => }
       }
     }

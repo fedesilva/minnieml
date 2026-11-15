@@ -47,8 +47,9 @@ private def mkStatementApplication(statement: Expr, rest: Expr): App =
   val statementLoc = locSpan(statement)
   val fullSpan     = span(statementLoc.start, locSpan(rest).end)
   val unitType     = TypeRef(statementLoc, "Unit")
-  val param  = FnParam(SourceOrigin.Synth, Name.synth(statementParamName), typeAsc = Some(unitType))
+  val param = FnParam(SourceOrigin.Synth, Name.synth(statementParamName), typeAsc = Some(unitType))
   val lambda = Lambda(fullSpan, List(param), rest, captures = Nil)
+    .copy(meta = LambdaMeta(isBindingScope = true).some)
   App(fullSpan, lambda, statement)
 
 /** Lowers a local binding into immediate lambda application.
@@ -82,7 +83,7 @@ private def mkScopedBinding(
     params   = List(param),
     body     = restExpr,
     captures = Nil
-  )
+  ).copy(meta = LambdaMeta(isBindingScope = true).some)
   App(
     span = fullSpan,
     fn   = lambda,
@@ -215,6 +216,7 @@ private[parser] def termP(info: SourceInfo)(using P[Any]): P[ParsedTerm] =
       litUnitP(info) |
       holeP(info) |
       litStringP(info) |
+      functionTypeAppP(info) |
       selectableTermP(info, exprP(info)) |
       numericLitP(info) |
       opRefP(info) |
@@ -236,6 +238,7 @@ private[parser] def termMemberP(info: SourceInfo)(using P[Any]): P[ParsedTerm] =
       litUnitP(info) |
       holeP(info) |
       litStringP(info) |
+      functionTypeAppP(info) |
       selectableTermP(info, exprMemberP(info)) |
       numericLitP(info) |
       opRefP(info) |
@@ -415,7 +418,9 @@ private[parser] def letExprP(info: SourceInfo)(using P[Any]): P[Term] =
 private[parser] def innerFnExprP(info: SourceInfo)(using P[Any]): P[Term] =
   P(
     pointP(info) ~ fnKw ~/ "~".!.? ~ parsedBindingNameP(info) ~ pointP(info) ~
-      parsedParametersP(info) ~ typeAscP(info, TypeContext.BindingHeader) ~
+      parsedParametersP(info) ~ typeAscP(info, TypeContext.BindingHeader) ~ functionConstraintsP(
+        info
+      ) ~
       requiredBindingTokenP(info, "=") ~ terminatedBindingExprP(info) ~
       requiredBindingTokenP(info, ";") ~ requiredExprP(info) ~ pointP(info)
   ).map {
@@ -426,6 +431,7 @@ private[parser] def innerFnExprP(info: SourceInfo)(using P[Any]): P[Term] =
           lambdaStart,
           parameters,
           typeAsc,
+          parsedConstraints,
           equalsError,
           (bodyExpr, bodyEnd),
           endError,
@@ -435,7 +441,8 @@ private[parser] def innerFnExprP(info: SourceInfo)(using P[Any]): P[Term] =
       val lambdaSpan = span(lambdaStart, bodyEnd)
       val body = appendBindingErrors(
         bodyExpr,
-        parsedName.error.toList ++ parameters.error.toList ++ equalsError.toList ++ endError.toList
+        parsedName.error.toList ++ parameters.error.toList ++ parsedConstraints.errors ++
+          equalsError.toList ++ endError.toList
       )
       val malformedResult =
         typeAsc.filter(TypeFailureQueries.containsInvalidType(_, ResolvablesIndex()))
@@ -447,10 +454,10 @@ private[parser] def innerFnExprP(info: SourceInfo)(using P[Any]): P[Term] =
             body     = body,
             captures = Nil,
             typeSpec = None,
-            typeAsc  = malformedResult,
+            typeAsc  = typeAsc,
             meta     = None,
             isMove   = tilde.isDefined
-          )
+          ).copy(constraints = parsedConstraints.entries)
           Expr(lambdaSpan, List(lambda), None, None)
         else body.copy(typeAsc = malformedResult)
       val bindingTypeAsc =

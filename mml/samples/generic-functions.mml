@@ -1,0 +1,92 @@
+// Generic functions: inferred and explicit type arguments, and protocol constraints.
+// Run with: mmlc run mml/samples/generic-functions.mml
+
+// The same type variable connects the argument and result.
+// Consuming the argument allows an owned value to pass through without cloning.
+fn identity(~value: 'T): 'T = value;;
+
+protocol Describe 'T =
+  fn describe(value: 'T): String;
+;
+
+instance Describe Int =
+  fn describe(value) = to_str value;;
+;
+
+instance Describe Bool =
+  fn describe(value) =
+    if value then "true";
+    else "false";
+    ;
+  ;
+;
+
+// The constraint makes describe available while checking the generic body.
+fn render(value: 'T): String
+  where 'T: Describe =
+    describe value;
+;
+
+pub fn main(): Unit =
+  // Infer 'T separately at each call: Int, then Bool.
+  let answer = identity 42;
+  let ready = identity true;
+
+  // Explicit type arguments precede value arguments.
+  let explicit_answer = identity Int 7;
+
+  // String denotes the type here, even though it also names a constructor.
+  // Selecting String -> String does not invoke identity.
+  let keep_string = identity String;
+
+  println (keep_string (render answer));
+  println (render ready);
+  println (render explicit_answer);
+;
+
+// Expected output:
+// 42
+// true
+// 7
+
+// Counterexamples: uncomment one code block at a time to see its diagnostic.
+// Leave the explanation commented. Each block is independent of the others.
+
+// 1. An explicit type argument fixes the value type: Bool cannot satisfy Int.
+// let wrong_type = identity Int true;
+
+// 2. Repeated occurrences of 'T must agree; Int and Bool cannot both be 'T.
+// fn first(left: 'T, right: 'T): 'T = left;;
+// let conflicting_types = first 1 true;
+
+// 3. A generic body needs its own constraint, even when concrete instances exist.
+// fn unconstrained_render(value: 'T): String = describe value;;
+
+// 4. A concrete use needs an instance; this sample declares no Describe String.
+// let missing_instance = render "hello";
+
+// 5. A function value needs enough type evidence to select a concrete instance.
+// Use an annotation such as Int -> Int, or explicit arguments such as identity Int.
+// let unresolved = identity;
+
+// 6. Explicit type arguments are all-or-none: choose introduces both 'T and 'U.
+// Supply Int Bool, or omit both and let the value arguments determine them.
+// fn choose(left: 'T, right: 'U): 'T = left;;
+// let incomplete_types = choose Int 1 true;
+
+// 7. A generic body must work for its declared types, even if the function is unused.
+// The literal 1 has type Int; it cannot stand in for an arbitrary 'T.
+// fn fixed_result(value: 'T): 'T = 1;;
+
+// 8. Recursion cannot change a function's type arguments, even for a finite set.
+// This use would require again Int -> again Bool.
+// fn again(value: 'T): Int = again true;;
+// let changing_recursion = again 1;
+
+// 9. Generic calls preserve ownership: identity consumes an owned String.
+// Reading text after transferring it is a use-after-move error.
+// fn use_after_transfer(): Int =
+//   let text = "hello" ++ " world";
+//   let moved = identity text;
+//   text.length + moved.length;
+// ;

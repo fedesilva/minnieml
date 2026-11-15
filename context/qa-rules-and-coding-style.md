@@ -83,6 +83,9 @@ Before considering a change ready, verify:
 - Cats syntax style is used consistently (`.asRight`, `.some`, etc.).
 - Deep wildcard patterns were replaced with extractors/helpers when repeated or brittle.
 - Tests assert semantics (resolved/type-aware) rather than brittle naming where possible.
+- Names express precise domain concepts and make distinct responsibilities clear.
+- Declarations belong to the files and modules that own their concepts; placement preserves
+  coherent responsibilities and dependency direction.
 
 ## 8) No Exceptions, without exceptions.
 
@@ -114,6 +117,49 @@ sees on the page.
     `context/tasks/completed/unify-lambdas.md`."
   - The rule against *backward*-looking hedging still stands: "no longer", "was",
     "previously" still rot fast and add no value.
+
+### Explain the declaration before its special cases
+
+A nontrivial declaration's documentation must establish what it represents or accomplishes
+before discussing an invariant, exception, lifecycle detail, or implementation constraint.
+Apply three checks:
+
+- **Purpose:** Read the comment beside the declaration without reading its body or callers.
+  Can the reader identify the declaration's role? If understanding the comment requires
+  reconstructing that role from the implementation, the explanation is incomplete, even when
+  every sentence is technically true.
+- **Clarity:** Name the objects and actions behind abstract wording. Statements such as
+  "history survives", "evidence is preserved", or "definitions are removed" need enough
+  context to explain what happens and why it matters here.
+- **Evidence:** When writing or rewriting a comment, verify its premises independently.
+  Existing comments and design prose do not by themselves establish implemented behavior.
+  Do not preserve an unexplained scenario merely because the original comment mentioned it.
+  Establish its relevance from the implementation and callers, or omit it from the explanation.
+  A supported general invariant need not imply that a particular scenario actually occurs.
+
+Prefer a short, sufficient explanation. Do not invent a rationale or expand a comment into a
+design essay. Trivial declarations whose names and types already explain their role need no
+additional comment. A replacement comment must pass the same checks as the original.
+
+For example, this comment introduces a special property without explaining the type's purpose:
+
+```scala
+/** Allocation history survives phase iterations and removal of generated definitions. */
+final case class BindingIdSupply(
+  allocated: Set[String] = Set.empty,
+  next: Long = 0L,
+  scopes: Map[String, Int] = Map.empty
+)
+```
+
+"History" does not explain what the state enables. "Removal" introduces a scenario without
+identifying the operation or its relevance. Making that sentence smoother would leave both
+problems intact. A sufficient explanation is:
+
+```scala
+/** Immutable state shared by compiler passes to allocate distinct binding IDs and lexical scopes.
+  */
+```
 
 ### Negative example: assuming the reader came from a caller
 
@@ -226,6 +272,27 @@ Let the grouping of ideas guide the spacing.
 The `canonical` method in
 [TypeQueries.scala](../modules/mmlc-lib/src/main/scala/mml/mmlclib/ast/queries/TypeQueries.scala)
 illustrates the intended spacing. Formatter compliance alone does not establish readability.
+
+## 11) Names and Placement
+
+Naming and placement are design requirements. Review them explicitly alongside behavior;
+passing tests and formatting checks do not establish a coherent design.
+
+- Name types, functions, fields, files, and modules for the concepts and responsibilities
+  they represent. Use established domain terminology consistently.
+- Distinct abstractions need clear, distinct roles, reflected in their names. When names
+  appear interchangeable, check whether the model needs a clearer distinction or simplification.
+- Place each declaration with the domain concept that owns it. A current dependency or first
+  caller is insufficient justification for choosing its home. Check the responsibilities
+  and dependency direction of the containing file and module.
+- Keep details specific to one owner local to that owner. Put shared concepts in a location
+  whose responsibility explains the sharing; avoid miscellaneous utility containers.
+- Review names and placement at both declarations and use sites. Report misleading names,
+  misplaced concepts, and blurred responsibilities as actionable QA findings. Correct the
+  underlying model within the approved scope; seek direction if that requires broader changes.
+
+For example, a constraint on a type variable belongs with the type model even when its only
+supported requirement is a protocol reference. The reference's declaration belongs with protocols.
 
 ## Design code
 

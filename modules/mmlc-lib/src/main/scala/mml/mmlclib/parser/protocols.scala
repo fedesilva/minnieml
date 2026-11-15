@@ -81,7 +81,7 @@ private[parser] def protocolP(info: SourceInfo)(using P[Any]): P[Member] =
 private[parser] def instanceP(info: SourceInfo)(using P[Any]): P[Member] =
   P(
     docCommentP(info) ~ pointP(info) ~ instanceKw ~ tokenP(info)(typeIdP) ~
-      typeSpecP(info, TypeContext.Protocol(TypeContext.BindingHeader)) ~ headerEndP(
+      typeSpecP(info, TypeContext.Generic(TypeContext.BindingHeader)) ~ headerEndP(
         info,
         SyntaxError.ParameterizedInstance
       ) ~
@@ -155,8 +155,8 @@ private def declarationError(
 private def protocolCallableP(info: SourceInfo)(using P[Any]): P[ParsedProtocolCallable] =
   P(
     docCommentP(info) ~ pointP(info) ~ protocolCallableNameP(info) ~ pointP(info) ~
-      parsedParametersP(info, TypeContext.Protocol(TypeContext.Parameter)) ~
-      typeAscP(info, TypeContext.Protocol(TypeContext.Operator)) ~
+      parsedParametersP(info, TypeContext.Generic(TypeContext.Parameter)) ~
+      typeAscP(info, TypeContext.Generic(TypeContext.Operator)) ~
       precedenceP.? ~ assocP.? ~ unsupportedMemberConstraintsP(info).? ~
       ("=" ~ terminatedBindingExprP(info)).? ~ requiredBindingTokenP(info, ";") ~~ pointP(info)
   ).map {

@@ -136,7 +136,9 @@ private[parser] def fnDefP(info: SourceInfo)(using P[Any]): P[Member] =
   P(
     pointP(info) ~ docCommentP(info) ~ visibilityP.? ~ inlineKw.!.? ~ fnKw ~/
       parsedBindingNameP(info) ~ pointP(info) ~ parsedParametersP(info) ~
-      typeAscP(info, TypeContext.BindingHeader) ~ requiredBindingTokenP(info, "=") ~
+      typeAscP(info, TypeContext.BindingHeader) ~ functionConstraintsP(
+        info
+      ) ~ requiredBindingTokenP(info, "=") ~
       terminatedBindingExprP(info) ~ bindingMemberEndP(info) ~
       pointP(info)
   ).map {
@@ -149,6 +151,7 @@ private[parser] def fnDefP(info: SourceInfo)(using P[Any]): P[Member] =
           lambdaStart,
           parameters,
           typeAsc,
+          parsedConstraints,
           equalsError,
           (bodyExpr, bodyEnd),
           (endError, tokenEnd),
@@ -160,7 +163,7 @@ private[parser] def fnDefP(info: SourceInfo)(using P[Any]): P[Member] =
           val lambdaSpan = span(lambdaStart, bodyEnd)
           val body = appendBindingErrors(
             bodyExpr,
-            parameters.error.toList ++ equalsError.toList ++ endError.toList
+            parameters.error.toList ++ parsedConstraints.errors ++ equalsError.toList ++ endError.toList
           )
           val arity = CallableArity.fromParameterCount(parameters.values.size)
           val meta = Option.when(parameters.complete)(
@@ -181,7 +184,7 @@ private[parser] def fnDefP(info: SourceInfo)(using P[Any]): P[Member] =
                 captures = Nil,
                 typeSpec = if parameters.complete then body.typeSpec else none,
                 typeAsc  = typeAsc
-              )
+              ).copy(constraints = parsedConstraints.entries)
               Expr(lambdaSpan, List(lambda))
             else
               body.copy(typeAsc =

@@ -119,13 +119,13 @@ def prettyPrintTypeSpec(
           .mkString(",\n")
         s"@metal:repr {\n$fieldStrs\n${"  " * indent}}$spanStr"
 
-    case Some(TypeVariable(sp, name)) =>
+    case Some(TypeVariable(sp, name, _)) =>
       val spanStr = if showSourceSpans then s" ${printSourceOrigin(sp)}" else ""
       s"$name$spanStr"
 
     case Some(TypeScheme(sp, vars, bodyType)) =>
       val spanStr = if showSourceSpans then s" ${printSourceOrigin(sp)}" else ""
-      val varsStr = if vars.nonEmpty then s"∀${vars.mkString(" ")}. " else ""
+      val varsStr = if vars.nonEmpty then s"∀${vars.map(_.name).mkString(" ")}. " else ""
       s"$varsStr${prettyPrintTypeSpec(Some(bodyType), showSourceSpans, showTypes, indent)}$spanStr"
 
     case None =>
@@ -150,7 +150,7 @@ private def formatTypeSpecInline(
       s"($inner)$spanStr"
     case TypeScheme(sp, vars, bodyType) =>
       val spanStr = if showSourceSpans then s" ${printSourceOrigin(sp)}" else ""
-      val varsStr = if vars.nonEmpty then s"∀${vars.mkString(" ")}. " else ""
+      val varsStr = if vars.nonEmpty then s"∀${vars.map(_.name).mkString(" ")}. " else ""
       s"$varsStr${formatTypeSpecInline(bodyType, showSourceSpans, showTypes)}$spanStr"
     case TypeRef(sp, name, resolvedId, _) =>
       val spanStr = if showSourceSpans then s" ${printSourceOrigin(sp)}" else ""
@@ -161,7 +161,7 @@ private def formatTypeSpecInline(
     case TypeUnit(sp) =>
       val spanStr = if showSourceSpans then s" ${printSourceOrigin(sp)}" else ""
       s"Unit$spanStr"
-    case TypeVariable(sp, name) =>
+    case TypeVariable(sp, name, _) =>
       val spanStr = if showSourceSpans then s" ${printSourceOrigin(sp)}" else ""
       s"$name$spanStr"
     case NativePrimitive(sp, llvmType, _, _) =>

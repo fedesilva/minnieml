@@ -27,6 +27,8 @@ def syntaxMessage(error: SyntaxError): String = error match
   case SyntaxError.MissingInstanceBody => "Instance members require a body"
   case SyntaxError.OperatorParameterCount => "Operators require one or two parameters"
   case SyntaxError.FunctionOperatorAttributes => "Only operators have precedence and associativity"
+  case SyntaxError.InvalidFunctionConstraints =>
+    "Expected constraints such as where 'T: Show & Clone, 'U: Show"
   case SyntaxError.MemberConstraints => "Member constraints are not supported"
   case SyntaxError.ExpectedToken(token) => s"Expected '$token'"
   case SyntaxError.InvalidIdentifier(name, kind, explainRules) =>

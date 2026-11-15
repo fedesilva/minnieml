@@ -6,6 +6,24 @@ import mml.mmlclib.ast.*
 /** Queries for declaration names, metadata, and instance implementation IDs. */
 object DeclarationQueries:
 
+  /** A checked generic function supplies a template, rather than an executable body. */
+  def isGenericFunction(member: Member): Boolean = member match
+    case binding: Bnd =>
+      binding.value.terms match
+        case List(lambda: Lambda) => lambda.typeParams.nonEmpty
+        case _ => false
+    case _ => false
+
+  /** Returns checked template bindings stored in the index, including retained local declarations.
+    */
+  def genericFunctions(index: ResolvablesIndex): List[Bnd] =
+    index.resolvables.valuesIterator
+      .collect {
+        case binding: Bnd if isGenericFunction(binding) => binding
+      }
+      .toList
+      .sortBy(_.id)
+
   /** Callable attributes when the node is a binding with metadata or a protocol signature. */
   def metadata(node: Resolvable): Option[BindingMeta] = node match
     case binding:   Bnd => binding.meta

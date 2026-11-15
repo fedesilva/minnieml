@@ -630,7 +630,8 @@ class AppRewritingTests extends BaseEffFunSuite:
               case _ =>
                 findAppByName(app.fn, name)
                   .orElse(app.arg.terms.flatMap(findAppByName(_, name)).headOption)
-          case Lambda(_, _, body, _, _, _, _, _) =>
+          case lambda: Lambda =>
+            val body = lambda.body
             body.terms.flatMap(findAppByName(_, name)).headOption
           case Expr(_, terms, _, _) =>
             terms.flatMap(findAppByName(_, name)).headOption
@@ -670,7 +671,7 @@ class AppRewritingTests extends BaseEffFunSuite:
 
                   // Verify int_to_str's argument is Ref(n)
                   toStringApp.get.arg.terms match
-                    case List(Ref(_, "n", _, _, _, _, _)) => ()
+                    case List(ref: Ref) if ref.name == "n" => ()
                     case other =>
                       fail(
                         s"Expected int_to_str argument to be Ref n, got:\n${other
@@ -763,7 +764,8 @@ class AppRewritingTests extends BaseEffFunSuite:
             case Some(Cond(_, condExpr, thenExpr, elseExpr, _, _)) =>
               // Verify condition is a reference to "cond"
               condExpr.terms.headOption match
-                case Some(Ref(_, condName, _, _, _, _, _)) =>
+                case Some(ref: Ref) =>
+                  val condName = ref.name
                   assertEquals(clue(condName), "cond", "Condition name mismatch")
                 case Some(other) =>
                   fail(s"Expected Ref in condition expression, got: ${prettyPrintAst(other)}")

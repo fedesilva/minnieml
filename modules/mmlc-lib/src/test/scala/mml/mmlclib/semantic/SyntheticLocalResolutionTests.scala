@@ -19,8 +19,8 @@ class SyntheticLocalResolutionTests extends BaseEffFunSuite:
   private def collectParams(term: Term): List[FnParam] =
     term match
       case Expr(_, terms, _, _) => terms.flatMap(collectParams)
-      case Lambda(_, params, body, _, _, _, _, _) => params ++ collectParams(body)
-      case app: App =>
+      case lambda: Lambda => lambda.params ++ collectParams(lambda.body)
+      case app:    App =>
         collectParamsFromAppFn(app.fn) ++ collectParams(app.arg)
       case Cond(_, cond, ifTrue, ifFalse, _, _) =>
         collectParams(cond) ++ collectParams(ifTrue) ++ collectParams(ifFalse)

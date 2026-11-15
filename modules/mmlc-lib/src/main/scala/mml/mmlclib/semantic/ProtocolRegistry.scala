@@ -186,6 +186,18 @@ final case class ProtocolRegistry private (
       id <- instances.get(key).toRight(MissingInstance(key))
     yield id
 
+  /** Returns the accepted instance declaration's ID for a protocol and concrete type. Rejected
+    * instances retain their keys for duplicate detection but cannot satisfy a requirement.
+    */
+  def usableInstance(
+    protocolId:   String,
+    concreteType: Type,
+    index:        ResolvablesIndex
+  ): Either[ProtocolLookupError, String] =
+    instance(protocolId, concreteType, index).flatMap { id =>
+      failedInstances.get(id).map(RejectedDeclaration(_)).toLeft(id)
+    }
+
   /** Read the binding associated with this instance and one of its protocol's signatures.
     * Registering Num Int alone is insufficient: its + signature must also be associated with an
     * implementation via registerMemberBinding. The supplied index provides the current binding.

@@ -14,7 +14,8 @@ object BindingOwner:
   def binding(moduleName: String, bindingName: String): BindingOwner =
     BindingOwner(BindingIds.declaration(moduleName, bindingName))
 
-/** Allocation history survives phase iterations and removal of generated definitions. */
+/** Immutable state shared by compiler passes to allocate distinct binding IDs and lexical scopes.
+  */
 final case class BindingIdSupply(
   allocated: Set[String]      = Set.empty,
   next:      Long             = 0L,
@@ -62,9 +63,10 @@ object BindingIds:
     (supply.copy(scopes = supply.scopes.updated(owner.path, ordinal + 1)), owner.scope(ordinal))
   }
 
-  /** The first assigned parameter anchors nested allocation. Generated parameters retain their
-    * purpose and ordinal as part of that scope anchor. Re-entering a relocated definition keeps the
-    * same anchor; parameterless scopes allocate an explicit path.
+  /** Chooses the ID prefix for bindings generated inside a function body. Uses the first assigned
+    * parameter ID without its final `::name` segment, so a relocated function keeps its original
+    * scope prefix. If no parameter ID is assigned, or the first assigned ID has no `::` separator,
+    * allocates a child scope under `owner`.
     */
   def within(params: List[FnParam], owner: BindingOwner): Allocation[BindingOwner] =
     params

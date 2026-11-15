@@ -1,5 +1,6 @@
 package mml.mmlclib.compiler
 
+import mml.mmlclib.ast.queries.DeclarationQueries
 import mml.mmlclib.semantic.*
 import mml.mmlclib.util.pipe.*
 
@@ -10,6 +11,9 @@ object SemanticStage:
     ResolvablesIndexer.rewriteModule(phase(state))
 
   def rewrite(state: CompilerState): CompilerState =
+    rewriteExecutable(state)
+
+  private def rewriteExecutable(state: CompilerState): CompilerState =
 
     val withStdlib = CompilerState.timePhase("semantic", "inject-stdlib") { current =>
       val moduleWithTypes = injectBasicTypes(current.module)
@@ -40,6 +44,29 @@ object SemanticStage:
         indexed(CaptureAnalyzer.rewriteModule)
       )
       |> CompilerState.timePhase("semantic", "type-checker")(indexed(TypeChecker.rewriteModule))
+      |> instantiateAndLower
+
+  private def instantiateAndLower(state: CompilerState): CompilerState =
+    val concrete = CompilerState.timePhase("semantic", "fn-monomorphizer")(
+      FnMonomorphizer.rewriteModule
+    )(state)
+    if concrete.hasErrors && GenericSyntax.exists(concrete.module) then
+      concrete.withCanEmitCode(false)
+    else lowerConcrete(concrete)
+
+  /** Lower executable members while retaining checked templates in the same module and index. */
+  private def lowerConcrete(state: CompilerState): CompilerState =
+    val (templates, executable) =
+      state.module.members.partition(DeclarationQueries.isGenericFunction)
+    val lowered = lowerMembers(state.withModule(state.module.copy(members = executable)))
+    ResolvablesIndexer.rewriteModule(
+      lowered.withModule(lowered.module.copy(members = templates ++ lowered.module.members))
+    )
+
+  /** Lowers concrete callables and validates their ownership and destruction. */
+  private def lowerMembers(state: CompilerState): CompilerState =
+    state
+      |> indexed(CaptureAnalyzer.rewriteModule)
       |> CompilerState.timePhase("semantic", "pap-elaborator")(
         PartialApplicationElaborator.rewriteModule
       )

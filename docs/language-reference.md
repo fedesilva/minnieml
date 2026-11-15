@@ -129,6 +129,81 @@ inline fn dot(u: Vec3, v: Vec3): Float =
 ;
 ```
 
+### Generic functions
+
+A function signature can use apostrophe-prefixed type variables. Repeated occurrences
+of a variable refer to the same type:
+
+```mml
+fn identity(~value: 'T): 'T = value;;
+
+let answer = identity 42;
+let ready = identity true;
+let explicit_answer = identity Int 42;
+```
+
+Variables are scoped to their function. An inner function can use its enclosing
+function's variables and introduce additional ones. There is no separate type-parameter
+list. An omitted result annotation is inferred from the body; for example,
+`fn identity(~value: 'T) = value;;` also returns `'T`.
+
+The compiler checks each generic body independently of its callers, including unused
+functions. A variable cannot silently become a concrete type because an operation in the
+body requires it. Protocol operations require a declared `where` constraint:
+
+```mml
+protocol Describe 'T =
+  fn describe(value: 'T): String;
+;
+
+fn render(value: 'T): String
+  where 'T: Describe =
+    describe value;
+;
+```
+
+A concrete call to `render` requires a matching `Describe` instance. A call from another
+generic body requires the corresponding constraint on the caller's variable. Separate
+variables with commas and requirements on one variable with `&`, as in
+`where 'T: Describe & Clone, 'U: Describe`. Constraints do not introduce type variables.
+
+Type arguments are inferred from value arguments and expected types. Explicit type
+arguments precede value arguments and supply every variable, in first-appearance order
+through parameter types and then the result type. Enclosing variables are not additional
+type arguments of an inner function. Group compound types with parentheses, as in
+`identity (Int -> Int)`. Partial explicit type arguments and type-argument placeholders
+are not supported. In a generic type-argument prefix, a name resolving to a type denotes
+that type, including names that also denote constructors: `identity String` selects
+`String -> String`, and `identity Person` selects `Person -> Person`. Parentheses around
+a name preserve this rule. Invalid type applications do not fall back to constructor calls.
+To pass a constructor as a value, use a value alias or an ascription such as
+`identity (Person: Int -> Person)` for `struct Person { age: Int };`. Ordinary non-generic
+calls and values following a complete explicit type-argument prefix use ordinary value lookup.
+
+A concrete function value can be selected without executing its body:
+
+```mml
+let keep_int: Int -> Int = identity;
+let keep_bool = identity Bool;
+```
+
+Partial calls can use the expected remaining function type to infer type arguments.
+Values with unresolved type variables cannot be stored as polymorphic callables.
+User-defined generic data types and higher-kinded variables are outside this feature.
+
+The compiler creates and reuses concrete implementations for the types used. Recursion
+must return to each source function with the same type arguments, including through
+mutual calls and function-value dependencies. A dependency path `f Int -> g String -> f Int`
+is allowed; `f Int -> g Int -> f Bool` is rejected, even if the set of implementations
+would be finite. Independent calls to `f Int` and `f Bool` are valid.
+
+Concrete implementations follow the ordinary ownership rules. Parameters borrow by
+default; `~value` consumes an owned argument. The identity above transfers an owned value
+through the function without cloning. Callback parameter contracts, partial-application
+captures, and call-once closures retain their ordinary rules.
+
+See [the generic-functions sample](../mml/samples/generic-functions.mml).
+
 ### Lambda expressions
 
 Lambda expressions create anonymous function values. The basic form is
@@ -380,9 +455,9 @@ Ordinary lexical bindings and parameters shadow protocol member names.
 
 See the runnable [named-function sample](../mml/samples/protocol-functions.mml) and
 [operator sample](../mml/samples/protocol-operators.mml). Default implementations, multiple type
-parameters, protocol prerequisites, parameterized instances, and `where` clauses are not supported.
-`where` is recognized in a signature header to report the unsupported constraint syntax;
-it remains available as an ordinary binding name.
+parameters, protocol prerequisites, parameterized instances, and constraints on protocol
+member signatures are not supported. Ordinary generic functions support
+[`where` constraints](#generic-functions).
 
 ### Struct declarations
 
@@ -716,7 +791,7 @@ MML does not have polymorphic types yet, so arrays are provided as monomorphic
 native types: `IntArray`, `StringArray`, and `FloatArray`. These are backed by C
 runtime implementations with dedicated accessor functions (`ar_int_get`,
 `ar_int_set`, `ar_float_get`, `ar_float_set`, etc.). Once the type checker
-supports generics, these will be replaced by a single polymorphic array type.
+supports parameterized array types, these can be replaced by a single polymorphic array type.
 
 String and array lengths and indexes use signed Int32. `IntArray` stores 32-bit elements.
 Runtime lengths are checked before narrowing to Int32.
@@ -1561,9 +1636,9 @@ the array owns that value.
 
 ## 10. Current limitations
 
-**No generics**: The type checker does not support parametric polymorphism yet.
-Monomorphic workarounds (e.g., `IntArray`, `StringArray`, `FloatArray`) are used
-in the meantime.
+**Generic data types**: Generic functions are supported. User-defined generic data types,
+higher-kinded variables, and polymorphic callable values are not. Arrays retain the concrete
+`IntArray`, `StringArray`, and `FloatArray` families.
 
 **Overloading**: Operators can be overloaded by arity — a unary and a binary
 operator can share a name — but two binary operators with the same name are
@@ -1572,7 +1647,8 @@ be overloaded by repeated declarations. Protocol signatures support type-based s
 both functions and operators, with concrete instances selected before execution.
 
 **Protocols**: One type parameter and required signatures are supported. Defaults, prerequisites,
-member-local polymorphism, parameterized instances, and `where` clauses are deferred.
+member-local polymorphism, parameterized instances, and constraints on protocol member signatures
+are deferred. Ordinary generic functions support `where` constraints.
 
 ---
 

@@ -220,7 +220,27 @@ or required independent verification remains incomplete.
 
 The code documentation reviewer reads section 9 of `context/qa-rules-and-coding-style.md`,
 including its negative and positive examples, and **Comments and Documentation** in
-`context/coding-rules.md`. Evaluate each comment and docstring within the approved scope:
+`context/coding-rules.md`. Apply section 9's
+[purpose, clarity, and evidence checks](../../context/qa-rules-and-coding-style.md#explain-the-declaration-before-its-special-cases)
+to every nontrivial declaration in scope:
+
+1. **Purpose:** Read the declaration and its comment before its body or callers. State what
+   the declaration represents or accomplishes, and record any missing explanation before
+   inspecting the implementation.
+2. **Clarity:** Identify nouns and actions whose meaning requires guessing. Ask concrete
+   questions where relevant: "Which definitions?", "Removed from what?", "By which operation?",
+   "What does this state enable?"
+3. **Evidence:** Inspect the implementation and relevant callers to verify behavioral claims
+   and their relevance. Understanding the code after investigation does not repair an
+   explanation that failed the first two checks.
+
+Treat a failure of any check as a documentation finding candidate. Do not pass documentation
+because its claims are technically true or its wording sounds plausible. Apply all three
+checks to proposed replacements as well; smoother wording is insufficient. Report purpose,
+clarity, and evidence coverage and any gaps without requiring a report entry for every passing
+comment. Findings still follow independent verification below.
+
+Evaluate each comment and docstring within the approved scope:
 
 - Read it beside the declaration or statements it documents. Check its accuracy against the
   implementation and relevant callers, but judge whether it helps a reader at this location.
@@ -470,6 +490,10 @@ them:
    rules and technical sources. Require it to read those sources directly.
 5. Give the verifier all verification instructions directly in the packet.
    The verifier must not read or invoke the code-review skill.
+   For documentation and readability claims, include section 9's purpose, clarity, and evidence
+   checks. Require the verifier to assess the missing explanation or concrete reading burden;
+   a runtime defect is not required. Do not dismiss the claim merely because investigation
+   makes the implementation understandable.
 6. Do not pass other findings, the reviewer's reasoning process, a confidence
    score, a desired verdict, or a proposed fix. Ask the verifier to try to
    disprove the claim before accepting it.

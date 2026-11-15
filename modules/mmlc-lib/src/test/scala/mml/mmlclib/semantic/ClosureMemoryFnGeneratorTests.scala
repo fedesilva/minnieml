@@ -4,6 +4,7 @@ import mml.mmlclib.ast.*
 import mml.mmlclib.compiler.{CompilerConfig, CompilerState}
 import mml.mmlclib.parser.SourceInfo
 import mml.mmlclib.test.BaseEffFunSuite
+import mml.mmlclib.test.ast.termLambda
 
 class ClosureMemoryFnGeneratorTests extends BaseEffFunSuite:
 
@@ -12,8 +13,8 @@ class ClosureMemoryFnGeneratorTests extends BaseEffFunSuite:
 
   private def qualifierLambda(term: Term): Option[Lambda] =
     term match
-      case Ref(_, _, _, _, _, _, Some(TermGroup(_, Expr(_, List(lambda: Lambda), _, _), _))) =>
-        Some(lambda)
+      case ref: Ref =>
+        ref.qualifier.flatMap(termLambda)
       case _ =>
         None
 

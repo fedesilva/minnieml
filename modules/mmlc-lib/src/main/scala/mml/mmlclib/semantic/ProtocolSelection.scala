@@ -8,6 +8,83 @@ import mml.mmlclib.ast.queries.TypeQueries
 /** Candidate discovery and signature evidence are independent of expression checking. */
 object ProtocolSelection:
 
+  /** A protocol operation justified by a generic body's declared requirement. The signature ID
+    * remains the target until monomorphization replaces the rigid variable with a concrete type.
+    */
+  case class ConstrainedCandidate(
+    signature:    ProtocolSignature,
+    protocolType: TypeVariable,
+    callableType: TypeFn
+  )
+
+  /** Resolve signature evidence against lexical requirements without consulting concrete instances.
+    * Requirements match both the variable binder and the protocol declaration by resolved identity.
+    */
+  def constrainedCandidates(
+    matches:      List[SignatureMatch],
+    requirements: List[TypeVariableConstraints],
+    index:        ResolvablesIndex
+  ): List[ConstrainedCandidate] =
+    matches.flatMap { matched =>
+      val registered = matched.registered
+      matched.evidence match
+        case SignatureEvidence.Concrete(tpe, _) =>
+          TypeQueries
+            .canonical(tpe, index)
+            .collect { case variable: TypeVariable => variable }
+            .filter(variable =>
+              registered.protocol.id.exists(declaredRequirement(_, variable, requirements))
+            )
+            .flatMap { variable =>
+              for
+                binder <- registered.protocol.typeParameter.resolvedId
+                params <- registered.signature.params.traverse(_.typeAsc)
+              yield
+                val replacements = Map(binder -> variable)
+                val inputs = NonEmptyList
+                  .fromList(params)
+                  .getOrElse(
+                    NonEmptyList.one(TypeRef(tpe.source, "Unit", stdlibTypeId("Unit")))
+                  )
+                val callable = TypeFn(
+                  registered.signature.source,
+                  inputs.map(TypeSubstitution(_, replacements)),
+                  TypeSubstitution(registered.signature.returnType, replacements)
+                )
+                ConstrainedCandidate(registered.signature, variable, callable)
+            }
+            .toList
+        case _ => Nil
+    }
+
+  /** Check a requirement at a generic use. Rigid arguments require lexical evidence; concrete
+    * arguments require an accepted instance. Concrete registrations cannot justify a rigid
+    * variable.
+    */
+  def satisfiesRequirement(
+    protocolId:   String,
+    tpe:          Type,
+    requirements: List[TypeVariableConstraints],
+    registry:     ProtocolRegistry,
+    index:        ResolvablesIndex
+  ): Boolean =
+    TypeQueries.canonical(tpe, index) match
+      case Some(variable: TypeVariable) => declaredRequirement(protocolId, variable, requirements)
+      case Some(concrete) => registry.usableInstance(protocolId, concrete, index).isRight
+      case None => false
+
+  private def declaredRequirement(
+    protocolId:   String,
+    variable:     TypeVariable,
+    requirements: List[TypeVariableConstraints]
+  ): Boolean =
+    variable.resolvedId.exists { binder =>
+      requirements.exists { requirement =>
+        requirement.variable.resolvedId.contains(binder) &&
+        requirement.constraints.exists(_.resolvedId.contains(protocolId))
+      }
+    }
+
   /** Preserve ordinary declarations and registered signatures, including signatures with no
     * instances. The reference already carries the lexical and operator-arity decisions.
     */
@@ -137,7 +214,7 @@ object ProtocolSelection:
         else
           (TypeQueries.canonical(wanted, index), TypeQueries.canonical(actual, index)) match
             case (Some(variable: TypeVariable), Some(concrete))
-                if variable.name == protocol.typeParameter.name =>
+                if isProtocolParameter(variable, protocol) =>
               evidence match
                 case SignatureEvidence.Unknown =>
                   SignatureEvidence.Concrete(
@@ -202,7 +279,7 @@ object ProtocolSelection:
               val result = remainingCallableType(function, function.source)
               consume(result, rest, next)
 
-            case Some(variable: TypeVariable) if variable.name == protocol.typeParameter.name =>
+            case Some(variable: TypeVariable) if isProtocolParameter(variable, protocol) =>
               constrained match
 
                 case SignatureEvidence.Concrete(known, _) => consume(known, arguments, constrained)
@@ -230,6 +307,9 @@ object ProtocolSelection:
 
       consume(callable, applications, initial)
     }
+
+  private def isProtocolParameter(variable: TypeVariable, protocol: Protocol): Boolean =
+    variable.resolvedId.nonEmpty && variable.resolvedId == protocol.typeParameter.resolvedId
 
   /** One local use constrains the same callable as every other use of its binding. Its source
     * identifies the use supplying the expected remaining type, including a typed consumer.

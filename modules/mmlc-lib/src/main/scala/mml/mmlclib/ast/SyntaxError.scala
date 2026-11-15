@@ -22,6 +22,7 @@ enum SyntaxError derives CanEqual:
   case MissingInstanceBody
   case OperatorParameterCount
   case FunctionOperatorAttributes
+  case InvalidFunctionConstraints
   case MemberConstraints
   case ExpectedToken(token: String)
   case InvalidIdentifier(name: String, kind: IdentifierKind, explainRules: Boolean)

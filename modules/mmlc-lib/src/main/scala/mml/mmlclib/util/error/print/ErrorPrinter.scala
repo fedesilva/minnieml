@@ -47,6 +47,7 @@ object ErrorPrinter:
   private def getErrorSourcePosition(error: SemanticError): (Int, Int) = error match
     case SemanticError.UndefinedRef(ref, _, _) => startPosOf(ref)
     case SemanticError.UndefinedTypeRef(typeRef, _, _) => startPosOf(typeRef)
+    case SemanticError.UndefinedTypeVariable(variable, _, _) => startPosOf(variable)
     case SemanticError.AmbiguousTypeRef(typeRef, _, _, _) => startPosOf(typeRef)
     case SemanticError.DuplicateName(_, duplicates, _, _) =>
       duplicates
@@ -92,6 +93,9 @@ object ErrorPrinter:
           startPosOf(param)
         case mml.mmlclib.semantic.TypeError.MissingOperatorReturnType(decl, _) =>
           startPosOf(decl.asInstanceOf[FromSource])
+        case mml.mmlclib.semantic.TypeError.GenericInferenceFailed(ref, _, _) => startPosOf(ref)
+        case mml.mmlclib.semantic.TypeError.MissingGenericRequirement(ref, _, _, _) =>
+          startPosOf(ref)
         case mml.mmlclib.semantic.TypeError.TypeMismatch(node, _, _, _, _) =>
           startPosOf(node.asInstanceOf[FromSource])
         case mml.mmlclib.semantic.TypeError.UndersaturatedApplication(app, _, _, _) =>
@@ -183,6 +187,10 @@ object ErrorPrinter:
 
       case SemanticError.UndefinedTypeRef(typeRef, member, phase) =>
         s"${Console.RED}${semanticErrorMessage(semantic)} at ${locationOf(typeRef)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+
+      case SemanticError.UndefinedTypeVariable(variable, member, phase) =>
+        s"${Console.RED}${semanticErrorMessage(semantic)} at ${locationOf(variable)}" +
+          s"${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case SemanticError.AmbiguousTypeRef(typeRef, candidates, _, phase) =>
         val locations = candidates.collect { case candidate: FromSource => locationOf(candidate) }

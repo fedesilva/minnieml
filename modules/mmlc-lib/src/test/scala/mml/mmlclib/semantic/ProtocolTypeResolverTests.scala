@@ -69,9 +69,18 @@ class ProtocolTypeResolverTests extends BaseEffFunSuite:
         .getOrElse(fail("Expected the Result alias"))
 
       assertEquals(resolved.errors, Vector.empty)
-      assertEquals(protocol.typeParameter, original.typeParameter)
-      assertEquals(ascription(signature.params.head), ascription(originalSignature.params.head))
-      assertEquals(function.paramTypes, originalFunction.paramTypes)
+      assert(protocol.typeParameter.resolvedId.nonEmpty)
+      assertEquals(protocol.typeParameter.copy(resolvedId = None), original.typeParameter)
+      val occurrences = List(ascription(signature.params.head), function.paramTypes.head)
+      val originals =
+        List(ascription(originalSignature.params.head), originalFunction.paramTypes.head)
+      occurrences.zip(originals).foreach { (resolved, original) =>
+        resolved match
+          case variable: TypeVariable =>
+            assertEquals(variable.resolvedId, protocol.typeParameter.resolvedId)
+            assertEquals(variable.copy(resolvedId = None), original)
+          case other => fail(s"Expected resolved protocol variable, got $other")
+      }
       assertEquals(resolvedTypeId(function.returnType, resolved.module), alias.id.get)
       assertEquals(resolvedTypeId(signature.returnType, resolved.module), alias.id.get)
       assertEquals(protocol.id, original.id)

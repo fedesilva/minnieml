@@ -69,7 +69,7 @@ Verification on macOS arm64 with Clang/LLVM 23.1.1:
   from the adjacent use-after-move report; the 12 focused tests pass again.
 - Independent primary review and all four dedicated checks are complete: code style/QA,
   test quality, readability, and code documentation. Both confirmed test gaps are corrected;
-  the final narrow re-review has no actionable findings. See [QA-003 and QA-004](../qa-misses.md#qa-003-exercise-normal-cli-reporting-in-diagnostic-agreement-tests).
+  the final narrow re-review has no actionable findings. See [QA-003 and QA-004](../../history/qa-misses-completed.md#qa-003-exercise-normal-cli-reporting-in-diagnostic-agreement-tests).
 - Full-suite, smoke, publishing, and benchmark-build results cover the production change.
   Test-only review corrections received fresh formatting, linting, and focused test runs.
   No interactive editor was exercised; move-site assertions verify presentation of existing

@@ -1,6 +1,7 @@
 package mml.mmlclib.lsp
 
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.DeclarationQueries
 
 /** Semantic token types for MML. Order matters - index is used in LSP protocol. */
 enum TokenType(val name: String) derives CanEqual:
@@ -41,9 +42,25 @@ object SemanticTokens:
     val sorted = tokens.sortBy(t => (t.line, t.col))
     SemanticTokensResult(deltaEncode(sorted))
 
-  /** Collect all tokens from the module. */
+  /** Collects tokens from module declarations and indexed local templates. Local templates have no
+    * BindingMeta to distinguish `let` from `fn`; their path emits name and body tokens without
+    * inferring a declaration keyword position.
+    */
   private def collectTokens(module: Module): List[RawToken] =
-    module.members.flatMap(collectFromMember(_, module))
+    val memberIds = module.members.collect { case binding: Bnd => binding.id }.flatten.toSet
+    SourceDeclarations.members(module).flatMap {
+      case binding: Bnd if !binding.id.exists(memberIds.contains) =>
+        binding.nameNode.spanOpt
+          .flatMap(span =>
+            tokenAt(
+              span,
+              TokenType.Function,
+              Set(TokenModifier.Declaration, TokenModifier.Readonly)
+            )
+          )
+          .toList ++ collectFromExpr(binding.value, module)
+      case member => collectFromMember(member, module)
+    }
 
   /** Collect tokens from a member. */
   private def collectFromMember(member: Member, module: Module): List[RawToken] =
@@ -166,6 +183,9 @@ object SemanticTokens:
       case app: App =>
         collectFromApp(app, module)
 
+      case application: FnTypeApp =>
+        collectFromTerm(application.fn, module) ++ application.args.flatMap(collectFromType)
+
       case binding: BindOwnership =>
         collectFromParams(List(binding.valueParam, binding.witnessParam), module) ++
           collectFromExpr(binding.initializer, module) ++ collectFromExpr(binding.body, module)
@@ -216,7 +236,8 @@ object SemanticTokens:
     if !ref.source.isFromSource then return Nil
     val resolvables = module.resolvables
     val resolvedOpt =
-      ref.resolvedId
+      ref.sourceId
+        .orElse(ref.resolvedId)
         .flatMap(resolvables.lookup)
         .orElse {
           val candidates = ref.candidateIds.flatMap(resolvables.lookup)
@@ -227,8 +248,11 @@ object SemanticTokens:
       case Some(resolved) =>
         val tokenType       = refTokenType(ref, resolved, module)
         val qualifierTokens = ref.qualifier.toList.flatMap(collectFromTerm(_, module))
-        val nameToken       = refToken(ref, tokenType).toList
-        qualifierTokens ++ nameToken
+        val sourceRef =
+          if ref.sourceId.nonEmpty then ref.copy(name = DeclarationQueries.sourceName(resolved))
+          else ref
+        val nameToken = refToken(sourceRef, tokenType).toList
+        qualifierTokens ++ nameToken ++ ref.explicitTypeArgs.toList.flatten.flatMap(collectFromType)
 
   /** Collect tokens from a function application. */
   private def collectFromApp(app: App, module: Module): List[RawToken] =
@@ -241,7 +265,14 @@ object SemanticTokens:
 
   /** Collect tokens from a lambda. */
   private def collectFromLambda(lambda: Lambda, module: Module): List[RawToken] =
-    collectFromParams(lambda.params, module) ++ collectFromExpr(lambda.body, module)
+    if lambda.meta.exists(_.templateId.nonEmpty) then return Nil
+    val constraintTokens = lambda.constraints.flatMap { variableConstraints =>
+      collectFromType(variableConstraints.variable) ++ variableConstraints.constraints.flatMap {
+        constraint => constraint.nameNode.spanOpt.flatMap(tokenAt(_, TokenType.Type)).toList
+      }
+    }
+    collectFromParams(lambda.params, module) ++ collectFromExpr(lambda.body, module) ++
+      lambda.typeAsc.toList.flatMap(collectFromType) ++ constraintTokens
 
   private def collectFromParams(params: List[FnParam], module: Module): List[RawToken] =
     params.flatMap { param =>

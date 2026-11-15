@@ -40,6 +40,9 @@ enum TypeError extends CompilationError:
   case InvalidSelection(ref: Ref, baseType: Type, phase: String)
   case UnknownField(ref: Ref, struct: TypeStruct, phase: String)
 
+  case GenericInferenceFailed(ref: Ref, failure: GenericInference.Failure, phase: String)
+  case MissingGenericRequirement(ref: Ref, protocol: ProtocolRef, tpe: Type, phase: String)
+
   // Conditional Errors
   case ConditionalBranchTypeMismatch(
     cond:      Cond,
@@ -69,6 +72,7 @@ enum TypeError extends CompilationError:
 enum SemanticError extends CompilationError:
   case UndefinedRef(ref: Ref, member: Member, phase: String)
   case UndefinedTypeRef(typeRef: TypeRef, member: Member, phase: String)
+  case UndefinedTypeVariable(variable: TypeVariable, member: Member, phase: String)
   case AmbiguousTypeRef(
     typeRef:    TypeRef,
     candidates: List[ResolvableType],

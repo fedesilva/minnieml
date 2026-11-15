@@ -1,6 +1,7 @@
 # Generic functions
 
-Status: Draft
+Status: Design record; see the [language reference](../../language-reference.md#generic-functions)
+for current behavior.
 
 ## Goal
 
@@ -8,8 +9,8 @@ Allow a function to work with different types while preserving the relationships
 its parameters and result. Use the same type-variable notation and protocol constraints
 as the [protocols design](protocols.md).
 
-This document describes proposed language behavior. Ordinary generic functions and
-`where` constraints are not current compiler features.
+This document records the design of ordinary generic functions and `where` constraints.
+Implementation and verification are tracked in [Generic functions](../../../context/tasks/generic-functions.md).
 
 ## Scope
 

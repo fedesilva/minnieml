@@ -227,6 +227,18 @@ object ParsingErrorChecker:
     case lambda: Lambda => stampLambda(lambda).widen
     case app:    App => stampApp(app).widen
 
+    case application: FnTypeApp =>
+      for
+        fn <- stampTerm(application.fn)
+        args <- application.args.traverse(stampType)
+        types <- stampTypes(application)
+      yield application.copy(
+        fn       = fn,
+        args     = args,
+        typeAsc  = types.ascription,
+        typeSpec = types.computed
+      )
+
     case cond: Cond =>
       for
         predicate <- stampExpr(cond.cond)

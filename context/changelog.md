@@ -2,6 +2,43 @@
 
 Durable product changes belong here. Current task state belongs in task files.
 
+## 2026-11-15
+
+- Add a bounds-checked C matrix multiplication benchmark with the same 500×500 workload
+  as the naive baseline, included in both matrix multiplication timing targets.
+
+- Keep generic specialization additive: retain checked declarations in the module and its existing
+  index, add concrete instances, and preserve source identities for editor queries. Executable
+  lowering excludes templates; editor support does not retain a second module tree.
+
+- Resolve names in generic type-argument prefixes as types even when they also name constructors.
+  `identity String` and `identity Person` select concrete functions without ambiguity. Invalid
+  type applications report their type errors without retrying constructor-value application.
+
+## 2026-11-14
+
+- Execute generic functions through concrete instantiation, reusing resolved specializations and
+  selecting constrained protocol members. Preserve local captures and existing callable ownership;
+  diagnose changing-type recursion, including cached and function-value dependencies. Retain checked
+  source declarations for editor queries and provide a runnable generic-functions sample and guide.
+
+- Check generic function bodies against rigid type variables and declared protocol requirements.
+  Infer or validate explicit type arguments at calls and function-value uses, including callbacks
+  and local functions. Preserve concrete-use metadata for specialization. Generic checking is
+  verified through phase APIs; executable generic modules are guarded until concrete instantiation.
+
+- Resolve generic signature variables and protocol constraints with lexical binder identities.
+  Share identity-based type substitution with protocol instantiation, preserving nested binders
+  and source evidence. Generic resolution is verified at the phase boundary; executable generic
+  modules remain guarded until type checking and instantiation are available.
+
+## 2026-11-13
+
+- Parse generic function signatures, `where` constraints, and explicit type-argument candidates,
+  preserving source spans, malformed-input recovery, and editor access. Retain ambiguous
+  constructor/type arguments for semantic resolution. Generic syntax receives an unsupported-feature
+  diagnostic and prevents executable lowering until generic checking and instantiation are available.
+
 ## 2026-11-06
 
 - Infer local protocol partial applications from initializer and later-call arguments together,

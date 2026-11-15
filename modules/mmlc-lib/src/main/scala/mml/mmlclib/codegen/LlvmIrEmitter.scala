@@ -1,6 +1,7 @@
 package mml.mmlclib.codegen
 
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.DeclarationQueries
 import mml.mmlclib.codegen.emitter.{CodeGenError, EmitResult, emitModule}
 
 /** LLVM IR Emitter for MML.
@@ -9,7 +10,8 @@ import mml.mmlclib.codegen.emitter.{CodeGenError, EmitResult, emitModule}
   */
 object LlvmIrEmitter:
 
-  /** Emits an entire module into LLVM IR.
+  /** Emits executable module members into LLVM IR. Checked generic templates remain indexed but do
+    * not produce emitted functions.
     *
     * @param module
     *   the module containing definitions and bindings
@@ -32,7 +34,7 @@ object LlvmIrEmitter:
     sanitizeAddress:  Boolean = false
   ): Either[CodeGenError, EmitResult] =
     emitModule(
-      module,
+      module.copy(members = module.members.filterNot(DeclarationQueries.isGenericFunction)),
       entryPoint,
       targetTriple,
       targetAbi,

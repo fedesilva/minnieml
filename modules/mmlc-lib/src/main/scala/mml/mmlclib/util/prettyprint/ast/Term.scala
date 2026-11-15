@@ -45,8 +45,21 @@ def prettyPrintTerm(
         if !showTypes then ref.resolvedId.fold("")(id => s"\n${indentStr}  resolvedId: $id")
         else ""
 
+      val genericStr =
+        if showTypes &&
+          (ref.explicitTypeArgs.isDefined || ref.typeArgs.nonEmpty || ref.protocolType.isDefined)
+        then
+          val explicit = ref.explicitTypeArgs.toList.flatten
+            .map(tpe => prettyPrintTypeSpec(Some(tpe)))
+            .mkString(", ")
+          val selected = ref.typeArgs.map(tpe => prettyPrintTypeSpec(Some(tpe))).mkString(", ")
+          s"\n${indentStr}  explicitTypeArgs: $explicit" +
+            s"\n${indentStr}  typeArgs: $selected" +
+            s"\n${indentStr}  protocolType: ${prettyPrintTypeSpec(ref.protocolType)}"
+        else ""
+
       s"${indentStr}Ref ${ref.name} $spanStr$typeStr$resolvedStr$qualifierStr\n" +
-        s"${indentStr}  candidateIds: ${ref.candidateIds.mkString(", ")}"
+        s"${indentStr}  candidateIds: ${ref.candidateIds.mkString(", ")}$genericStr"
 
     case Hole(sp, typeSpec, typeAsc) =>
       val spanStr = if showSourceSpans then printSourceOrigin(sp) else ""
@@ -134,6 +147,23 @@ def prettyPrintTerm(
         s"${indentStr}  fn:\n$fnStr\n" +
         s"${indentStr}  arg:\n$argStr"
 
+    case application: FnTypeApp =>
+      val spanStr = if showSourceSpans then printSourceOrigin(application.source) else ""
+      val fnStr   = prettyPrintTerm(application.fn, indent + 2, showSourceSpans, showTypes)
+      val argsStr = application.args
+        .map { argument =>
+          prettyPrintTypeSpec(Some(argument), showSourceSpans, showTypes, indent + 2)
+        }
+        .mkString(", ")
+      val typeStr =
+        if showTypes then
+          s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(application.typeSpec)}\n" +
+            s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(application.typeAsc)}"
+        else ""
+      s"${indentStr}FnTypeApp $spanStr$typeStr\n" +
+        s"${indentStr}  fn:\n$fnStr\n" +
+        s"${indentStr}  args: $argsStr"
+
     case yielded: YieldOwnership =>
       val spanStr = if showSourceSpans then printSourceOrigin(yielded.source) else ""
       val typeStr =
@@ -162,29 +192,29 @@ def prettyPrintTerm(
         s"${indentStr}  initializer:\n$initializerStr\n" +
         s"${indentStr}  body:\n$bodyStr"
 
-    case Lambda(sp, params, body, captures, typeSpec, typeAsc, meta, isMove) =>
-      val spanStr = if showSourceSpans then printSourceOrigin(sp) else ""
+    case lambda: Lambda =>
+      val spanStr = if showSourceSpans then printSourceOrigin(lambda.source) else ""
       val typeStr =
         if showTypes then
-          s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(typeSpec)}\n" +
-            s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(typeAsc)}"
+          s"\n${indentStr}  typeSpec: ${prettyPrintTypeSpec(lambda.typeSpec)}\n" +
+            s"${indentStr}  typeAsc: ${prettyPrintTypeSpec(lambda.typeAsc)}"
         else ""
-      val metaStr = meta match
+      val metaStr = lambda.meta match
         case Some(info) =>
           s"\n${indentStr}  meta: LambdaMeta(isTailRecursive=${info.isTailRecursive})"
         case None => s"\n${indentStr} meta: None"
       val paramsStr =
-        if params.isEmpty then s"${indentStr}  params: []"
+        if lambda.params.isEmpty then s"${indentStr}  params: []"
         else
           s"${indentStr}  params:\n" +
-            params
+            lambda.params
               .map { p =>
                 val consumingPrefix = if p.consuming then "~" else ""
                 s"${indentStr}    $consumingPrefix${p.name}: ${prettyPrintTypeSpec(p.typeSpec)}"
               }
               .mkString("\n")
-      val bodyStr = prettyPrintExpr(body, indent + 2, showSourceSpans, showTypes)
-      val capturesStr = captures.map { capture =>
+      val bodyStr = prettyPrintExpr(lambda.body, indent + 2, showSourceSpans, showTypes)
+      val capturesStr = lambda.captures.map { capture =>
         val ownership = capture match
           case Capture.CapturedConditional(_, witness, cloneFnId) =>
             s" witness=${witness.resolvedId.getOrElse(witness.name)} clone=$cloneFnId"
@@ -195,8 +225,15 @@ def prettyPrintTerm(
         s"\n${indentStr}    ${capture.productPrefix} $identity$ownership"
       }.mkString
       val captureDetails =
-        if captures.isEmpty then "" else s"\n${indentStr}  captures:$capturesStr"
-      s"${indentStr}Lambda $spanStr$typeStr$metaStr\n" +
+        if lambda.captures.isEmpty then "" else s"\n${indentStr}  captures:$capturesStr"
+      val typeParamsStr =
+        if lambda.typeParams.isEmpty then ""
+        else s"\n${indentStr}  typeParams: ${lambda.typeParams.map(_.name).mkString(", ")}"
+      val constraintsStr = lambda.constraints.map { variableConstraints =>
+        val constraintNames = variableConstraints.constraints.map(_.nameNode.value).mkString(" & ")
+        s"\n${indentStr}  where ${variableConstraints.variable.name}: $constraintNames"
+      }.mkString
+      s"${indentStr}Lambda $spanStr$typeStr$metaStr$typeParamsStr$constraintsStr\n" +
         s"$paramsStr$captureDetails\n" +
         s"${indentStr}  body:\n$bodyStr"
 

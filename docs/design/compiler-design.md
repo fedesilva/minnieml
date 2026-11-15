@@ -166,6 +166,10 @@ Expressions are built from terms:
 - **`App`**: Function application (curried: `f x y` becomes `((f x) y)`)
   - The `fn` field uses `Callee`, an alias for `Ref | App | Lambda`; parser-lowered scoped
     bindings and direct lambda application rely on the `Lambda` case.
+- **`FnTypeApp`**: Parsed candidate type arguments with their callee and source locations.
+  Syntactically certain forms such as `identity (Int -> Int)` use this node. Ambiguous
+  uppercase arguments such as `f Person` remain ordinary reference/group terms until
+  semantic resolution can distinguish a type argument from a constructor value.
 - **`Lambda`**: First-class callable value used for:
   - top-level `fn` / `op` bodies wrapped in `Bnd`
   - literal lambdas (`{ x -> body }`, `~{ x -> body }`)
@@ -173,6 +177,11 @@ Expressions are built from terms:
   - synthetic statement / let wrappers introduced during parsing and later rewrites
   - Carries `params`, `body`, `captures`, optional `LambdaMeta`, and `isMove` for explicit move
     capture syntax
+  - Retains ordered `typeParams` and `constraints` for generic functions. Parsing leaves
+    `typeParams` empty even for generic functions: scoped resolution must collect binders
+    from annotations and assign their identities. Each `TypeVariableConstraints` entry
+    pairs a variable with ordered `TypeConstraint` values. Both declarations belong to the
+    type model in `ast/types.scala`; `TypeConstraint` reuses the protocol model's `ProtocolRef`.
 - **`YieldOwnership`**: Supplies a value and a Boolean ownership witness at a scoped result.
 - **`BindOwnership`**: Evaluates an initializer that yields both results, binds its value and
   witness parameters, and evaluates one continuation body. These ownership-analysis nodes keep
@@ -205,6 +214,10 @@ enum Capture:
 - **`Ref`**: Reference to a declaration or parameter
   - Contains `resolvedId: Option[String]` - ID of the resolved target (soft reference)
   - Contains `candidateIds: List[String]` - potential resolution IDs during name resolution
+  - `explicitTypeArgs` retains written function type arguments selected during resolution.
+  - `typeArgs` records the checked substitution in the generic declaration's binder order.
+    `protocolType` records the rigid type variable justifying an abstract protocol operation;
+    its target remains the protocol signature's ID until concrete instantiation.
 - **`LiteralInt`, `LiteralFloat`, `LiteralString`, `LiteralBool`, `LiteralUnit`**
 - **`Tuple`**: Tuple of expressions `(expr1, expr2, ...)`
 - **`Placeholder`**: Pattern matching placeholder `_`
@@ -256,8 +269,8 @@ Intersection(types: List[TypeSpec])      // Readable & Writable
 TypeApplication(base: TypeSpec, args: List[TypeSpec])
 
 // Type schemes (polymorphism)
-TypeScheme(vars: List[String], bodyType: TypeSpec)  // forall 'T. 'T -> 'T
-TypeVariable(name: String)                          // 'T, 'R, etc.
+TypeScheme(vars: List[TypeVariable], bodyType: TypeSpec)  // ordered quantified variables
+TypeVariable(name: String, resolvedId: Option[String])   // spelling and scoped binder identity
 ```
 
 - **Type definitions**: `TypeDef`, `TypeAlias`, and `TypeStruct` are `ResolvableType` nodes with
@@ -567,9 +580,9 @@ The bound value is a `Lambda`. When parameter and return annotations are availab
 synthesizes a `TypeFn` ascription for the local binding. That keeps local `fn` and let-bound
 lambdas on the same path in later phases.
 
-A malformed written result annotation also stays on the local lambda, independently of that
-callable-type synthesis. Missing parameter annotations cannot erase its source diagnostic;
-mirrored occurrences of the same malformed annotation receive one ingest root.
+The written result annotation also stays on the local lambda, independently of that
+callable-type synthesis. Missing parameter annotations cannot erase the result annotation
+or its source diagnostics; mirrored malformed annotations receive one ingest root.
 
 #### Statement sequencing
 
@@ -663,7 +676,14 @@ case class CompilerState(
 Each phase takes a `CompilerState`, returns an updated `CompilerState`, and records timing through
 `CompilerState.timePhase` / `timePhaseIO`.
 
-`SemanticStage.rewrite` runs after stdlib injection and wires phases in this order:
+`SemanticStage.rewrite` checks generic definitions alongside ordinary definitions, then runs
+`FnMonomorphizer` before callable and ownership lowering. Failed generic modules retain their
+checked diagnostics without sending abstract bodies into executable lowering. Specialization
+adds concrete implementations while retaining checked top-level templates in the module and
+local templates in its existing resolvables index. Editor queries use that module and index;
+there is no saved copy of the source module.
+
+The semantic stage injects the standard library and wires phases in this order:
 0. **Stdlib injection**: Adds prelude types, operators, and functions (with stable `stdlib::<name>` IDs).
    `CString` is an owned native byte pointer. `to_cstr` borrows a `String` and returns an
    allocated copy; its consuming `free_cstr` destructor binds to C's `free`. These use the
@@ -679,7 +699,7 @@ Each phase takes a `CompilerState`, returns an updated `CompilerState`, and reco
 9. **ExpressionRewriter**
 10. **Simplifier**
 11. **CaptureAnalyzer**
-12. **TypeChecker**
+12. **TypeChecker**, followed by **FnMonomorphizer**.
 13. **PartialApplicationElaborator**: binds supplied expressions in source order and constructs
     a typed residual lambda with explicit borrowed and transferred capture identities. Refreshes
     captures and callable flow until ownership also agrees for chained PAPs. Remaining parameters
@@ -793,8 +813,19 @@ parameterless lambdas each introduce an ordinal scope path for nested allocation
   instance. Separate reference occurrences remain separate even when structurally equal.
 - Resolves compound types, type aliases, ascriptions, parameters, returns, and struct fields.
 - Resolves concrete references in protocol signatures and instance headers/bodies while retaining
-  the protocol's type-variable nodes. `TypeTraversal` supplies shared structural walking for
-  resolution, protocol substitution, parser queries, and invalid-type detection.
+  the protocol's type-variable sources. Each protocol parameter receives a binder identity shared
+  by its signatures. `TypeTraversal` supplies structural walking for resolution, substitution,
+  parser queries, and invalid-type detection.
+- Collects function type parameters in first-appearance order through parameter types and then
+  the result. Nested functions reuse enclosing binders and introduce only new variables.
+  Body annotations, explicit type arguments, and `where` entries refer to this lexical scope;
+  constraints also resolve their protocol references. Unknown variables receive diagnostics.
+- Parser-generated binding and statement lambdas carry `LambdaMeta.isBindingScope`; their
+  annotations cannot introduce type variables. Initializers resolve before continuations so
+  local-function signature caches reuse the function's variable identities without exporting
+  them into its enclosing scope. Resolved variable identities survive repeated resolution.
+- Generic function resolution supplies lexical variable identities to type checking and concrete
+  instantiation. Phase-level tests retain focused coverage of resolution failures.
 - Resolves cached conditional result types, including the synthetic `Unit` in no-`else` clauses,
   so cause analysis can distinguish resolved types from incomplete evidence before type checking.
 - Completes alias metadata by following resolved declaration IDs with cycle detection, then
@@ -803,6 +834,8 @@ parameterless lambdas each introduce an ordinal scope path for nested allocation
 **Errors reported**:
 - `SemanticError.UndefinedTypeRef` when no candidate matches
 - `SemanticError.AmbiguousTypeRef` when several candidates match
+- `SemanticError.UndefinedTypeVariable` for a variable outside its lexical scope
+- `ProtocolError.UnknownProtocol` for an unknown constraint protocol
 
 **AST rewrites**:
 - Populates `TypeRef.resolvedId` for one matching declaration.
@@ -900,7 +933,10 @@ Clone implementations whose result type needs ownership tracking.
   incompatible written types, changed consuming markers, and conflicting operator attributes.
 - Records rejected declarations and their diagnostic roots separately from usable implementations,
   preserving duplicate detection without exposing incomplete instance bindings to candidate lookup.
-- Substitutes the concrete instance type throughout each signature, including nested function types.
+- Uses `ast.TypeSubstitution` to replace the protocol parameter's resolved identity throughout
+  each signature, including nested function types. Substitution is simultaneous, protects bound
+  variables in nested schemes, and retains source and nominal-declaration evidence. Protocol
+  selection also matches this identity rather than the variable's source spelling.
   Omitted annotations and attributes inherit the signature; written annotations remain source nodes.
 - Moves each implementation Lambda into one ordinary module binding, preserving binding and
   parameter IDs and source origins. The instance retains `memberIds` for registry associations.
@@ -928,6 +964,14 @@ its source origin for both CLI and editor diagnostics.
 - If no matches are found, preserves the reference in an `InvalidExpression` with the
   primary diagnostic ID. A failed callee stays inside the smallest enclosing application
   that can carry the invalid result; `Callee` remains `Ref | App | Lambda`.
+- Resolves `FnTypeApp` into a reference carrying `explicitTypeArgs`. For a generic callee,
+  leading type names in ordinary expression syntax can also supply explicit arguments.
+  A name with a type ascription is a value expression. The checker validates its annotation.
+  This also applies inside nested groups.
+  Names resolving to types in the selected prefix denote type arguments, even when they also
+  name constructors. A complete type-argument prefix leaves following constructor values intact;
+  non-generic calls use ordinary value lookup.
+  Local generic declarations and recursive references use their lexical binding IDs.
 
 **Errors reported**:
 - `SemanticError.UndefinedRef`
@@ -1099,7 +1143,7 @@ value-position lambdas whose value may need to be materialized as a closure.
 ### Semantic Phase 12: TypeChecker
 
 **Purpose**: Validate member bodies, require parameter annotations where needed, and infer return
-types when possible.
+types when possible. Generic definitions and uses are checked before concrete instantiation.
 
 **Two-phase flow**
 
@@ -1130,16 +1174,17 @@ types when possible.
 - Retains independent operand failures and skips candidate trials that cannot repair them.
   A mixed pair such as `1.0 + 2` is not rechecked for every enclosing addition. Errors that an
   expected type can resolve, such as missing lambda-parameter evidence, remain provisional.
-- Commits exactly one applicable concrete binding ID and callable type. Function values use
-  the same selection with no supplied arguments; partial calls use the expected remaining type.
+- Concrete protocol selection commits one applicable binding ID and callable type. Function values
+  use the same selection with no supplied arguments; partial calls use the expected remaining type.
   Returning a callable preserves the boundary between the first invocation and the returned one.
 - Callee checking preserves the `Callee` type. Inference and validation share callable lookup;
   references retain their resolved-declaration fallback and diagnostic names.
 - Callable lookup, compatibility, and struct selection use `TypeQueries.canonical` to follow
   aliases, single-type groups, and schemes while preserving nominal types and detecting alias
   cycles. `TypeCompatibility` compares the same resolved identities used by protocol instance
-  lookup; equal source names alone do not make two nominal declarations equal. Source type
-  grouping remains in the AST.
+  lookup and compares rigid type variables by binder ID. Function, tuple, and fixed-constructor
+  application components follow the same comparison. Source type grouping remains in the AST.
+  Generic inference preserves scheme binders at use boundaries before asking for callable shapes.
 - Immediately applied lambdas check arguments first so local bindings can infer their types.
   A local binding initialized with a protocol reference or call can gather type evidence from
   its continuation. Calls already constrained to one concrete member skip this collection;
@@ -1179,15 +1224,57 @@ types when possible.
   Requirement collection preserves all-use inference and normalizes repeated source/type pairs once
   before presentation. Dependent unresolved-type reports remain visible at distinct written uses;
   a specific missing-instance report covers the generic unresolved type at that call.
-  A successful module contains no executable reference to an unselected protocol signature.
+  Concrete executable definitions contain no reference to an unselected protocol signature.
+  Checked generic templates retain declared abstract selections for later instantiation.
 - The parser retains the magnitude `2147483648` so `-2147483648` can be represented. Type checking
   folds that call only after selecting the built-in Int negation by binding identity. Other
   remaining out-of-range integer literals receive diagnostics at the literal's source span;
   a custom operator with the same name or type cannot trigger the fold.
 
+**Generic definitions and uses**:
+
+- Generic declarations publish a `TypeScheme` on their binding and lambda. Its ordered binders
+  quantify the callable signature; local generic declarations retain the same information in
+  their lexical binding context. A definition is checked even when unused. Its type variables
+  remain rigid: a body cannot decide that a declared `'T` means `Int`. An omitted return
+  annotation is inferred from the body under its declared requirements, independently of callers.
+- `GenericInference` combines evidence from the complete application chain, callee annotations,
+  and the expected result or remaining callable type. Explicit arguments supply every callee
+  variable in declaration order; inferred arguments must have sufficient evidence for every
+  variable. Repeated occurrences must agree. Function, tuple, and fixed-constructor application
+  types are matched recursively.
+- Each inference attempt gives the callee and each generic function argument fresh inference
+  variables. Caller variables remain rigid. This lets `apply identity 1` determine the types of
+  both `apply` and its `identity` argument while keeping repeated uses independent. Recursive
+  calls similarly distinguish the definition's variables from those being solved at the call.
+  The result maps the callee's original binder IDs to resolved types; temporary inference
+  variables cannot escape into the typed AST. Argument expressions are then checked against
+  the instantiated parameter types, including generic function values and contextual lambdas.
+- A partial inference result can supply known input types to an unannotated callback. Its body
+  then supplies result-type evidence for the enclosing call. Each retry adds a known argument
+  type; incomplete callee variables never become callback parameter or result constraints.
+  Probes keep their diagnostics and copied trees local. The completed substitution checks the
+  original argument expressions.
+- Declared `where` requirements form a lexical environment. A protocol operation on a rigid
+  variable must match both that variable's binder ID and the required protocol's ID. Selection
+  records the protocol signature ID, its substituted callable type, and `Ref.protocolType`.
+  Concrete instances do not justify undeclared operations on an abstract variable. At a generic
+  call, every requirement must be justified by the caller's declarations or by an accepted
+  concrete instance; rejected instance declarations supply no evidence. Local functions retain
+  requirements on enclosing variables even when they introduce no type variables of their own.
+- Each checked generic reference retains its original function ID and ordered `Ref.typeArgs`,
+  including references used as function values. These records and abstract protocol selections
+  supply the identities and substitutions used by the monomorphizer. Type checking
+  does not create executable specializations or enforce the changing-type recursion restriction.
+- Type-argument selection is settled during reference resolution. `identity Person` specializes
+  the function for `Person`; the checker validates that selection against value arguments and
+  expected types without retrying it as a constructor-value call. Ascribed constructor expressions
+  and value aliases use the ordinary generic value-inference path.
+
 **Additional rules**:
 - A function or operator publishes its callable signature on both the declaration and
-  lambda; parameter `typeSpec` entries hold the concrete argument types.
+  lambda; parameter `typeSpec` entries hold the declared or inferred argument types, including
+  rigid variables inside generic definitions.
 - Acyclic dependencies are checked before their callers, including annotated callees.
   Recursive groups retain declared signatures for checking.
 - Failed results receive targeted invalid wrappers with partial types for editor queries.
@@ -1224,6 +1311,50 @@ bodies. Function values use closure entries with an environment parameter and a 
 template body. Templates do not produce external declarations; external symbols referenced
 inside them require their own declarations. See "Native Templates" in the Code Generation
 section below.
+
+---
+
+### FnMonomorphizer (after TypeChecker)
+
+**Purpose**: Add concrete implementations of checked generic functions and redirect executable
+uses to them before partial-application, closure, and ownership lowering.
+
+The pass keeps top-level templates in a definition map and local templates in their lexical
+scope. Uses carry the source function identity and ordered type arguments from type checking.
+`FnInstanceKey` compares canonical type identities, including enclosing substitutions for
+local functions. Aliases and source spelling do not create distinct instances.
+
+An instance is reserved before its body is expanded. Matching uses reuse its definition.
+`FnInstantiationDependencies` records both calls and function-value dependencies, including
+edges to cached instances. Adding an edge checks its ancestors and descendants for a path
+that revisits one source function at different substitutions. Same-substitution recursion
+terminates through the reserved instance; changing-type recursion retains the dependency
+references for a diagnostic.
+
+Instantiation substitutes type metadata, selects concrete constrained protocol members, and
+allocates fresh definition identities with `BindingIds`. References, parameters, and capture
+metadata follow those identities. Local instances are bound at their source declaration, so
+their captures remain in lexical scope. Recursive local initializers and their continuations
+share the same fresh local binding identity. The index is refreshed after instantiation;
+captures are recomputed on executable members before ordinary callable lowering.
+
+Top-level checked templates remain module members. A local template retains its source binding
+ID, name, type, and checked lambda as a binding in `ResolvablesIndex`; its lexical runtime site
+contains only the concrete instances. Index refreshes retain those templates and their parameters,
+while replacing ordinary entries with the current nodes. This retains generic declarations,
+including unused bodies, without retaining an earlier copy of ordinary executable bodies.
+
+`SemanticStage` partitions the member list for concrete lowering and restores the unchanged
+templates afterward. LLVM emission likewise selects executable members. Ownership return
+analysis excludes templates when scanning the index. Templates do not allocate closures or
+produce emitted functions.
+
+A rewritten `Ref` keeps its source declaration in `sourceId` while its name and `resolvedId`
+select the concrete target. Editor display names come from the indexed source declaration.
+Generated instance lambdas record their template ID. Editor queries resolve source IDs
+through the same index, inspect retained templates before overlapping executable source spans,
+and omit concrete instance bodies from semantic tokens. Hover, navigation, references, and
+symbols use this single module and index.
 
 ---
 
@@ -2165,7 +2296,9 @@ flowchart TD
     ER --> S[Simplifier]
     S --> CA[CaptureAnalyzer]
     CA --> TC[TypeChecker]
-    TC --> PAP[PartialApplicationElaborator]
+    TC --> FM[FnMonomorphizer]
+    FM --> CAC[Concrete capture analysis]
+    CAC --> PAP[PartialApplicationElaborator]
     PAP --> CMG[ClosureMemoryFnGenerator]
     CMG --> SD[Struct Destructor Bodies]
     SD --> OA[OwnershipAnalyzer]
@@ -2215,7 +2348,7 @@ flowchart TD
 The MML compiler flows through staged pipelines:
 
 1. **IngestStage**: Parse source, collect parser counters, lift parse errors.
-2. **SemanticStage**: Stdlib injection -> DuplicateNameChecker -> IdAssigner -> TypeResolver -> ConstructorGenerator -> MemoryFunctionGenerator -> Struct Clone registration -> ProtocolChecker -> RefResolver -> Struct Clone bodies -> OperatorCoherence -> ExpressionRewriter -> Simplifier -> CaptureAnalyzer -> TypeChecker -> PartialApplicationElaborator -> ClosureMemoryFnGenerator -> StructDestructorBodyGenerator -> OwnershipAnalyzer -> ClosureDestructorBodyGenerator -> TailRecursionDetector -> DestructionValidator.
+2. **SemanticStage**: Stdlib injection -> DuplicateNameChecker -> IdAssigner -> TypeResolver -> ConstructorGenerator -> MemoryFunctionGenerator -> Struct Clone registration -> ProtocolChecker -> RefResolver -> Struct Clone bodies -> OperatorCoherence -> ExpressionRewriter -> Simplifier -> CaptureAnalyzer -> TypeChecker -> FnMonomorphizer -> concrete CaptureAnalyzer -> PartialApplicationElaborator -> ClosureMemoryFnGenerator -> StructDestructorBodyGenerator -> OwnershipAnalyzer -> ClosureDestructorBodyGenerator -> TailRecursionDetector -> DestructionValidator.
 3. **CodegenStage**: Pre-codegen validation -> resolve target triple -> gather LLVM tool info -> resolve cached Clang CPU/features -> emit LLVM IR -> write IR -> native compilation.
 
 Each phase takes a `CompilerState` and returns an updated one. Timings are recorded via `CompilerState.timePhase`/`timePhaseIO`. Errors accumulate without halting compilation, so partial results remain available for the LSP.

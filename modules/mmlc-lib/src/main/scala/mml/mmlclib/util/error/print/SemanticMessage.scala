@@ -13,7 +13,7 @@ private[print] def showType(t: Type): String = t match
   case TypeTuple(_, elems) => s"(${elems.map(showType).mkString(", ")})"
   case NativePrimitive(_, llvm, _, _) => llvm
   case NativePointer(_, llvm, _, _) => s"*$llvm"
-  case TypeVariable(_, name) => name
+  case variable: TypeVariable => variable.name
   case _ => t.getClass.getSimpleName
 
 /** Shared wording for type-system failures. */
@@ -30,6 +30,24 @@ def typeErrorMessage(error: TypeError): String =
       s"Missing type annotation for operator parameter '${param.name}'"
     case MissingOperatorReturnType(decl, _) =>
       s"Missing return type for operator '${decl.name}'"
+    case GenericInferenceFailed(ref, failure, _) =>
+      val detail = failure match
+        case GenericInference.Failure.TypeArgumentCount(expected, actual) =>
+          s"expected $expected type arguments, got $actual"
+        case GenericInference.Failure.MissingArguments(parameters) =>
+          s"cannot infer ${parameters.map(_.name).mkString(", ")}"
+        case GenericInference.Failure.ConflictingArgument(variable, first, second) =>
+          s"conflicting types for ${variable.name}: ${showType(first)} and ${showType(second)}"
+        case GenericInference.Failure.IncompatibleTypes(expected, actual) =>
+          s"expected ${showType(expected)}, got ${showType(actual)}"
+        case GenericInference.Failure.NotCallable(tpe) =>
+          s"${showType(tpe)} is not callable"
+        case GenericInference.Failure.UnresolvedParameter(parameter) =>
+          s"unresolved type parameter ${parameter.name}"
+      s"Generic function '${ref.name}': $detail"
+    case MissingGenericRequirement(_, protocol, tpe, _) =>
+      s"Type ${showType(tpe)} requires ${protocol.nameNode.value}: " +
+        "declare the constraint for a type variable or provide a concrete instance"
     case TypeMismatch(_, expected, actual, _, expectedBy) =>
       val ctx = expectedBy.map(by => s" (expected by $by)").getOrElse("")
       s"Type mismatch: expected ${showType(expected)}, got ${showType(actual)}$ctx"
@@ -73,6 +91,8 @@ def semanticErrorMessage(error: SemanticError): String =
   error match
     case UndefinedRef(ref, _, _) =>
       s"Undefined reference: '${ref.name}'"
+    case UndefinedTypeVariable(variable, _, _) =>
+      s"Unbound type variable: ${variable.name}"
     case UndefinedTypeRef(typeRef, _, _) =>
       s"Undefined type: '${typeRef.name}'"
     case AmbiguousTypeRef(typeRef, _, _, _) =>

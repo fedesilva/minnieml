@@ -1,9 +1,10 @@
 package mml.mmlclib.semantic
 
 import mml.mmlclib.ast.*
+import mml.mmlclib.ast.queries.DeclarationQueries
 import mml.mmlclib.compiler.CompilerState
 
-/** Rebuilds the resolvables index to include local function parameters. */
+/** Rebuilds definition and parameter entries while retaining checked generic templates. */
 object ResolvablesIndexer:
 
   def rewriteModule(state: CompilerState): CompilerState =
@@ -13,7 +14,9 @@ object ResolvablesIndexer:
 
   def refresh(module: Module): Module = module.copy(resolvables = rebuildIndex(module))
 
-  /** Definition occurrences are collected independently of the map, including duplicate IDs. */
+  /** Returns definition occurrences, including retained templates and duplicate IDs in module
+    * bodies.
+    */
   def definitions(module: Module): List[Resolvable] =
     def memberDefinitions(member: Member): List[Resolvable] = member match
       case protocol: Protocol => protocol :: protocol.signatures.flatMap(s => s :: s.params)
@@ -27,12 +30,24 @@ object ResolvablesIndexer:
       case invalid:    InvalidMember => memberDefinitions(invalid.originalMember)
       case _ => Nil
 
-    module.members.flatMap(memberDefinitions)
+    retainedTemplates(module).flatMap(memberDefinitions) ++ module.members.flatMap(
+      memberDefinitions
+    )
 
   private def rebuildIndex(module: Module): ResolvablesIndex =
-    module.members.foldLeft(ResolvablesIndex()) { (idx, member) =>
+    (retainedTemplates(module) ++ module.members).foldLeft(ResolvablesIndex()) { (idx, member) =>
       updateIndexForMember(idx, member)
     }
+
+  /** Returns indexed templates absent from the current member list. These include local generic
+    * declarations and top-level templates set aside during concrete lowering. Ordinary definitions
+    * always come from the current module bodies.
+    */
+  private def retainedTemplates(module: Module): List[Bnd] =
+    val memberIds = module.members.collect { case binding: Bnd => binding.id }.flatten.toSet
+    DeclarationQueries
+      .genericFunctions(module.resolvables)
+      .filterNot(_.id.exists(memberIds.contains))
 
   private def updateIndexForMember(idx: ResolvablesIndex, member: Member): ResolvablesIndex =
     member match
