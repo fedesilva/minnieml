@@ -91,11 +91,12 @@ private def mkScopedBinding(
   )
 
 /** Builds the callable type ascription attached to a local `fn` binding when all param types and
-  * the return type are available.
+  * the return type are available. This assembled type is derived; the written annotations belong to
+  * the lambda's parameters and result.
   *
   * Example:
   * {{{
-  * fn inc(x: Int): Int = x + 1;
+  * fn inc(x: Int): Int = x + 1;;
   * }}}
   * yields a local binding ascription equivalent to `Int -> Int`.
   */
@@ -107,7 +108,9 @@ private def mkFnBindingType(
   returnType.flatMap { retType =>
     params
       .traverse(_.typeAsc)
-      .map(paramTypes => TypeFn(source, canonicalCallableParamTypes(source, paramTypes), retType))
+      .map(paramTypes =>
+        TypeFn(source.derived, canonicalCallableParamTypes(source.derived, paramTypes), retType)
+      )
   }
 
 /** Canonicalizes callable parameter lists so nullary callables still use `Unit -> R`. */
@@ -418,7 +421,7 @@ private[parser] def letExprP(info: SourceInfo)(using P[Any]): P[Term] =
 private[parser] def innerFnExprP(info: SourceInfo)(using P[Any]): P[Term] =
   P(
     pointP(info) ~ fnKw ~/ "~".!.? ~ parsedBindingNameP(info) ~ pointP(info) ~
-      parsedParametersP(info) ~ typeAscP(info, TypeContext.BindingHeader) ~ functionConstraintsP(
+      parsedParametersP(info) ~ typeAscP(info, TypeContext.BindingHeader) ~ constraintClauseP(
         info
       ) ~
       requiredBindingTokenP(info, "=") ~ terminatedBindingExprP(info) ~

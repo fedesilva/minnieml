@@ -49,7 +49,7 @@ object SemanticTokens:
   private def collectTokens(module: Module): List[RawToken] =
     val memberIds = module.members.collect { case binding: Bnd => binding.id }.flatten.toSet
     SourceDeclarations.members(module).flatMap {
-      case binding: Bnd if !binding.id.exists(memberIds.contains) =>
+      case binding: Bnd if binding.meta.isEmpty && !binding.id.exists(memberIds.contains) =>
         binding.nameNode.spanOpt
           .flatMap(span =>
             tokenAt(
@@ -69,7 +69,7 @@ object SemanticTokens:
         // "protocol"
         protocol.spanOpt.flatMap(s => keywordAt(s.start, 8)).toList ++
           protocol.nameNode.spanOpt.flatMap(s => tokenAt(s, TokenType.Type)).toList ++
-          collectFromType(protocol.typeParameter) ++
+          collectFromType(protocol.typeParameter) ++ collectFromConstraints(protocol.constraints) ++
           protocol.signatures.flatMap(collectFromMember(_, module))
       case signature: ProtocolSignature =>
         val tokenType =
@@ -78,7 +78,8 @@ object SemanticTokens:
         // Both "fn" and "op" occupy two characters.
         signature.spanOpt.flatMap(s => keywordAt(s.start, 2)).toList ++
           signature.nameNode.spanOpt.flatMap(s => tokenAt(s, tokenType)).toList ++
-          collectFromParams(signature.params, module) ++ collectFromType(signature.returnType)
+          collectFromParams(signature.params, module) ++ collectFromType(signature.returnType) ++
+          collectFromConstraints(signature.constraints)
       case instance: ProtocolInstance =>
         // "instance"
         instance.spanOpt.flatMap(s => keywordAt(s.start, 8)).toList ++
@@ -266,13 +267,15 @@ object SemanticTokens:
   /** Collect tokens from a lambda. */
   private def collectFromLambda(lambda: Lambda, module: Module): List[RawToken] =
     if lambda.meta.exists(_.templateId.nonEmpty) then return Nil
-    val constraintTokens = lambda.constraints.flatMap { variableConstraints =>
+    collectFromParams(lambda.params, module) ++ collectFromExpr(lambda.body, module) ++
+      lambda.typeAsc.toList.flatMap(collectFromType) ++ collectFromConstraints(lambda.constraints)
+
+  private def collectFromConstraints(constraints: List[TypeVariableConstraints]): List[RawToken] =
+    constraints.filter(_.source.isFromSource).flatMap { variableConstraints =>
       collectFromType(variableConstraints.variable) ++ variableConstraints.constraints.flatMap {
         constraint => constraint.nameNode.spanOpt.flatMap(tokenAt(_, TokenType.Type)).toList
       }
     }
-    collectFromParams(lambda.params, module) ++ collectFromExpr(lambda.body, module) ++
-      lambda.typeAsc.toList.flatMap(collectFromType) ++ constraintTokens
 
   private def collectFromParams(params: List[FnParam], module: Module): List[RawToken] =
     params.flatMap { param =>

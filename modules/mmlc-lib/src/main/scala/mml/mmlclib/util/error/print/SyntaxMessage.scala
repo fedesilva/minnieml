@@ -14,22 +14,23 @@ def syntaxMessage(error: SyntaxError): String = error match
   case SyntaxError.EmptyTuple => "Tuple must have at least one element"
   case SyntaxError.InvalidMemberSyntax => "Failed to parse member"
   case SyntaxError.MisplacedLink => "@link must occur once, before all module members"
-  case SyntaxError.ProtocolPrerequisites => "Protocol prerequisites are not supported"
+  case SyntaxError.InvalidProtocolHeader =>
+    "Expected a protocol type parameter, optional where constraints, and ="
   case SyntaxError.ProtocolParameterCount =>
     "Protocols require exactly one type parameter; multiple parameters are not supported"
   case SyntaxError.ParameterizedSignature => "Parameterized signature types are not supported"
   case SyntaxError.DefaultProtocolImplementation =>
     "Default protocol implementations are not supported"
   case SyntaxError.MissingSignatureTypes => "Protocol signatures require parameter and return types"
-  case SyntaxError.MemberTypeVariables => "Member-local type variables are not supported"
   case SyntaxError.ParameterizedInstance =>
     "Parameterized instances and instance constraints are not supported"
   case SyntaxError.MissingInstanceBody => "Instance members require a body"
   case SyntaxError.OperatorParameterCount => "Operators require one or two parameters"
   case SyntaxError.FunctionOperatorAttributes => "Only operators have precedence and associativity"
-  case SyntaxError.InvalidFunctionConstraints =>
+  case SyntaxError.InvalidConstraints =>
     "Expected constraints such as where 'T: Show & Clone, 'U: Show"
-  case SyntaxError.MemberConstraints => "Member constraints are not supported"
+  case SyntaxError.InstanceMemberConstraints =>
+    "Declare member constraints on the protocol signature"
   case SyntaxError.ExpectedToken(token) => s"Expected '$token'"
   case SyntaxError.InvalidIdentifier(name, kind, explainRules) =>
     val nameRule = "must start with a lowercase letter (a-z) " +

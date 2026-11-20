@@ -239,23 +239,31 @@ case class Tuple(
   typeSpec: Option[Type] = None
 ) extends Term
 
+/** One possible split of an overloaded call's leading type names. The candidates accept the first
+  * `size` names as types. `constructors` holds the values between this prefix and the longest
+  * viable prefix. Values after the longest prefix are ordinary operands shared by every reading.
+  */
+case class ExplicitArgumentPrefix(size: Int, candidateIds: List[String], constructors: List[Ref])
+
 /** Points to a declaration. Explicit type arguments select a generic use without invoking it;
   * typeArgs retains the checked substitution in declaration order. protocolType identifies the
   * constrained receiver of an abstract protocol operation. sourceId retains the written declaration
   * identity when specialization redirects resolvedId to a concrete implementation or parameter.
+  * argumentPrefixes retains alternative splits until type checking selects one.
   */
 case class Ref(
   source:           SourceOrigin,
   name:             String,
-  typeAsc:          Option[Type]       = None,
-  typeSpec:         Option[Type]       = None,
-  resolvedId:       Option[String]     = None,
-  candidateIds:     List[String]       = Nil,
-  qualifier:        Option[Term]       = None,
-  explicitTypeArgs: Option[List[Type]] = None,
-  typeArgs:         List[Type]         = Nil,
-  protocolType:     Option[Type]       = None,
-  sourceId:         Option[String]     = None
+  typeAsc:          Option[Type]                 = None,
+  typeSpec:         Option[Type]                 = None,
+  resolvedId:       Option[String]               = None,
+  candidateIds:     List[String]                 = Nil,
+  qualifier:        Option[Term]                 = None,
+  explicitTypeArgs: Option[List[Type]]           = None,
+  typeArgs:         List[Type]                   = Nil,
+  protocolType:     Option[Type]                 = None,
+  sourceId:         Option[String]               = None,
+  argumentPrefixes: List[ExplicitArgumentPrefix] = Nil
 ) extends Term,
       FromSource
 

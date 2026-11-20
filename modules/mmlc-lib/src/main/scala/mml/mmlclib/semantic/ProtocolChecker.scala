@@ -7,23 +7,40 @@ import mml.mmlclib.ast.queries.{DeclarationQueries, TypeFailureQueries}
 import mml.mmlclib.compiler.CompilerState
 import mml.mmlclib.errors.{DiagnosticId, DiagnosticStore}
 
-/** Validates protocol declarations and turns instance members into ordinary functions with concrete
-  * types. The registry connects each protocol signature to its instance implementations; later
-  * phases resolve references and type-check the function bodies.
+/** Validates protocol declarations and turns instance members into ordinary functions with the
+  * types and constraints required by their signatures. The registry connects each protocol
+  * signature to its instance implementations; later phases resolve references and type-check the
+  * function bodies.
   */
 object ProtocolChecker:
+
+  import ProtocolRegistry.{matchingSignature, memberName}
 
   private val phaseName = "mml.mmlclib.semantic.ProtocolChecker"
 
   /** Register signatures before instances, so source order cannot change the available protocols.
-    * For Eq Int, every occurrence of Eq's 'T becomes Int. Written annotations must agree with that
-    * signature; omitted annotations inherit it. Bodies remain ordinary Lambdas for later checking.
+    * Validate their prerequisite graph before lowering instance declarations. For Eq Int, every
+    * occurrence of Eq's 'T becomes Int. Written annotations must agree with that signature; omitted
+    * annotations inherit it. Validate instance prerequisites after all member contracts and
+    * lowering, so later declarations can satisfy earlier requirements. Bodies remain ordinary
+    * Lambdas for later checking, including when an instance fails its prerequisite checks.
     */
   def rewriteModule(state: CompilerState): CompilerState =
     val module    = state.module
     val protocols = module.members.collect { case protocol: Protocol => protocol }
     val initial = ProtocolCheckState(ProtocolRegistry.empty, module.resolvables, state.diagnostics)
-    val registered = protocols.foldLeft(initial)(registerProtocol)
+    val typeCauses = DiagnosticCauses.fromModule(module)
+    val registered = protocols.foldLeft(initial)(registerProtocol(_, _, typeCauses))
+    val prerequisites = ProtocolPrerequisites.check(
+      protocols,
+      registered.registry,
+      module.resolvables,
+      registered.diagnostics
+    )
+    val validated = registered.copy(
+      registry    = prerequisites.registry,
+      diagnostics = prerequisites.diagnostics
+    )
 
     // Lowered bodies are read through their IDs when this phase receives an already lowered module.
     val memberIds = DeclarationQueries.loweredMemberIds(module)
@@ -31,21 +48,80 @@ object ProtocolChecker:
       case binding: Bnd => binding.id.exists(memberIds.contains)
       case _ => false
     }
-    val checked = declarations.zipWithIndex.foldLeft(registered) {
+    val checked = declarations.zipWithIndex.foldLeft(validated) {
       case (current, (instance: ProtocolInstance, ordinal)) =>
-        lowerInstance(instance, ordinal, protocols, current)
+        lowerInstance(instance, ordinal, protocols, typeCauses, current)
       case (current, (member, _)) => current.copy(members = current.members :+ member)
     }
+    val complete = checkInstancePrerequisites(checked)
     state
-      .copy(protocols = checked.registry, diagnostics = checked.diagnostics)
-      .withModule(ResolvablesIndexer.refresh(module.copy(members = checked.members.toList)))
+      .copy(protocols = complete.registry, diagnostics = complete.diagnostics)
+      .withModule(ResolvablesIndexer.refresh(module.copy(members = complete.members.toList)))
+
+  /** Validates every reserved instance's direct requirements after all declarations are known.
+    * Prerequisite protocols precede their dependants, so an accepted direct prerequisite already
+    * satisfies its own requirements. This traversal changes only diagnostics and registry
+    * acceptance; declarations and lowered bodies retain their source order and identities.
+    */
+  private def checkInstancePrerequisites(current: ProtocolCheckState): ProtocolCheckState =
+    val instances = current.members
+      .collect { case instance: ProtocolInstance => instance }
+      .groupBy(_.protocol.resolvedId)
+    val ordered = current.registry.prerequisiteOrder
+      .flatMap(id => instances.getOrElse(Some(id), Vector.empty))
+
+    ordered.foldLeft(current) { (checked, instance) =>
+      val owner = for
+        protocolId <- instance.protocol.resolvedId
+        registered <- checked.registry
+          .instance(protocolId, instance.concreteType, checked.index)
+          .toOption
+        if instance.id.contains(registered)
+      yield protocolId
+
+      owner.fold(checked) { protocolId =>
+        checked.registry.protocol(protocolId, checked.index) match
+
+          case Left(error) => checked.addError(ProtocolError.RegistryFailure(instance, error))
+
+          case Right(protocol) =>
+            protocol.constraints.flatMap(_.constraints).foldLeft(checked) { (result, required) =>
+              val available = required.resolvedId
+                .toRight(ProtocolLookupError.MissingId(required))
+                .flatMap(result.registry.usableInstance(_, instance.concreteType, result.index))
+              available match
+
+                case Right(_) => result
+
+                case Left(ProtocolLookupError.MissingInstance(_)) =>
+                  result.rejectPrerequisite(
+                    instance,
+                    ProtocolError.MissingPrerequisiteInstance(instance, required)
+                  )
+
+                case Left(ProtocolLookupError.RejectedDeclaration(causes)) =>
+                  result.rejectPrerequisite(
+                    instance,
+                    ProtocolError.InvalidPrerequisiteInstance(instance, required),
+                    causes
+                  )
+
+                case Left(error) =>
+                  result.rejectPrerequisite(
+                    instance,
+                    ProtocolError.RegistryFailure(required, error)
+                  )
+            }
+      }
+    }
 
   /** Registers valid signatures and records the causes of rejected declarations, so later uses can
     * report the original declaration error rather than a missing registry entry.
     */
   private def registerProtocol(
-    current:  ProtocolCheckState,
-    protocol: Protocol
+    current:    ProtocolCheckState,
+    protocol:   Protocol,
+    typeCauses: DiagnosticCauses
   ): ProtocolCheckState =
     val duplicates = protocol.signatures
       .groupBy(signature => memberName(signature))
@@ -56,11 +132,20 @@ object ProtocolChecker:
         case Nil => Nil
       }
     val errors = duplicates ++ protocol.signatures.flatMap(signatureErrors(_, protocol))
-    if errors.nonEmpty then
+    val resolutionCauses = protocol.signatures
+      .flatMap { signature =>
+        (signature.params.flatMap(_.typeAsc) :+ signature.returnType)
+          .flatMap(typeCauses.knownRootsOfType) ++ signature.constraints.flatMap(_.causes)
+      }
+      .distinct
+      .toVector
+    if errors.nonEmpty || resolutionCauses.nonEmpty then
       val (reported, causes) = current.report(errors)
       val rejection = protocol.id
         .toRight(ProtocolLookupError.MissingId(protocol))
-        .flatMap(reported.registry.rejectProtocol(_, causes, current.index))
+        .flatMap(
+          reported.registry.rejectProtocol(_, (causes ++ resolutionCauses).distinct, current.index)
+        )
       rejection match
         case Right(registry) => reported.copy(registry = registry)
         case Left(error) => reported.addError(ProtocolError.RegistryFailure(protocol, error))
@@ -73,13 +158,14 @@ object ProtocolChecker:
         case Left(error) => current.addError(ProtocolError.RegistryFailure(protocol, error))
 
   /** Checks the supported signature form: required parameter types, distinct parameter names, no
-    * default body, and no type variables other than the protocol's declared parameter.
+    * default body, and type variables bound by the protocol or the member.
     */
   private def signatureErrors(
     signature: ProtocolSignature,
     protocol:  Protocol
   ): List[ProtocolError] =
-    val types = signature.params.flatMap(_.typeAsc) :+ signature.returnType
+    val types   = signature.params.flatMap(_.typeAsc) :+ signature.returnType
+    val binders = (protocol.typeParameter :: signature.typeParams).flatMap(_.resolvedId).toSet
     val details =
       Option.when(signature.defaultBody.nonEmpty)(ProtocolSignatureError.DefaultBody).toList ++
         Option.when(signature.params.exists(_.typeAsc.isEmpty))(
@@ -88,10 +174,14 @@ object ProtocolChecker:
         Option.when(signature.params.groupBy(_.name).exists(_._2.size > 1))(
           ProtocolSignatureError.DuplicateParameter
         ) ++
-        Option.when(types.exists(hasUnboundVariable(_, protocol.typeParameter.resolvedId)))(
+        Option.when(types.exists(hasUnboundVariable(_, binders)))(
           ProtocolSignatureError.UnboundTypeVariable
         )
-    details.map(ProtocolError.InvalidSignature(signature, _))
+    val misplaced = signature.constraints.collect {
+      case entry if entry.variable.resolvedId.exists(protocol.typeParameter.resolvedId.contains) =>
+        ProtocolError.MemberConstraintOnProtocolParameter(entry.variable, protocol)
+    }
+    details.map(ProtocolError.InvalidSignature(signature, _)) ++ misplaced
 
   /** Resolves an instance's protocol and reserves its concrete type before checking its members.
     * Lowering turns those members into ordinary functions: for Render Int, a member using 'T
@@ -99,10 +189,11 @@ object ProtocolChecker:
     * its implementations. Invalid declarations remain in the module with their diagnostics.
     */
   private def lowerInstance(
-    instance:  ProtocolInstance,
-    ordinal:   Int,
-    protocols: List[Protocol],
-    current:   ProtocolCheckState
+    instance:   ProtocolInstance,
+    ordinal:    Int,
+    protocols:  List[Protocol],
+    typeCauses: DiagnosticCauses,
+    current:    ProtocolCheckState
   ): ProtocolCheckState =
     ProtocolRegistry.resolveDeclaration(instance.protocol, protocols) match
 
@@ -137,17 +228,24 @@ object ProtocolChecker:
               current.retain(resolved, List(ProtocolError.RegistryFailure(resolved, error)))
 
             case Right(registry) =>
-              lowerMembers(resolved, ordinal, protocol, current.copy(registry = registry))
+              lowerMembers(
+                resolved,
+                ordinal,
+                protocol,
+                typeCauses,
+                current.copy(registry = registry)
+              )
 
   /** Checks the complete member set before registering implementations. Successful members become
     * module-level bindings, and the instance stores their IDs instead of nested bodies. An already
     * lowered instance supplies its bodies through those IDs when the phase runs again.
     */
   private def lowerMembers(
-    instance: ProtocolInstance,
-    ordinal:  Int,
-    protocol: Protocol,
-    current:  ProtocolCheckState
+    instance:   ProtocolInstance,
+    ordinal:    Int,
+    protocol:   Protocol,
+    typeCauses: DiagnosticCauses,
+    current:    ProtocolCheckState
   ): ProtocolCheckState =
 
     val bodies =
@@ -172,6 +270,17 @@ object ProtocolChecker:
       case Left(error) => current.reject(instance, List(error))
 
       case Right(members) =>
+        val resolutionCauses = members
+          .flatMap { member =>
+            val binding = member.binding
+            val signatureTypes = binding.value.terms match
+              case (lambda: Lambda) :: Nil =>
+                lambda.params.flatMap(_.typeAsc) ++ lambda.typeAsc
+              case _ => Nil
+            (binding.typeAsc.toList ++ signatureTypes).flatMap(typeCauses.knownRootsOfType)
+          }
+          .distinct
+          .toVector
         val matched = members.map(member => member -> matchingSignature(member, protocol))
         val missing = protocol.signatures
           .filterNot { signature =>
@@ -199,7 +308,7 @@ object ProtocolChecker:
         val (failures, implementations) = checked.separate
         val errors                      = missing ++ duplicates ++ failures.flatten
 
-        if errors.nonEmpty then current.reject(instance, errors)
+        if errors.nonEmpty then current.reject(instance, errors, resolutionCauses)
         else
           val withBindings = implementations.foldLeft(current) { (registered, implementation) =>
             registerBinding(instance, implementation, registered)
@@ -208,26 +317,16 @@ object ProtocolChecker:
             members   = Nil,
             memberIds = implementations.flatMap(_.binding.id)
           )
-          withBindings.copy(
+          val lowered = withBindings.copy(
             members = withBindings.members ++ (header :: implementations.map(_.binding))
           )
+          if resolutionCauses.isEmpty then lowered
+          else lowered.rejectRegistered(instance, resolutionCauses)
 
-  /** Selects the required signature by source name, distinguishing unary and binary operators. */
-  private def matchingSignature(
-    member:   ProtocolInstanceMember,
-    protocol: Protocol
-  ): Option[ProtocolSignature] =
-    val named = protocol.signatures.filter(_.name == DeclarationQueries.sourceName(member.binding))
-    named.find(signature => memberName(signature) == memberName(member)).orElse {
-      // A unique same-name signature lets checkMember report a shape mismatch.
-      named match
-        case signature :: Nil => signature.some
-        case _ => None
-    }
-
-  /** Checks a member's function/operator form, parameter count, and agreement with the instantiated
-    * signature before producing its ordinary binding. Expression type checking belongs to a later
-    * phase; success here establishes the member's declared contract.
+  /** Checks a member's callable form and resolved annotations against its instantiated signature,
+    * then produces an ordinary binding. Invalid written annotations remain on the binding with
+    * their resolution failures; successful lowering does not establish instance validity.
+    * Expression type checking belongs to a later phase.
     */
   private def checkMember(
     member:    ProtocolInstanceMember,
@@ -263,7 +362,7 @@ object ProtocolChecker:
     signature:    ProtocolSignature,
     protocol:     Protocol,
     concreteType: Type
-  ): Either[List[ProtocolError], ConcreteSignature] =
+  ): Either[List[ProtocolError], InstanceSignature] =
     def instantiate(tpe: Type): Type =
       inheritedType(
         TypeSubstitution(tpe, protocol.typeParameter.resolvedId.map(_ -> concreteType).toMap)
@@ -274,7 +373,7 @@ object ProtocolChecker:
       .toRight(
         List(ProtocolError.InvalidSignature(signature, ProtocolSignatureError.MissingParameterType))
       )
-      .map(types => ConcreteSignature(signature, types, instantiate(signature.returnType)))
+      .map(types => InstanceSignature(signature, types, instantiate(signature.returnType)))
 
   /** Compares written types, consuming-parameter markers, and explicit operator attributes with the
     * required signature. Omitted type annotations and operator attributes inherit its requirements.
@@ -282,7 +381,7 @@ object ProtocolChecker:
   private def instanceMemberErrors(
     member:   ProtocolInstanceMember,
     lambda:   Lambda,
-    expected: ConcreteSignature,
+    expected: InstanceSignature,
     index:    ResolvablesIndex
   ): List[ProtocolError] =
     val binding = member.binding
@@ -298,14 +397,14 @@ object ProtocolChecker:
     parameterErrors ++ ownershipErrors ++ returnErrors ++
       metadataErrors(member, expected.signature.meta)
 
-  /** Gives an implementation its private name and concrete function type while preserving binding
-    * and parameter identities. Written annotations remain intact; omitted annotations receive the
+  /** Gives an implementation its private name and signature types while preserving binding and
+    * parameter identities. Written annotations remain intact; omitted annotations receive the
     * instantiated types. The body remains a Lambda for ordinary checking and code generation.
     */
   private def lowerBinding(
     binding:  Bnd,
     lambda:   Lambda,
-    expected: ConcreteSignature,
+    expected: InstanceSignature,
     ordinal:  Int
   ): Bnd =
     val params = lambda.params.zip(expected.paramTypes).map { (param, required) =>
@@ -327,7 +426,10 @@ object ProtocolChecker:
       case term => term
     }
     val body = lambda.copy(
-      params   = params,
+      params     = params,
+      typeParams = expected.signature.typeParams,
+      constraints =
+        expected.signature.constraints.map(entry => entry.copy(source = entry.source.derived)),
       body     = lambda.body.copy(terms = terms),
       typeAsc  = lambda.typeAsc.orElse(expected.returnType.some),
       typeSpec = callable.some
@@ -354,12 +456,8 @@ object ProtocolChecker:
       TypeFailureQueries.containsInvalidType(expected, index)
     then Nil
     else
-      val keys = for
-        actualKey <- ProtocolRegistry.typeKey(written, index)
-        expectedKey <- ProtocolRegistry.typeKey(expected, index)
-      yield actualKey == expectedKey
       Option
-        .unless(keys.contains(true))(
+        .unless(TypeCompatibility.same(written, expected, index))(
           ProtocolError.SignatureTypeMismatch(node, expected, written)
         )
         .toList
@@ -404,6 +502,7 @@ object ProtocolChecker:
 
   /** Inherited annotations retain their diagnostic origin without becoming written type syntax. */
   private def inheritedType(tpe: Type): Type = tpe match
+    case variable: TypeVariable => variable.copy(source = variable.source.derived)
     case ref:      TypeRef => ref.copy(source = ref.source.derived)
     case function: TypeFn => function.copy(source = function.source.derived)
     case group:    TypeGroup => group.copy(source = group.source.derived)
@@ -412,31 +511,18 @@ object ProtocolChecker:
     case struct:   TypeStruct => struct.copy(source = struct.source.derived)
     case other => other
 
-  /** Detects type variables that the protocol's single declared parameter does not bind. */
-  private def hasUnboundVariable(tpe: Type, parameter: Option[String]): Boolean =
+  /** Every signature variable must refer to a declared binder. */
+  private def hasUnboundVariable(tpe: Type, binders: Set[String]): Boolean =
     TypeTraversal.exists(tpe) {
-      case variable: TypeVariable => variable.resolvedId.isEmpty || variable.resolvedId != parameter
+      case variable: TypeVariable => !variable.resolvedId.exists(binders.contains)
       case _ => false
     }
 
-  private def memberName(signature: ProtocolSignature): MemberName =
-    MemberName(
-      signature.name,
-      Option.when(signature.meta.origin == BindingOrigin.Operator)(signature.params.size)
-    )
-
-  private def memberName(member: ProtocolInstanceMember): MemberName =
-    MemberName(DeclarationQueries.sourceName(member.binding), member.operatorParameterCount)
-
   private val unitTypeId = stdlibTypeId("Unit")
 
-  /** Matching and duplicate-detection key. Functions use their source name alone; operators also
-    * use their parameter count, so unary and binary forms of the same symbol remain distinct.
-    */
-  private case class MemberName(name: String, operatorArity: Option[Int]) derives CanEqual
-
   /** The source protocol signature paired with its parameter and return types after substituting
-    * the instance's concrete type for the protocol's type parameter.
+    * the instance's concrete type for the protocol's type parameter. Member-local variables remain
+    * bound by the signature.
     *
     * In this example, `render` has parameter types `String` and `Int`, and return type `Unit`:
     *
@@ -453,14 +539,14 @@ object ProtocolChecker:
     * ;
     * }}}
     */
-  private case class ConcreteSignature(
+  private case class InstanceSignature(
     signature:  ProtocolSignature,
     paramTypes: List[Type],
     returnType: Type
   )
 
-  /** A lowered implementation paired with the source signature it satisfies. Its declaration has
-    * passed the instance checks; its body still awaits ordinary expression type checking.
+  /** A lowered implementation paired with its required source signature. Its body awaits ordinary
+    * expression type checking.
     */
   private case class CheckedMember(binding: Bnd, signature: ProtocolSignature)
 
@@ -494,13 +580,36 @@ object ProtocolChecker:
     /** Marks a registered instance as failed while retaining its declaration and diagnostic causes.
       * Its identity stays reserved for duplicate detection, but it cannot supply implementations.
       */
-    def reject(instance: ProtocolInstance, failures: List[ProtocolError]): ProtocolCheckState =
+    def reject(
+      instance:        ProtocolInstance,
+      failures:        List[ProtocolError],
+      inheritedCauses: Vector[DiagnosticId] = Vector.empty
+    ): ProtocolCheckState =
       val (reported, causes) = report(failures)
+      reported
+        .rejectRegistered(instance, (inheritedCauses ++ causes).distinct)
+        .copy(members = reported.members :+ instance)
+
+    /** Records a failed prerequisite at the dependent instance and preserves the prerequisite's
+      * original causes when its declaration was rejected. Lowered bodies stay in the module.
+      */
+    def rejectPrerequisite(
+      instance: ProtocolInstance,
+      error:    ProtocolError,
+      causes:   Vector[DiagnosticId] = Vector.empty
+    ): ProtocolCheckState =
+      val (updated, roots) =
+        diagnostics.emit(SemanticError.ProtocolErrorFound(error, phaseName), causes)
+      copy(diagnostics = updated).rejectRegistered(instance, roots)
+
+    /** Excludes a reserved instance from usable candidates without changing its declaration. */
+    def rejectRegistered(
+      instance: ProtocolInstance,
+      causes:   Vector[DiagnosticId]
+    ): ProtocolCheckState =
       val rejection = instance.id
         .toRight(ProtocolLookupError.MissingId(instance))
         .flatMap(registry.rejectInstance(_, causes))
       rejection match
-        case Right(updated) =>
-          reported.copy(registry = updated, members = members :+ instance)
-        case Left(error) =>
-          reported.retain(instance, List(ProtocolError.RegistryFailure(instance, error)))
+        case Right(updated) => copy(registry = updated)
+        case Left(error) => addError(ProtocolError.RegistryFailure(instance, error))

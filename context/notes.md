@@ -6,8 +6,10 @@ Do not read or act on them unless directed to do so explicitely.
 
 ## Notes
 
-
-* vim plugin does not work with comments.nvim
+* zed 
+  * does not appear to color function values well
+    * can't repro
+  * `where` is not colored
 
 * On struct ownership:
   * change to non move by default
@@ -23,7 +25,6 @@ Do not read or act on them unless directed to do so explicitely.
 * LSP is broken, paps are displayed as $environment something
 * LSP still has problems with coloring
 
-* Protocols: need to create and define a task
 
 * NEEDS A TASK: 
   * split ownership analyzer into files within a subpackage.

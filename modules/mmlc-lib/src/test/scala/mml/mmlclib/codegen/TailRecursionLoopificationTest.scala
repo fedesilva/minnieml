@@ -359,7 +359,7 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite with ClosureAsserti
       assert(!mainBody.contains("store ptr @"), mainBody)
 
       val accumulator = uniqueMatch(loopBody, "(%[^ ]+) = phi i32 \\[ %1, %entry \\]").group(1)
-      assert(loopBody.contains(s"add i32 $accumulator, ${step.loadedValue}"), loopBody)
+      assert(loopBody.contains(s"add nsw i32 $accumulator, ${step.loadedValue}"), loopBody)
       assertEquals(phiCount(loopBody), 2)
       assertPhiPredecessors(loopBody)
 
@@ -575,7 +575,7 @@ class TailRecursionLoopificationTest extends BaseEffFunSuite with ClosureAsserti
         entryPattern    = Regex.quote(loopName)
       )
       assert(loopBody.indexOf("loop.header:") > load.end, loopBody)
-      assert(loopBody.contains(s"add i32 $accumulator, ${capture.loadedValue}"), loopBody)
+      assert(loopBody.contains(s"add nsw i32 $accumulator, ${capture.loadedValue}"), loopBody)
       assertEquals(phiCount(loopBody), 2)
       assertPhiPredecessors(loopBody)
       assertCalls(loopBody, loopName, 0)

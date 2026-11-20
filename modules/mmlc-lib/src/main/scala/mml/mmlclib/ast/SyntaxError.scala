@@ -12,18 +12,17 @@ enum SyntaxError derives CanEqual:
   case EmptyTuple
   case InvalidMemberSyntax
   case MisplacedLink
-  case ProtocolPrerequisites
+  case InvalidProtocolHeader
   case ProtocolParameterCount
   case ParameterizedSignature
   case DefaultProtocolImplementation
   case MissingSignatureTypes
-  case MemberTypeVariables
   case ParameterizedInstance
   case MissingInstanceBody
   case OperatorParameterCount
   case FunctionOperatorAttributes
-  case InvalidFunctionConstraints
-  case MemberConstraints
+  case InvalidConstraints
+  case InstanceMemberConstraints
   case ExpectedToken(token: String)
   case InvalidIdentifier(name: String, kind: IdentifierKind, explainRules: Boolean)
   case InvalidLink

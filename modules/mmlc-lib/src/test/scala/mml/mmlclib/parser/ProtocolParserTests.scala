@@ -42,6 +42,7 @@ class ProtocolParserTests extends BaseEffFunSuite:
       val declaration = protocol(module)
       assertEquals(declaration.name, "Eq")
       assertEquals(declaration.typeParameter.name, "'T")
+      assertEquals(declaration.constraints, Nil)
       assertEquals(declaration.signatures.size, 1)
       val signature = declaration.signatures.head
       assertEquals(signature.name, "equal")
@@ -207,9 +208,70 @@ class ProtocolParserTests extends BaseEffFunSuite:
     }
   }
 
-  test("protocol prerequisites receive a focused unsupported diagnostic") {
+  test("protocol prerequisites retain written entries, references, and source locations") {
+    val source =
+      "protocol Render 'T where 'T: Describe & Display & Clone = fn render(x: 'T): String; ;"
+    parseNotFailed(source).map { module =>
+      val declaration = protocol(module)
+      val entries     = declaration.constraints
+      assertEquals(entries.map(_.variable.name), List("'T"))
+      assertEquals(entries.map(_.variable.resolvedId), List(None))
+      assertEquals(
+        entries.map(_.constraints.map(_.nameNode.value)),
+        List(List("Describe", "Display", "Clone"))
+      )
+      assertEquals(entries.map(written(_, source)), List("'T: Describe & Display & Clone"))
+      val references = entries.flatMap(_.constraints)
+      assertEquals(references.map(_.resolvedId), List(None, None, None))
+      assertEquals(references.map(written(_, source)), List("Describe", "Display", "Clone"))
+      assertEquals(declaration.signatures.map(_.name), List("render"))
+      assertEquals(written(declaration, source), source)
+    }
+  }
+
+  test("a protocol accepts a single prerequisite") {
+    parseNotFailed("protocol Render 'T where 'T: Describe = fn render(x: 'T): String; ;")
+      .map { module =>
+        assertEquals(
+          protocol(module).constraints.flatMap(_.constraints).map(_.nameNode.value),
+          List("Describe")
+        )
+      }
+  }
+
+  test("duplicate where entries and requirements retain sources for semantic diagnostics") {
+    parseNotFailed("protocol Render 'T where 'T: Describe & Describe, 'T: Describe = ;")
+      .map { module =>
+        val entries = protocol(module).constraints
+        assertEquals(entries.map(_.constraints.size), List(2, 1))
+        val references = entries.flatMap(_.constraints)
+        assertEquals(references.map(_.nameNode.value), List.fill(3)("Describe"))
+        assertEquals(references.flatMap(_.spanOpt).distinct.size, 3)
+      }
+  }
+
+  List(
+    "where",
+    "where 'T:",
+    "where 'T Describe",
+    "where Int: Describe",
+    "where 'T: Describe &",
+    "where 'T: Describe,",
+    "where 'T: Describe && Display",
+    "where 'T: Describe, 'T:"
+  ).foreach { clause =>
+    test(s"malformed protocol constraint '$clause' preserves the following declaration") {
+      justParse(s"protocol Render 'T $clause = fn render(x: 'T): String; ; let after = 1;")
+        .map { module =>
+          assertEquals(reasons(module), List(SyntaxError.InvalidConstraints))
+          assertEquals(module.members.collect { case binding: Bnd => binding.name }, List("after"))
+        }
+    }
+  }
+
+  test("protocol prerequisites require the where clause syntax") {
     justParse("protocol Monoid 'T: Semigroup = fn empty(): 'T; ;").map { module =>
-      assertEquals(reasons(module), List(SyntaxError.ProtocolPrerequisites))
+      assertEquals(reasons(module), List(SyntaxError.InvalidProtocolHeader))
     }
   }
 
@@ -222,9 +284,9 @@ class ProtocolParserTests extends BaseEffFunSuite:
     }
   }
 
-  test("a signature cannot introduce a member-local type variable") {
+  test("a signature can introduce a result-only member-local type variable") {
     justParse("protocol Convert 'T = fn convert(x: 'T): 'U; ;").map { module =>
-      assertEquals(reasons(module), List(SyntaxError.MemberTypeVariables))
+      assertEquals(typeName(protocol(module).signatures.head.returnType), "'U")
     }
   }
 
@@ -262,6 +324,38 @@ class ProtocolParserTests extends BaseEffFunSuite:
     }
   }
 
+  test("a valid protocol constraint leaves the signatures available when equals is missing") {
+    val source =
+      "protocol Render 'T where 'T: Describe fn render(x): String; ; let after = 1;"
+    justParse(source).map { module =>
+      assertEquals(
+        reasons(module),
+        List(SyntaxError.ExpectedToken("="), SyntaxError.MissingSignatureTypes)
+      )
+      assertEquals(module.members.collect { case binding: Bnd => binding.name }, List("after"))
+    }
+  }
+
+  test("an unfinished prerequisite clause preserves the next protocol's visibility") {
+    val source = """
+      protocol Broken 'T where 'T:
+      pub protocol Keep 'T = fn keep(value: 'T): 'T; ;
+    """
+    justParse(source).map { module =>
+      assertEquals(
+        reasons(module),
+        List(
+          SyntaxError.InvalidConstraints,
+          SyntaxError.ExpectedToken("="),
+          SyntaxError.ExpectedToken(";")
+        )
+      )
+      assertEquals(protocol(module).name, "Keep")
+      assertEquals(protocol(module).visibility, Visibility.Public)
+      assert(!written(error(module), source).contains("pub"))
+    }
+  }
+
   test("missing protocol terminator leaves a following value declaration intact") {
     justParse("protocol Eq 'T = fn equal(x: 'T): Bool;\nlet after = 1;").map { module =>
       assertEquals(reasons(module), List(SyntaxError.ExpectedToken(";")))
@@ -269,9 +363,9 @@ class ProtocolParserTests extends BaseEffFunSuite:
     }
   }
 
-  test("member where clauses are diagnosed as deferred syntax") {
-    justParse("protocol Copy 'T = fn copy(x: 'T): 'T where 'T: Clone; ;").map { module =>
-      assertEquals(reasons(module), List(SyntaxError.MemberConstraints))
+  test("instance constraints must be declared on the required signature") {
+    justParse("instance Copy Int = fn copy(x) where 'U: Clone = x;; ;").map { module =>
+      assertEquals(reasons(module), List(SyntaxError.InstanceMemberConstraints))
     }
   }
 
@@ -313,7 +407,7 @@ class ProtocolParserTests extends BaseEffFunSuite:
       type Count = Int;
     """
     justParse(source).map { module =>
-      assert(reasons(module).contains(SyntaxError.MemberConstraints))
+      assert(reasons(module).contains(SyntaxError.ExpectedToken(";")))
       assert(!written(error(module), source).contains("type Count"))
       assertEquals(
         module.members.collect { case declaration: TypeAlias => declaration.name },
@@ -328,7 +422,7 @@ class ProtocolParserTests extends BaseEffFunSuite:
       struct Count { value: Int };
     """
     justParse(source).map { module =>
-      assert(reasons(module).contains(SyntaxError.MemberConstraints))
+      assert(reasons(module).contains(SyntaxError.ExpectedToken(";")))
       assert(!written(error(module), source).contains("struct Count"))
       assertEquals(
         module.members.collect { case declaration: TypeStruct => declaration.name },

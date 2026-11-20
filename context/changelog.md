@@ -2,7 +2,42 @@
 
 Durable product changes belong here. Current task state belongs in task files.
 
+## 2026-11-20
+
+- Protocol functions and operators can declare member-local type variables and constraints.
+  Instances inherit both. Calls infer or explicitly supply the member types, including in
+  generic callers, callbacks, and partial applications.
+- Editor navigation follows member-local type variables to their written declarations, including
+  from instance bodies with omitted annotations. VS Code, Neovim, and Zed highlight member
+  `where` clauses, and the compiler's AST output shows each member's variables and constraints.
+
+## 2026-11-16
+
+- Support contextual protocol and function `where` highlighting in VS Code and Neovim, including
+  multiline headers, comments, and ordinary identifiers named `where`. VS Code also recovers
+  declaration highlighting after incomplete parameter lists.
+- Fix definition and reference navigation on local-binding type annotations and include written
+  local-function result annotations in reference selection and results.
+
+- Add hover, definition, references, implementation navigation, and semantic tokens for written
+  protocol prerequisites. Share constraint handling with generic functions and include written
+  prerequisites in AST output. Document declaration checks and transitive requirements.
+- Parse protocol and top-level/local function `where` clauses in Tree-sitter, with Zed
+  highlighting and recovery tests for incomplete requirements.
+- Mark assembled local-function binding types as derived, so editor tokens include their
+  written parameter and return annotations once.
+
 ## 2026-11-15
+
+- Keep the use-after-move demonstration commented in the partial-application ownership sample.
+
+- Emit `add nsw` and `mul nsw` for Int addition and multiplication in the injected Num
+  instance and prelude templates.
+
+- Validate protocol prerequisites transitively and require accepted prerequisite instances for
+  the same concrete type, independently of declaration order or use. Reject cycles, duplicate
+  requirements, and repeated `where` entries for one variable. Generic functions can use implied
+  members and forward to weaker requirements while preserving same-name ambiguity.
 
 - Support MML line and block comment toggling in Comment.nvim, with buffer-local comment
   settings and a default MML pre-hook that avoids missing-parser failures on Neovim 0.12.

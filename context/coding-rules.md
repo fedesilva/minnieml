@@ -65,6 +65,8 @@ The compiler needs to be installed before it's used if changes were made.
 
 - **Publish fat jar**: `sbtn mmlcPublishLocal`
 - **After publishing**: `mmlc run <file>` or `mmlc <file>` from anywhere.
+- Publish at every intermediate compiler stage before handing it over for review. Run the
+  required smoke checks first, then verify the stage's sample with installed `mmlc`.
 
 ### Before closing - Post Task Chores
 

@@ -1,5 +1,6 @@
 **/target/
 tmp/
+*.log
 modules/mmlc-lib/src/main/antlr4/*java
 modules/mmlc-lib/src/main/antlr4/*interp
 modules/mmlc-lib/src/main/antlr4/*.tokens

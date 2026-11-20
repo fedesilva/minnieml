@@ -1,0 +1,299 @@
+==================
+Protocol prerequisites with comments and multiple requirements
+==================
+protocol Render 'T
+  where 'T: Describe // prerequisite
+    & Display =
+  fn render(value: 'T): String;
+;
+
+---
+
+(source_file
+  (protocol_declaration
+    (type_identifier)
+    (type_variable)
+    (where_clause
+      (type_variable_constraints
+        (type_variable)
+        (type_identifier)
+        (line_comment)
+        (type_identifier)))
+    (function_signature
+      (identifier)
+      (parameters
+        (parameter
+          (identifier)
+          (type_ascription
+            (type_variable))))
+      (type_ascription
+        (type_identifier)))))
+
+==================
+Shared constraints on top-level and local functions
+==================
+fn render(value: 'T, other: 'U): Int
+  where 'T: Describe & Clone, 'U: Display =
+  fn local(inner: 'V): Int where 'V: Describe = describe inner;;
+  local value;
+;
+
+---
+
+(source_file
+  (function_declaration
+    (identifier)
+    (parameters
+      (parameter
+        (identifier)
+        (type_ascription
+          (type_variable)))
+      (parameter
+        (identifier)
+        (type_ascription
+          (type_variable))))
+    (type_ascription
+      (type_identifier))
+    (where_clause
+      (type_variable_constraints
+        (type_variable)
+        (type_identifier)
+        (type_identifier))
+      (type_variable_constraints
+        (type_variable)
+        (type_identifier)))
+    (body
+      (local_function
+        (identifier)
+        (parameters
+          (parameter
+            (identifier)
+            (type_ascription
+              (type_variable))))
+        (type_ascription
+          (type_identifier))
+        (where_clause
+          (type_variable_constraints
+            (type_variable)
+            (type_identifier)))
+        (body
+          (expression_statement
+            (expression
+              (identifier)
+              (identifier)))))
+      (expression_statement
+        (expression
+          (identifier)
+          (identifier))))))
+
+==================
+Where remains an identifier outside constraint clauses
+==================
+let where = 1;
+fn where(value: Int): Int = value;;
+fn use(where: Int): Int = where;;
+fn local_scope(): Int =
+  fn where(value: 'T): Int where 'T: Describe = describe value;;
+  where 1;
+;
+
+---
+
+(source_file
+  (let_declaration
+    (identifier)
+    (expression
+      (integer)))
+  (function_declaration
+    (identifier)
+    (parameters
+      (parameter
+        (identifier)
+        (type_ascription
+          (type_identifier))))
+    (type_ascription
+      (type_identifier))
+    (body
+      (expression_statement
+        (expression
+          (identifier)))))
+  (function_declaration
+    (identifier)
+    (parameters
+      (parameter
+        (identifier)
+        (type_ascription
+          (type_identifier))))
+    (type_ascription
+      (type_identifier))
+    (body
+      (expression_statement
+        (expression
+          (identifier)))))
+  (function_declaration
+    (identifier)
+    (parameters)
+    (type_ascription
+      (type_identifier))
+    (body
+      (local_function
+        (identifier)
+        (parameters
+          (parameter
+            (identifier)
+            (type_ascription
+              (type_variable))))
+        (type_ascription
+          (type_identifier))
+        (where_clause
+          (type_variable_constraints
+            (type_variable)
+            (type_identifier)))
+        (body
+          (expression_statement
+            (expression
+              (identifier)
+              (identifier)))))
+      (expression_statement
+        (expression
+          (identifier)
+          (integer))))))
+
+==================
+Recover a missing protocol requirement before signatures and declarations
+==================
+protocol Broken 'T where 'T: =
+  fn broken(value: 'T): Int;
+;
+protocol Intact 'T = fn intact(value: 'T): Int;;
+let result = 1;
+
+---
+
+(source_file
+  (protocol_declaration
+    (type_identifier)
+    (type_variable)
+    (where_clause
+      (type_variable_constraints
+        (type_variable)
+        (MISSING type_identifier)))
+    (function_signature
+      (identifier)
+      (parameters
+        (parameter
+          (identifier)
+          (type_ascription
+            (type_variable))))
+      (type_ascription
+        (type_identifier))))
+  (protocol_declaration
+    (type_identifier)
+    (type_variable)
+    (function_signature
+      (identifier)
+      (parameters
+        (parameter
+          (identifier)
+          (type_ascription
+            (type_variable))))
+      (type_ascription
+        (type_identifier))))
+  (let_declaration
+    (identifier)
+    (expression
+      (integer))))
+
+==================
+Recover a missing function requirement before body and next declaration
+==================
+fn broken(value: 'T): Int where 'T: Describe & = 1;;
+fn intact(): Int = 2;;
+
+---
+
+(source_file
+  (function_declaration
+    (identifier)
+    (parameters
+      (parameter
+        (identifier)
+        (type_ascription
+          (type_variable))))
+    (type_ascription
+      (type_identifier))
+    (where_clause
+      (type_variable_constraints
+        (type_variable)
+        (type_identifier)))
+    (ERROR)
+    (body
+      (expression_statement
+        (expression
+          (integer)))))
+  (function_declaration
+    (identifier)
+    (parameters)
+    (type_ascription
+      (type_identifier))
+    (body
+      (expression_statement
+        (expression
+          (integer))))))
+
+==================
+Member-local requirements on functions and operators
+==================
+protocol Apply 'T =
+  fn apply(value: 'T, f: 'T -> 'U): 'U where 'U: Read;
+  op ==>(value: 'T, f: 'T -> 'U): 'U 40 left
+    where 'U: Read & Describe;
+;
+
+---
+
+(source_file
+  (protocol_declaration
+    (type_identifier)
+    (type_variable)
+    (function_signature
+      (identifier)
+      (parameters
+        (parameter
+          (identifier)
+          (type_ascription
+            (type_variable)))
+        (parameter
+          (identifier)
+          (type_ascription
+            (function_type
+              (type_variable)
+              (type_variable)))))
+      (type_ascription
+        (type_variable))
+      (where_clause
+        (type_variable_constraints
+          (type_variable)
+          (type_identifier))))
+    (operator_signature
+      (operator)
+      (parameters
+        (parameter
+          (identifier)
+          (type_ascription
+            (type_variable)))
+        (parameter
+          (identifier)
+          (type_ascription
+            (function_type
+              (type_variable)
+              (type_variable)))))
+      (type_ascription
+        (type_variable))
+      (integer)
+      (associativity)
+      (where_clause
+        (type_variable_constraints
+          (type_variable)
+          (type_identifier)
+          (type_identifier))))))

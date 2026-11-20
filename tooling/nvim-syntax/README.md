@@ -13,7 +13,7 @@ Syntax highlighting and LSP support for MinnieML (`.mml`) files in Neovim.
   - Semantic tokens (rich syntax highlighting)
 
 - **Syntax highlighting** for all MML language constructs:
-  - Keywords: `fn`, `let`, `op`, `type`, `module`, `inline`, `if`/`then`/`else`
+  - Keywords: `fn`, `let`, `op`, `type`, `module`, `inline`, `protocol`, `instance`, contextual `where`, `if`/`then`/`else`
   - Comments: line comments (`//`) and documentation comments (`/* ... */`)
   - Operators: symbolic (`+`, `-`, `==`, etc.) and alphanumeric (`and`, `or`, `not`)
   - Literals: strings, integers, floats, booleans
@@ -155,6 +155,13 @@ Open a `.mml` file in Neovim and run:
 You should see: `filetype=mml`
 
 ### Testing
+
+Check contextual constraint highlighting with the real syntax engine, independently of LSP:
+
+```sh
+NVIM_LOG_FILE=/dev/null nvim --headless -u NONE -i NONE -l tooling/nvim-syntax/test/syntax.lua
+```
+
 
 Verify filetype comment settings and cleanup without optional plugins:
 

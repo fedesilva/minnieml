@@ -163,9 +163,12 @@ fn render(value: 'T): String
 ```
 
 A concrete call to `render` requires a matching `Describe` instance. A call from another
-generic body requires the corresponding constraint on the caller's variable. Separate
+generic body requires the corresponding constraint, or a protocol that implies it, on the caller's
+variable (see [protocol prerequisites](#protocol-prerequisites)). Separate
 variables with commas and requirements on one variable with `&`, as in
 `where 'T: Describe & Clone, 'U: Describe`. Constraints do not introduce type variables.
+A variable may appear in only one entry in a `where` clause; combine all its requirements
+with `&`.
 
 Type arguments are inferred from value arguments and expected types. Explicit type
 arguments precede value arguments and supply every variable, in first-appearance order
@@ -408,7 +411,7 @@ let add_ten: Int -> Int = (<+>) 10;
 The signature supplies omitted instance precedence and associativity. An explicit restatement
 must match it, even if the written value is the usual free-operator default.
 
-Function values and partial calls must select a concrete instance where they are bound.
+In concrete code, binding a function value or partial call selects one instance.
 Their expected function type can supply missing information, as in `show_int` and `add_ten`.
 For a local binding initialized with a protocol reference or call, later uses in the same
 function body can also supply that information:
@@ -453,11 +456,112 @@ regardless of how many are available. Each listed alternative shows its callable
 name where applicable.
 Ordinary lexical bindings and parameters shadow protocol member names.
 
-See the runnable [named-function sample](../mml/samples/protocol-functions.mml) and
-[operator sample](../mml/samples/protocol-operators.mml). Default implementations, multiple type
-parameters, protocol prerequisites, parameterized instances, and constraints on protocol
-member signatures are not supported. Ordinary generic functions support
-[`where` constraints](#generic-functions).
+#### Member-local type variables
+
+The protocol header declares the type that selects the instance. Any other type variable in a
+member's parameter or result types belongs to that member. Its first occurrence declares it.
+Repeated occurrences must agree. Two members can each use the name `'U` independently.
+
+```mml
+protocol Apply 'T =
+  fn apply(value: 'T, f: 'T -> 'U): 'U;
+  op ==>(value: 'T, f: 'T -> 'U): 'U 40 left;
+;
+
+instance Apply Int =
+  fn apply(value, f) = f value;;
+  op ==>(value, f) = f value;;
+;
+
+let text = apply 7 int_to_str;
+let same_text = 7 ==> int_to_str;
+let explicit = (==>) String 7 int_to_str;
+```
+
+All three calls produce `"7"`. The first argument selects `Apply Int`. The callback and
+expected result can supply the member's result type. In the last call, `String` supplies
+`'U` explicitly. A named call accepts the same syntax, as in `apply String 7 int_to_str`.
+Explicit type arguments supply every member-local variable in order of first appearance
+through the parameters, then the result. When visible members have different numbers of local
+variables, each signature determines where its type arguments end. A constructor name after that
+point is a value argument. The argument types and expected result decide which readings fit.
+A concrete protocol type needs an accepted instance. A generic caller can supply the protocol through
+its declared requirements. The member-local types must also satisfy their constraints. The call
+is ambiguous if multiple readings have applicable members.
+
+A signature can require protocols for its own variables, as in
+`fn label(key: 'T, value: 'U): String where 'U: ToString;`. An operator puts the same clause
+after its result and any precedence and associativity. Requirements on the protocol parameter
+belong on the protocol header. The instance inherits the member's requirements and can use
+`'U` anywhere in the body. Optional annotations use the declared names. For `Label Int`,
+`value: 'U` is valid. Renaming it to `'V`, fixing it to `Bool`, or adding a member
+`where` clause in the instance is an error. The compiler checks unused implementations too.
+
+Separate calls such as `label 7 true` and `label 7 42` choose different types for `'U`.
+A stored partial call has one type. For example, `let f: Bool -> String = label 7;`
+fixes `'U` to `Bool` for every use of `f`. A generic caller can forward a member call
+when its own requirements supply the necessary protocols.
+
+#### Protocol prerequisites
+
+A protocol can require other protocols for its type parameter. Put its `where` clause
+between the parameter and `=`:
+
+```mml
+protocol Describe 'T =
+  fn describe(value: 'T): String;
+;
+
+protocol Render 'T where 'T: Describe =
+  fn render(value: 'T): String;
+;
+
+instance Describe Int =
+  fn describe(value) = int_to_str value;;
+;
+
+instance Render Int =
+  fn render(value) = describe value;;
+;
+
+fn description(value: 'T): String where 'T: Render = describe value;;
+```
+
+Every `Render Int` instance requires a valid `Describe Int` instance. The compiler checks
+this when checking declarations, even when the instance is unused. Prerequisite instances
+may be declared before or after the dependent instance. An invalid prerequisite instance
+cannot satisfy a requirement. Type aliases identify the same concrete type; distinct
+nominal types need their own instances.
+
+Requirements are transitive: if `Render` requires `Describe`, and `Describe` requires
+`Display`, a `Render` constraint also permits `Describe` and `Display` operations. Generic
+code can call a function requiring either prerequisite without repeating it in its own
+clause. This applies to direct calls, operators, function values, partial applications,
+and nested functions. Requirements apply only to the same type variable; evidence for
+`'T` cannot satisfy a requirement on `'U`.
+
+A protocol clause may constrain only its declared parameter. Combine requirements with
+`&`, as in `where 'T: Describe & Display`; repeating the variable entry or writing the same
+protocol twice in that entry is an error. Overlapping transitive requirements are allowed,
+including explicitly naming a prerequisite already implied by another requirement. Direct
+and indirect cycles are errors. Unknown protocols and undeclared variables are errors as well.
+
+Prerequisites do not override or prioritize members. If two applicable protocols declare the
+same member name, an unqualified use remains ambiguous. Ordinary lexical bindings still
+shadow protocol members. Constraints select implementations at compile time; they do not
+introduce runtime dictionaries.
+
+Editor hover, definition, references, implementation navigation, and semantic highlighting
+include protocol names written in `where` clauses on protocols, member signatures, and functions. Definition
+opens the named protocol; implementation navigation lists its valid concrete instances.
+References include written clauses, without adding implied prerequisites as source occurrences.
+
+See the runnable [named-function sample](../mml/samples/protocol-functions.mml),
+[operator sample](../mml/samples/protocol-operators.mml),
+[member-local sample](../mml/samples/protocol-member-variables.mml), and
+[prerequisite sample](../mml/samples/protocol-constraints.mml). Default implementations,
+multiple protocol parameters, and parameterized instances are unsupported. Ordinary generic functions
+support [`where` constraints](#generic-functions).
 
 ### Struct declarations
 
@@ -1646,9 +1750,9 @@ rejected as free declarations even if their parameter types differ. Ordinary fun
 be overloaded by repeated declarations. Protocol signatures support type-based selection for
 both functions and operators, with concrete instances selected before execution.
 
-**Protocols**: One type parameter and required signatures are supported. Defaults, prerequisites,
-member-local polymorphism, parameterized instances, and constraints on protocol member signatures
-are deferred. Ordinary generic functions support `where` constraints.
+**Protocols**: Each protocol has one type parameter and can declare prerequisites. Required
+functions and operators can declare member-local type variables and constraints. Defaults and
+parameterized instances are deferred.
 
 ---
 

@@ -99,9 +99,9 @@ private def unaryOperator(name: String): StandardOperator =
 
 private def numericOperators(parameter: Type, boolean: Type): List[NumericOperator] =
   val arithmetic = List(
-    ("+", 60, "add %type %operand1, %operand2", "fadd %type %operand1, %operand2"),
+    ("+", 60, "add nsw %type %operand1, %operand2", "fadd %type %operand1, %operand2"),
     ("-", 60, "sub %type %operand1, %operand2", "fsub %type %operand1, %operand2"),
-    ("*", 80, "mul %type %operand1, %operand2", "fmul %type %operand1, %operand2"),
+    ("*", 80, "mul nsw %type %operand1, %operand2", "fmul %type %operand1, %operand2"),
     ("/", 80, "sdiv %type %operand1, %operand2", "fdiv %type %operand1, %operand2")
   ).map { (name, precedence, integer, floating) =>
     NumericOperator(binaryOperator(name, precedence), parameter, integer, floating)

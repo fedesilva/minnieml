@@ -134,11 +134,13 @@ type TypeConstraint = ProtocolRef
 
 /** Constraints attached to one variable by a where entry; every constraint must hold. Constraint
   * entries do not introduce binders. Type resolution links each variable to its lexical binder.
+  * Failed resolution retains diagnostic roots for declarations that depend on these requirements.
   */
 case class TypeVariableConstraints(
   source:      SourceOrigin,
   variable:    TypeVariable,
-  constraints: List[TypeConstraint]
+  constraints: List[TypeConstraint],
+  causes:      Vector[DiagnosticId] = Vector.empty
 ) extends FromSource
 
 /** A type scheme: ∀'T 'R 'A. Type

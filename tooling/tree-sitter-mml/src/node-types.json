@@ -281,6 +281,10 @@
         {
           "type": "visibility",
           "named": true
+        },
+        {
+          "type": "where_clause",
+          "named": true
         }
       ]
     }
@@ -310,6 +314,10 @@
         },
         {
           "type": "type_ascription",
+          "named": true
+        },
+        {
+          "type": "where_clause",
           "named": true
         }
       ]
@@ -584,6 +592,10 @@
         {
           "type": "type_ascription",
           "named": true
+        },
+        {
+          "type": "where_clause",
+          "named": true
         }
       ]
     }
@@ -803,6 +815,10 @@
         {
           "type": "type_ascription",
           "named": true
+        },
+        {
+          "type": "where_clause",
+          "named": true
         }
       ]
     }
@@ -887,6 +903,10 @@
         },
         {
           "type": "visibility",
+          "named": true
+        },
+        {
+          "type": "where_clause",
           "named": true
         }
       ]
@@ -1098,12 +1118,57 @@
     }
   },
   {
+    "type": "type_variable_constraints",
+    "named": true,
+    "fields": {
+      "protocol": {
+        "multiple": true,
+        "required": true,
+        "types": [
+          {
+            "type": "type_identifier",
+            "named": true
+          }
+        ]
+      },
+      "variable": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "type_variable",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "visibility",
     "named": true,
     "fields": {}
   },
   {
+    "type": "where_clause",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "type_variable_constraints",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
     "type": "\"",
+    "named": false
+  },
+  {
+    "type": "&",
     "named": false
   },
   {
@@ -1287,6 +1352,10 @@
   {
     "type": "unit",
     "named": true
+  },
+  {
+    "type": "where",
+    "named": false
   },
   {
     "type": "{",

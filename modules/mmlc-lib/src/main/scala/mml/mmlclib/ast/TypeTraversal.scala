@@ -35,13 +35,18 @@ object TypeTraversal:
   def exists(tpe: Type)(predicate: Type => Boolean): Boolean =
     predicate(tpe) || children(tpe).exists(exists(_)(predicate))
 
+  /** Applies an effectful transformation to each parameter type in order, then to the result,
+    * preserving the enclosing function's source and metadata.
+    */
+  def traverseFunction[F[_]: Applicative](function: TypeFn)(f: Type => F[Type]): F[TypeFn] =
+    (function.paramTypes.traverse(f), f(function.returnType)).mapN { (params, result) =>
+      function.copy(paramTypes = params, returnType = result)
+    }
+
   /** Transform direct children with an effect, retaining their order and the enclosing metadata. */
   def traverseChildren[F[_]: Applicative](tpe: Type)(f: Type => F[Type]): F[Type] = tpe match
 
-    case function: TypeFn =>
-      (function.paramTypes.traverse(f), f(function.returnType)).mapN { (params, result) =>
-        function.copy(paramTypes = params, returnType = result)
-      }
+    case function: TypeFn => traverseFunction(function)(f).widen[Type]
 
     case application: TypeApplication =>
       (f(application.base), application.args.traverse(f)).mapN { (base, args) =>

@@ -515,7 +515,7 @@ class LocalCallableCodegenTests extends BaseEffFunSuite:
         .getOrElse(fail(main))
         .group(1)
       val body = assertPlainEntry(ir, entry, "i32 %\\d+, ptr %\\d+")
-      assert(body.contains("add i32"), body)
+      assert(body.contains("add nsw i32"), body)
       assert(!body.contains("call "), body)
       verify(ir, 42)
     }

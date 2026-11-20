@@ -136,7 +136,7 @@ private[parser] def fnDefP(info: SourceInfo)(using P[Any]): P[Member] =
   P(
     pointP(info) ~ docCommentP(info) ~ visibilityP.? ~ inlineKw.!.? ~ fnKw ~/
       parsedBindingNameP(info) ~ pointP(info) ~ parsedParametersP(info) ~
-      typeAscP(info, TypeContext.BindingHeader) ~ functionConstraintsP(
+      typeAscP(info, TypeContext.BindingHeader) ~ constraintClauseP(
         info
       ) ~ requiredBindingTokenP(info, "=") ~
       terminatedBindingExprP(info) ~ bindingMemberEndP(info) ~

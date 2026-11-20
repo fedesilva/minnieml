@@ -29,6 +29,33 @@ class ProtocolRegistryTests extends BaseEffFunSuite:
     assertEquals(result, Right(plus))
   }
 
+  test("an accepted protocol implies itself but not an unregistered identity") {
+    val registry = success(ProtocolRegistry.empty.registerProtocol(numId, numberIndex))
+    assert(registry.implies(numId, numId))
+    assert(!registry.implies(numId, "unknown"))
+    assert(!registry.implies("unknown", numId))
+    assert(!ProtocolRegistry.empty.implies(numId, numId))
+  }
+
+  test("rejection removes protocol evidence and preserves its declaration causes") {
+    val registered = success(ProtocolRegistry.empty.registerProtocol(numId, numberIndex))
+    val roots      = Vector(DiagnosticId(3))
+    val rejected   = success(registered.rejectProtocol(numId, roots, numberIndex))
+    assert(!rejected.implies(numId, numId))
+    assertEquals(
+      rejected.protocol(numId, numberIndex),
+      Left(ProtocolLookupError.RejectedDeclaration(roots))
+    )
+    assertEquals(
+      rejected.registerProtocol(numId, numberIndex),
+      Left(ProtocolLookupError.DuplicateProtocol(numId))
+    )
+    assertEquals(
+      rejected.signatureCandidates(plusId, numberIndex),
+      Left(ProtocolLookupError.RejectedDeclaration(roots))
+    )
+  }
+
   test("signature lookup reads the updated signature from the supplied index") {
     val registry     = success(ProtocolRegistry.empty.registerProtocol(numId, numberIndex))
     val updatedPlus  = plus.copy(returnType = intType)

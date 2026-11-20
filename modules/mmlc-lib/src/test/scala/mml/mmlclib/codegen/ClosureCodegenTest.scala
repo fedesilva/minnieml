@@ -356,7 +356,7 @@ class ClosureCodegenTest extends BaseEffFunSuite with ClosureAssertions:
 
       val increment = uniqueMatch(
         stepBody,
-        s"(%[^ ]+) = add i32 ${Regex.quote(acc.loadedValue)}, 1"
+        s"(%[^ ]+) = add nsw i32 ${Regex.quote(acc.loadedValue)}, 1"
       ).group(1)
       val decrement = uniqueMatch(
         stepBody,
@@ -571,7 +571,7 @@ class ClosureCodegenTest extends BaseEffFunSuite with ClosureAssertions:
       val capture   = assertCaptureField(mainBody, innerBody, "i32")
 
       assertEquals(capture.storedValue, "1")
-      assert(innerBody.contains(s"add i32 %0, ${capture.loadedValue}"), innerBody)
+      assert(innerBody.contains(s"add nsw i32 %0, ${capture.loadedValue}"), innerBody)
       assertCalls(mainBody, innerName, 1)
       assertCalls(innerBody, innerName, 0)
       assert(!innerBody.contains("insertvalue { ptr, ptr }"), innerBody)
@@ -696,7 +696,7 @@ class ClosureCodegenTest extends BaseEffFunSuite with ClosureAssertions:
       assertEquals("\\balloca\\b".r.findAllIn(loopBody).size, 1, loopBody)
       assertCalls(loopBody, "malloc", 0)
       assertCalls(loopBody, entry, 1)
-      assert(body.contains(s"add i32 %0, ${capture.loadedValue}"), body)
+      assert(body.contains(s"add nsw i32 %0, ${capture.loadedValue}"), body)
       uniqueMatch(
         loopBody,
         s"${Regex.quote(capture.storedValue)} = phi i32 \\[ %0, %entry \\]"

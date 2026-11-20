@@ -3,7 +3,7 @@ package mml.mmlclib.errors
 import cats.data.State
 import cats.syntax.all.*
 import mml.mmlclib.ast.{Bnd, FromSource, SrcSpan}
-import mml.mmlclib.semantic.{SemanticError, TypeError}
+import mml.mmlclib.semantic.{GenericInference, SemanticError, TypeError}
 import mml.mmlclib.util.error.print.diagnosticMessage
 
 /** Identity of a diagnostic occurrence within one compilation. */
@@ -102,6 +102,8 @@ final case class DiagnosticStore(
 
   /** Fallback diagnostics describe an unavailable enclosing result. A binding's failure area
     * includes its annotation and value even when the diagnostic points only at the binding's name.
+    * A generic callback missing its expected type points at its own name, which a related
+    * diagnostic on the enclosing call can cover.
     */
   private def fallbackSpan(error: CompilationError): Option[SrcSpan] =
     def covering(spans: List[SrcSpan]): Option[SrcSpan] =
@@ -120,6 +122,8 @@ final case class DiagnosticStore(
         )
       case TypeError.UnresolvableType(node: FromSource, _, _) =>
         covering(node.spanOpt.toList ++ node.typeAsc.flatMap(_.spanOpt))
+      case TypeError.GenericInferenceFailed(ref, _: GenericInference.Failure.MissingArguments, _) =>
+        ref.spanOpt
       case TypeError.ConditionalBranchTypeUnknown(cond, _) => cond.spanOpt
       case SemanticError.InvalidExpressionFound(error, _) => error.originalExpr.spanOpt
       case SemanticError.InvalidExpression(expr, _, _) => expr.spanOpt

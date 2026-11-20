@@ -207,3 +207,16 @@ private def formatArrowReturnType(
       s"(${formatTypeSpecInline(typeSpec, showSourceSpans, showTypes)})"
     case _ =>
       formatTypeSpecInline(typeSpec, showSourceSpans, showTypes)
+
+/** Lists quantified variables in the order used for explicit type arguments. */
+def prettyPrintTypeParams(variables: List[TypeVariable], indent: Int): String =
+  if variables.isEmpty then ""
+  else s"\n${"  " * indent}typeParams: ${variables.map(_.name).mkString(", ")}"
+
+/** Formats the requirements carried by a declaration in signature order. */
+def prettyPrintConstraints(constraints: List[TypeVariableConstraints], indent: Int): String =
+  val indentStr = "  " * indent
+  constraints.map { entry =>
+    val names = entry.constraints.map(_.nameNode.value).mkString(" & ")
+    s"\n${indentStr}where ${entry.variable.name}: $names"
+  }.mkString

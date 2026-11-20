@@ -196,7 +196,8 @@ object FnMonomorphizer:
             )
             selected.fold(
               _ => report(concrete, ExpressionProblem.UnresolvedGenericInstantiation),
-              _.pure[Expand]
+              member =>
+                template(member, scope).fold(member.pure[Expand])(instantiate(member, _, scope))
             )
           case None => concrete.pure[Expand]
       }

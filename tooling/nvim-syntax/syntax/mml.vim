@@ -31,7 +31,7 @@ syn keyword mmlTodo contained TODO FIXME NOTE XXX
 syn keyword mmlConditional if then elif else
 
 " Declaration keywords
-syn keyword mmlKeyword module fn let op type end inline
+syn keyword mmlKeyword module let type end inline instance
 
 " Visibility keywords
 syn keyword mmlKeyword pub protected lexical
@@ -94,9 +94,8 @@ syn match mmlNumber "\<[0-9]\+\>"
 " Types
 " ============================================================================
 
-" Type identifiers: start with uppercase letter
-" Pattern: [A-Z][a-zA-Z0-9]*
-syn match mmlType "\<[A-Z][a-zA-Z0-9]*\>"
+" Uppercase type names and quoted type variables share the Type highlight.
+syn match mmlType "\%('\|\<\)[A-Z][a-zA-Z0-9]*\>"
 
 " ============================================================================
 " Native Annotations
@@ -114,6 +113,13 @@ syn match mmlNative "@metal:\%(repr\|ffi\|tpl\)\>"
 " We define this with lower priority so keywords take precedence
 syn match mmlIdentifier "\<[a-z][a-zA-Z0-9_]*\>"
 
+" A requirement clause starts with a type variable; ordinary where identifiers keep their role.
+let s:constraint_trivia = '\%(\_s\|/\*\_.\{-}\*/\|//[^\n]*\n\)*'
+execute 'syn match mmlWhere contained "\<where\>\ze' . s:constraint_trivia
+      \ . "'[A-Z][A-Za-z0-9]*" . s:constraint_trivia . ':"'
+unlet s:constraint_trivia
+hi def link mmlWhere Keyword
+
 " ============================================================================
 " Special Regions
 " ============================================================================
@@ -121,7 +127,10 @@ syn match mmlIdentifier "\<[a-z][a-zA-Z0-9_]*\>"
 " Function definitions - highlight function names specially
 " fn name(...) = ...
 syn match mmlFunction "\<fn\s\+\zs[a-z][a-zA-Z0-9_]*\>" contained
-syn region mmlFunctionDef start="\<fn\>" end="=" contains=mmlKeyword,mmlFunction,mmlType,mmlOperator,mmlIdentifier,mmlComment,mmlDocComment transparent keepend
+syn region mmlFunctionDef matchgroup=mmlKeyword start="\<fn\>" matchgroup=mmlOperator end="[=;]" contains=mmlKeyword,mmlWhere,mmlFunction,mmlType,mmlOperator,mmlIdentifier,mmlComment,mmlDocComment transparent
+
+" Protocol headers share constraint highlighting with function headers.
+syn region mmlProtocolDef matchgroup=mmlKeyword start="\<protocol\>" matchgroup=mmlOperator end="[=;]" contains=mmlKeyword,mmlWhere,mmlType,mmlOperator,mmlIdentifier,mmlComment,mmlDocComment transparent
 
 " Type definitions - highlight type names specially
 " type Name = ...
@@ -132,7 +141,8 @@ syn region mmlTypeDef start="\<type\>" end="=" contains=mmlKeyword,mmlTypeDecl,m
 " op + (a: T, b: T): T = ...
 syn match mmlOperatorDecl "\<op\s\+\zs[=!#$%^&*+<>?/\\|~-]\+" contained
 syn match mmlOperatorDecl "\<op\s\+\zs[a-z][a-zA-Z0-9_]*\>" contained
-syn region mmlOperatorDef start="\<op\>" end="=" contains=mmlKeyword,mmlOperatorDecl,mmlType,mmlOperator,mmlNumber,mmlIdentifier,mmlComment,mmlDocComment transparent keepend
+" A symbolic name can contain equals signs. Only a standalone equals starts the body.
+syn region mmlOperatorDef matchgroup=mmlKeyword start="\<op\>" matchgroup=mmlOperator end=";\|[=!#$%^&*+<>?/\\|.~-]\@<!=[=!#$%^&*+<>?/\\|.~-]\@!" contains=mmlKeyword,mmlWhere,mmlOperatorDecl,mmlType,mmlOperator,mmlNumber,mmlIdentifier,mmlComment,mmlDocComment transparent
 
 " ============================================================================
 " Highlight Linking

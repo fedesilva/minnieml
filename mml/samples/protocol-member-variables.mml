@@ -1,0 +1,46 @@
+// The protocol fixes the key type. Each call chooses its own printable value type.
+protocol Label 'T =
+  fn label(key: 'T, value: 'U): String
+    where 'U: ToString
+  ;
+;
+
+instance Label Int =
+  fn label(key, value) = (to_str key) ++ ": " ++ (to_str value);;
+;
+
+// The result type belongs to this member and comes from the function on the right.
+protocol Apply 'T =
+  op ==>(value: 'T, f: 'T -> 'U): 'U 40 left;
+;
+
+instance Apply Int =
+  op ==>(value, f) = f value;;
+;
+
+fn is_even(n: Int): Bool = (n % 2) == 0;;
+
+fn label_with(key: 'K, value: 'V): String
+  where 'K: Label, 'V: ToString =
+    label key value;
+;
+
+pub fn main()  =
+  println (label 7 true);
+  println (label Int 7 42);
+  println (label_with 8 "ready");
+
+  let label_flag = label 9;
+  println (label_flag false);
+
+  println (to_str (7 ==> is_even));
+  println ( (==>) String 7 int_to_str);
+;
+
+// Expected output:
+// 7: true
+// 7: 42
+// 8: ready
+// 9: false
+// false
+// 7

@@ -80,15 +80,15 @@ Declarations include:
 - `TypeDef` - New type definitions
 - `TypeAlias` - Type aliases
 - `TypeStruct` - Nominal record types
-- `Protocol` - A protocol with one type parameter and signatures
-- `ProtocolSignature` - A function or operator signature with an optional default Lambda body
+- `Protocol` - A protocol with one type parameter, prerequisite constraints, and signatures
+- `ProtocolSignature` - A function or operator signature with ordered member-local binders and constraints
 - `ProtocolInstance` - An unnamed declaration supplying a protocol reference, concrete type,
   and ordinary member bindings
 
-The parser accepts one-parameter protocol declarations with required signatures and concrete
-instances with ordinary Lambda bodies. Default bodies, prerequisites, member-local polymorphism,
-and parameterized instances receive unsupported-feature diagnostics. `ProtocolRef` retains its
-source name and an optional resolved protocol ID. Instances carry their own stable IDs without
+The parser accepts one-parameter protocol declarations with prerequisites, required signatures,
+and concrete instances with ordinary Lambda bodies. Default bodies and parameterized instances
+receive unsupported-feature diagnostics. `ProtocolRef` retains its source name and an optional
+resolved protocol ID. Instances carry their own stable IDs without
 inventing source names. Visibility remains on the concrete declarations that expose it.
 
 Instance member types and operator attributes may be omitted in source. `ProtocolInstanceMember`
@@ -102,7 +102,9 @@ verifies each instance
 against its protocol, supplies omitted types and attributes, and moves each body into the module's
 ordinary bindings. The instance retains the binding IDs in `memberIds`, with no second body copy.
 Written type annotations retain their source nodes; inherited annotations have derived origins.
-Type checking selects concrete members from argument types and expected result types.
+Each member with local binders lowers to an ordinary generic function. Its lambda shares the
+signature's binder identities and requirements. Checking the template validates the body even
+when no call instantiates it.
 
 `ProtocolRegistry` records protocol and signature IDs, unique concrete instances, and the binding
 ID implementing each instance signature. Lookups read current nodes from `ResolvablesIndex`.
@@ -143,6 +145,24 @@ type navigation. Definition requests on selected protocol calls lead to the requ
 Implementation requests on a protocol lead to written instance headers, and requests on a signature
 lead to its concrete member declarations. These editor projections use the registry's binding,
 signature, and instance IDs without changing the selected executable target.
+
+Protocol headers, member signatures, and functions retain their written `TypeVariableConstraints`,
+including each protocol reference's resolved ID and name span. `AstLookup` shares constraint lookup between
+these declarations for hover, definition, references, and implementation navigation. Constraint
+references select the named protocol, so implementation navigation lists that protocol's accepted
+instances. Reference searches collect only written clauses, not the registry's transitive closure.
+`SemanticTokens` uses the same constraint-token collector for these declarations. Inherited
+instance clauses carry derived origins so their tokens appear only on the signature. AST printing
+shows a member's binders and requirements in declaration order. Definition lookup follows the
+binder ID to its first written occurrence, including from inside an instance body. Generic source
+templates retain these locations through specialization. `SourceDeclarations` omits concrete
+copies from editor queries.
+
+The Tree-sitter editing grammar shares `where_clause` across protocol headers, member signatures,
+and top-level or local functions. Entries pair a type variable with `&`-separated protocol names.
+Commas separate entries. Zed highlights `where` as a keyword inside this clause. Elsewhere it
+can be an ordinary identifier. The compiler validates scope, duplicates, cycles, and instance
+requirements; the editor grammar provides syntax and recovery while a header is being edited.
 
 **Bnd with BindingMeta**: Functions and operators are represented as `Bnd` nodes containing a `Lambda` body and `BindingMeta`:
 ```scala
@@ -214,7 +234,8 @@ enum Capture:
 - **`Ref`**: Reference to a declaration or parameter
   - Contains `resolvedId: Option[String]` - ID of the resolved target (soft reference)
   - Contains `candidateIds: List[String]` - potential resolution IDs during name resolution
-  - `explicitTypeArgs` retains written function type arguments selected during resolution.
+  - During reference resolution, `explicitTypeArgs` holds the longest viable prefix of written
+    type arguments, or all supplied types if no prefix fits. When several lengths fit, `argumentPrefixes` records each one. The checked reference retains only the selected declaration's type arguments.
   - `typeArgs` records the checked substitution in the generic declaration's binder order.
     `protocolType` records the rigid type variable justifying an abstract protocol operation;
     its target remains the protocol signature's ID until concrete instantiation.
@@ -572,13 +593,14 @@ than a value-position lambda that needs closure materialization.
 Inner functions use the same scoped-binding lowering strategy:
 
 ```mml
-fn helper(a: Int): Int = a + 1;
+fn helper(a: Int): Int = a + 1;;
 helper 41
 ```
 
 The bound value is a `Lambda`. When parameter and return annotations are available, the parser also
 synthesizes a `TypeFn` ascription for the local binding. That keeps local `fn` and let-bound
-lambdas on the same path in later phases.
+lambdas on the same path in later phases. The assembled type has a derived source origin; editor
+queries read the written parameter and result annotations from the lambda without emitting them twice.
 
 The written result annotation also stays on the local lambda, independently of that
 callable-type synthesis. Missing parameter annotations cannot erase the result annotation
@@ -814,12 +836,17 @@ parameterless lambdas each introduce an ordinal scope path for nested allocation
 - Resolves compound types, type aliases, ascriptions, parameters, returns, and struct fields.
 - Resolves concrete references in protocol signatures and instance headers/bodies while retaining
   the protocol's type-variable sources. Each protocol parameter receives a binder identity shared
-  by its signatures. `TypeTraversal` supplies structural walking for resolution, substitution,
-  parser queries, and invalid-type detection.
+  by its signatures. Each signature collects its other variables with the same binder collector
+  used for functions. A second pass resolves instance bodies against their matched signatures so
+  an instance can precede its protocol. `TypeTraversal` walks compound types for resolution,
+  substitution, parser queries, and invalid-type detection.
 - Collects function type parameters in first-appearance order through parameter types and then
   the result. Nested functions reuse enclosing binders and introduce only new variables.
   Body annotations, explicit type arguments, and `where` entries refer to this lexical scope;
   constraints also resolve their protocol references. Unknown variables receive diagnostics.
+- Protocol and function `where` clauses share one resolver. Each clause permits one entry per
+  type-variable binder; a repeated entry reports the second variable's location. Written entries
+  retain diagnostic causes so prerequisite validation can reject invalid protocols and dependants.
 - Parser-generated binding and statement lambdas carry `LambdaMeta.isBindingScope`; their
   annotations cannot introduce type variables. Initializers resolve before continuations so
   local-function signature caches reuse the function's variable identities without exporting
@@ -835,6 +862,7 @@ parameterless lambdas each introduce an ordinal scope path for nested allocation
 - `SemanticError.UndefinedTypeRef` when no candidate matches
 - `SemanticError.AmbiguousTypeRef` when several candidates match
 - `SemanticError.UndefinedTypeVariable` for a variable outside its lexical scope
+- `SemanticError.DuplicateConstraintVariable` for a repeated variable entry in one `where` clause
 - `ProtocolError.UnknownProtocol` for an unknown constraint protocol
 
 **AST rewrites**:
@@ -927,6 +955,8 @@ Clone implementations whose result type needs ownership tracking.
 
 **Behavior**:
 - Registers protocols before instances, independent of source declaration order.
+- Validates the protocol prerequisite graph and stores prerequisite-first processing order and
+  transitive implication in `ProtocolRegistry`. Rejected protocols retain their diagnostic causes.
 - Resolves the instance's protocol name and checks uniqueness through `ProtocolRegistry`;
   aliases share an instance identity, while nominal declarations remain distinct.
 - Rejects duplicate signatures, missing/extra/duplicate members, mismatched callable shapes,
@@ -940,6 +970,15 @@ Clone implementations whose result type needs ownership tracking.
   Omitted annotations and attributes inherit the signature; written annotations remain source nodes.
 - Moves each implementation Lambda into one ordinary module binding, preserving binding and
   parameter IDs and source origins. The instance retains `memberIds` for registry associations.
+- After all instances have undergone member validation and lowering, checks each reserved
+  instance's direct prerequisites for the same canonical concrete type. Prerequisite protocols
+  are checked first, so accepted direct instances establish transitive validity without revisiting
+  dependency chains. Unused instances receive the same declaration checks.
+- Missing prerequisite instances produce errors at the dependent instance's protocol reference.
+  Rejected prerequisites contribute their original diagnostic causes. Rejection combines member
+  and prerequisite failures, reserves the instance's identity, and excludes its implementations
+  from usable candidates. Written member-type resolution errors also disqualify the instance.
+  Prerequisite checking retains lowered bodies for ordinary type checking, even when unused.
 - Refreshes the index and stores the registry on `CompilerState`. Later phases check and execute
   the ordinary bindings; protocols themselves are not executable functions or value types.
 
@@ -1256,20 +1295,33 @@ types when possible. Generic definitions and uses are checked before concrete in
   Probes keep their diagnostics and copied trees local. The completed substitution checks the
   original argument expressions.
 - Declared `where` requirements form a lexical environment. A protocol operation on a rigid
-  variable must match both that variable's binder ID and the required protocol's ID. Selection
-  records the protocol signature ID, its substituted callable type, and `Ref.protocolType`.
+  variable must match that variable's binder ID. The declared protocol supplies itself and its
+  validated transitive prerequisites through `ProtocolRegistry.implies`; rejected protocols
+  supply no evidence. Abstract member selection and generic-call checking share this query,
+  without adding inherited clauses to the source constraint lists. Selection records the
+  protocol signature ID, its substituted callable type, and `Ref.protocolType`. For a member
+  with local binders, `GenericInference` solves the protocol type and local arguments together.
+  Explicit arguments fix only the local binders. `Ref.typeArgs` retains their solutions in
+  signature order. At concrete instantiation, `FnMonomorphizer` selects the instance binding
+  and specializes its template. Calls with the same binding and arguments reuse that function.
+  For overloaded members with different binder counts, a constructor name can be a type for
+  one candidate and a value for another. Reference resolution retains the viable prefix lengths
+  and constructor references. Each candidate receives its own arguments during selection.
   Concrete instances do not justify undeclared operations on an abstract variable. At a generic
-  call, every requirement must be justified by the caller's declarations or by an accepted
-  concrete instance; rejected instance declarations supply no evidence. Local functions retain
-  requirements on enclosing variables even when they introduce no type variables of their own.
+  call, every requirement must be justified by the caller's declarations and their implications,
+  or by an accepted concrete instance; rejected instance declarations supply no evidence. Local
+  functions retain requirements on enclosing variables even when they introduce no type variables
+  of their own.
+  Prerequisites give no preference to same-named members. Ambiguity diagnostics include both
+  concrete implementations and abstract signatures, using their instantiated callable types.
 - Each checked generic reference retains its original function ID and ordered `Ref.typeArgs`,
   including references used as function values. These records and abstract protocol selections
   supply the identities and substitutions used by the monomorphizer. Type checking
   does not create executable specializations or enforce the changing-type recursion restriction.
-- Type-argument selection is settled during reference resolution. `identity Person` specializes
-  the function for `Person`; the checker validates that selection against value arguments and
-  expected types without retrying it as a constructor-value call. Ascribed constructor expressions
-  and value aliases use the ordinary generic value-inference path.
+- Reference resolution fixes explicit types when only one prefix length fits. For example,
+  `identity Person` specializes the function for `Person`. When overloads admit different
+  prefix lengths, type checking selects among the viable readings. Ascribed constructors
+  and value aliases use ordinary value-argument inference.
 
 **Additional rules**:
 - A function or operator publishes its callable signature on both the declaration and

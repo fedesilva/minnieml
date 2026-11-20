@@ -24,6 +24,8 @@
 (associativity) @keyword
 ["let" "fn" "op" "type" "struct" "protocol" "instance" "inline" "if" "then" "elif" "else"] @keyword
 ["@metal:repr" "@metal:ffi" "@metal:tpl" "@link"] @attribute
+(where_clause "where" @keyword)
+["&"] @operator
 ["=" "->" "~"] @operator
 ["(" ")" "[" "]" "{" "}"] @punctuation.bracket
 [":" ";" "," "."] @punctuation.delimiter

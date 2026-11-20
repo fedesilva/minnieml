@@ -51,7 +51,16 @@ object TypeResolver:
       state.module.members.collect { case protocol: Protocol => protocol },
       BindingOwner(state.module.name)
     )
-    val resolution = state.module.members.traverse(resolveMember(_, scope))
+    // Resolve declarations first so an instance can inherit a later signature's type scope.
+    val resolution = for
+      declarations <- state.module.members.traverse(resolveMember(_, scope))
+      resolvedScope = scope.copy(protocols = declarations.collect { case p: Protocol => p })
+      members <- declarations.traverse {
+        case instance: ProtocolInstance =>
+          resolveInstanceBodies(instance, resolvedScope).widen[Member]
+        case member => member.pure[Resolution]
+      }
+    yield members
     val (resolved, resolvedMembers) =
       resolution.run(ResolvedTypes(state.diagnostics, state.bindingIds)).value
     val resolvedTypes = ResolvablesIndex().updatedAllTypes(
@@ -100,19 +109,20 @@ object TypeResolver:
         val owned = scope.copy(owner = BindingOwner(protocol.id.getOrElse(protocol.name)))
         for
           parameter <- assignVariable(protocol.typeParameter, owned)
+          parameterScope = owned.bind(List(parameter))
+          constraints <- resolveConstraintClause(protocol.constraints, protocol, parameterScope)
           signatures <- protocol.signatures.traverse(
-            resolveSignature(_, owned.bind(List(parameter)))
+            resolveSignature(_, parameterScope)
           )
-        yield protocol.copy(typeParameter = parameter, signatures = signatures)
+        yield protocol.copy(
+          typeParameter = parameter,
+          signatures    = signatures,
+          constraints   = constraints
+        )
 
       case instance: ProtocolInstance =>
-        for
-          concreteType <- resolveType(instance.concreteType, instance, scope)
-          members <- instance.members.traverse { member =>
-            resolveBinding(member.binding, scope)
-              .map(binding => member.copy(binding = binding))
-          }
-        yield instance.copy(concreteType = concreteType, members = members)
+        resolveType(instance.concreteType, instance, scope)
+          .map(concrete => instance.copy(concreteType = concrete))
 
       case alias: TypeAlias =>
         resolveType(alias.typeRef, member, scope)
@@ -135,10 +145,31 @@ object TypeResolver:
       case _ =>
         member.pure[Resolution]
 
-  private def resolveBinding(binding: Bnd, scope: TypeScope): Resolution[Bnd] =
-    val owned = scope.copy(owner = BindingOwner(binding.id.getOrElse(binding.name)))
+  /** Resolves each implementation in the type scope declared by its required signature. */
+  private def resolveInstanceBodies(
+    instance: ProtocolInstance,
+    scope:    TypeScope
+  ): Resolution[ProtocolInstance] =
+    val protocol = ProtocolRegistry.resolveDeclaration(instance.protocol, scope.protocols)
+    instance.members
+      .traverse { member =>
+        val signature = protocol.flatMap(ProtocolRegistry.matchingSignature(member, _))
+        val locals    = signature.toList.flatMap(_.typeParams)
+        resolveBinding(member.binding, scope, locals.some)
+          .map(binding => member.copy(binding = binding))
+      }
+      .map(members => instance.copy(members = members))
+
+  private def resolveBinding(
+    binding:       Bnd,
+    scope:         TypeScope,
+    memberBinders: Option[List[TypeVariable]] = None
+  ): Resolution[Bnd] =
+    val owned = scope
+      .copy(owner = BindingOwner(binding.id.getOrElse(binding.name)))
+      .bind(memberBinders.toList.flatten)
     for
-      value <- resolveExpr(binding.value, binding, owned)
+      value <- resolveExpr(binding.value, binding, owned, memberBinders)
       typeAsc <- binding.typeAsc.traverse(resolveType(_, binding, owned))
       typeSpec <- binding.typeSpec.traverse(resolveType(_, binding, owned))
     yield binding.copy(value = value, typeAsc = typeAsc, typeSpec = typeSpec)
@@ -147,10 +178,20 @@ object TypeResolver:
     signature: ProtocolSignature,
     scope:     TypeScope
   ): Resolution[ProtocolSignature] =
+    val owned = scope.copy(owner = BindingOwner(signature.id.getOrElse(signature.name)))
+    val types = signature.params.flatMap(_.typeAsc) :+ signature.returnType
     for
-      params <- signature.params.traverse(resolveParam(_, signature, scope))
-      returnType <- resolveType(signature.returnType, signature, scope)
-    yield signature.copy(params = params, returnType = returnType)
+      locals <- declareVariables(types, signature.typeParams, owned)
+      nested = owned.bind(locals)
+      params <- signature.params.traverse(resolveParam(_, signature, nested))
+      returnType <- resolveType(signature.returnType, signature, nested)
+      constraints <- resolveConstraintClause(signature.constraints, signature, nested)
+    yield signature.copy(
+      params      = params,
+      returnType  = returnType,
+      typeParams  = locals,
+      constraints = constraints
+    )
 
   private def resolveParam(
     param:  FnParam,
@@ -219,13 +260,23 @@ object TypeResolver:
       case other =>
         TypeTraversal.traverseChildren(other)(resolveType(_, member, scope))
 
+  /** Resolves types in the expression and its terms. An instance body inherits its signature
+    * binders. Nested functions collect their own binders normally, including inside that
+    * implementation.
+    */
   private def resolveExpr(
-    expr:   Expr,
-    member: Member,
-    scope:  TypeScope
+    expr:          Expr,
+    member:        Member,
+    scope:         TypeScope,
+    memberBinders: Option[List[TypeVariable]] = None
   ): Resolution[Expr] =
     for
-      updatedTerms <- expr.terms.traverse(resolveTerm(_, member, scope))
+      updatedTerms <- expr.terms.traverse { term =>
+        (term, memberBinders) match
+          case (lambda: Lambda, Some(variables)) =>
+            resolveLambdaBody(lambda, member, scope, variables).widen[Term]
+          case _ => resolveTerm(term, member, scope)
+      }
       updatedTypeAsc <- expr.typeAsc.traverse(resolveType(_, member, scope))
       updatedTypeSpec <- expr.typeSpec.traverse(resolveType(_, member, scope))
     yield expr.copy(
@@ -369,24 +420,35 @@ object TypeResolver:
     scope:  TypeScope
   ): Resolution[Lambda] =
     val signatureTypes = lambda.params.flatMap(_.typeAsc) ++ lambda.typeAsc
-    val newVariables =
-      if lambda.meta.exists(_.isBindingScope) then Nil
-      else
-        signatureTypes
-          .flatMap(signatureVariables)
-          .filterNot(variable => scope.variables.contains(variable.name))
-          .distinctBy(_.name)
-    val existing = lambda.typeParams.map(variable => variable.name -> variable).toMap
+    val declarations   = if lambda.meta.exists(_.isBindingScope) then Nil else signatureTypes
+    declareVariables(declarations, lambda.typeParams, scope).flatMap { variables =>
+      resolveLambdaBody(lambda, member, scope.bind(variables), variables)
+    }
 
+  /** Bind new names in signature order and reuse their identities on repeated resolution. */
+  private def declareVariables(
+    types:    List[Type],
+    previous: List[TypeVariable],
+    scope:    TypeScope
+  ): Resolution[List[TypeVariable]] =
+    val existing = previous.map(variable => variable.name -> variable).toMap
+    types
+      .flatMap(signatureVariables)
+      .filterNot(variable => scope.variables.contains(variable.name))
+      .distinctBy(_.name)
+      .traverse(variable => assignVariable(existing.getOrElse(variable.name, variable), scope))
+
+  private def resolveLambdaBody(
+    lambda:    Lambda,
+    member:    Member,
+    nested:    TypeScope,
+    variables: List[TypeVariable]
+  ): Resolution[Lambda] =
     for
-      variables <- newVariables.traverse(variable =>
-        assignVariable(existing.getOrElse(variable.name, variable), scope)
-      )
-      nested = scope.bind(variables)
       params <- lambda.params.traverse(resolveParam(_, member, nested))
       body <- resolveExpr(lambda.body, member, nested)
       typeAsc <- lambda.typeAsc.traverse(resolveType(_, member, nested))
-      constraints <- lambda.constraints.traverse(resolveConstraints(_, member, nested))
+      constraints <- resolveConstraintClause(lambda.constraints, member, nested)
     yield lambda.copy(
       params      = params,
       body        = body,
@@ -447,6 +509,35 @@ object TypeResolver:
             }
         }
 
+  /** Resolves a where clause with at most one entry per type-variable binder. Separate clauses have
+    * independent entry sets, including when a nested function uses an enclosing binder.
+    */
+  private def resolveConstraintClause(
+    entries: List[TypeVariableConstraints],
+    member:  Member,
+    scope:   TypeScope
+  ): Resolution[List[TypeVariableConstraints]] =
+    entries
+      .foldLeftM((Map.empty[String, TypeVariable], List.empty[TypeVariableConstraints])) {
+        case ((seen, resolved), entry) =>
+          resolveConstraints(entry, member, scope).flatMap { current =>
+            val variable = current.variable
+            val duplicate = variable.resolvedId.flatMap(seen.get) match
+              case Some(first) =>
+                report(SemanticError.DuplicateConstraintVariable(variable, first, phaseName))
+              case None => Vector.empty[DiagnosticId].pure[Resolution]
+
+            duplicate.map { causes =>
+              val next = variable.resolvedId.fold(seen) { id =>
+                seen.updated(id, seen.getOrElse(id, variable))
+              }
+              val checked = current.copy(causes = (current.causes ++ causes).distinct)
+              (next, checked :: resolved)
+            }
+          }
+      }
+      .map(_._2.reverse)
+
   /** Where entries refer to existing binders and protocols; each failed lookup is reported. */
   private def resolveConstraints(
     entry:  TypeVariableConstraints,
@@ -454,6 +545,7 @@ object TypeResolver:
     scope:  TypeScope
   ): Resolution[TypeVariableConstraints] =
     for
+      start <- State.inspect[ResolvedTypes, Int](_.diagnostics.records.size)
       variable <- resolveVariable(entry.variable, member, scope)
       constraints <- entry.constraints.traverse { ref =>
         ProtocolRegistry.resolveDeclaration(ref, scope.protocols) match
@@ -462,4 +554,8 @@ object TypeResolver:
             report(SemanticError.ProtocolErrorFound(ProtocolError.UnknownProtocol(ref), phaseName))
               .as(ref.copy(resolvedId = none))
       }
-    yield entry.copy(variable = variable, constraints = constraints)
+      diagnostics <- State.inspect[ResolvedTypes, DiagnosticStore](_.diagnostics)
+      causes = diagnostics
+        .roots(entry.causes ++ diagnostics.records.drop(start).map(_.id))
+        .getOrElse(entry.causes)
+    yield entry.copy(variable = variable, constraints = constraints, causes = causes)

@@ -73,6 +73,7 @@ enum SemanticError extends CompilationError:
   case UndefinedRef(ref: Ref, member: Member, phase: String)
   case UndefinedTypeRef(typeRef: TypeRef, member: Member, phase: String)
   case UndefinedTypeVariable(variable: TypeVariable, member: Member, phase: String)
+  case DuplicateConstraintVariable(variable: TypeVariable, first: TypeVariable, phase: String)
   case AmbiguousTypeRef(
     typeRef:    TypeRef,
     candidates: List[ResolvableType],

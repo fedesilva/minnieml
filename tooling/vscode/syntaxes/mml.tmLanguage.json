@@ -9,6 +9,9 @@
             "include": "#docComments"
         },
         {
+            "include": "#declarationHeader"
+        },
+        {
             "include": "#keywords"
         },
         {
@@ -59,7 +62,7 @@
                 },
                 {
                     "name": "keyword.other.mml",
-                    "match": "\\b(module|fn|let|op|end|pub|protected|lexical|type|inline)\\b"
+                    "match": "\\b(module|fn|let|op|end|pub|protected|lexical|type|inline|protocol|instance)\\b"
                 },
                 {
                     "name": "keyword.operator.mml",
@@ -126,7 +129,7 @@
             "patterns": [
                 {
                     "name": "storage.type.mml",
-                    "match": "\\b[A-Z][a-zA-Z0-9]*\\b"
+                    "match": "'[A-Z][a-zA-Z0-9]*|\\b[A-Z][a-zA-Z0-9]*\\b"
                 }
             ]
         },
@@ -145,6 +148,131 @@
                     "match": "@metal:(repr|ffi|tpl)\\b"
                 }
             ]
+        },
+        "declarationHeader": {
+            "patterns": [
+                {
+                    "begin": "\\b(fn|op)\\b",
+                    "beginCaptures": {
+                        "1": {
+                            "name": "keyword.other.mml"
+                        }
+                    },
+                    "end": "(?==|;|\\b(?:let|fn|op|type|struct|protocol|instance|pub|prot|priv|inline)\\b)",
+                    "patterns": [
+                        {
+                            "begin": "(?<=\\b(?:fn|op))\\G",
+                            "end": "([A-Za-z][A-Za-z0-9_]*|(?!//|/\\*)[=!#$%^&*+<>?/\\\\|.~-]+)|(?=;)",
+                            "endCaptures": {
+                                "1": {
+                                    "name": "entity.name.function.mml"
+                                }
+                            },
+                            "patterns": [
+                                {
+                                    "include": "#comments"
+                                },
+                                {
+                                    "include": "#docComments"
+                                }
+                            ]
+                        },
+                        {
+                            "include": "#declarationHeaderBody"
+                        }
+                    ]
+                },
+                {
+                    "begin": "\\b(protocol)\\b",
+                    "beginCaptures": {
+                        "1": {
+                            "name": "keyword.other.mml"
+                        }
+                    },
+                    "end": "(?==|;|\\b(?:let|fn|op|type|struct|protocol|instance|pub|prot|priv|inline)\\b)",
+                    "patterns": [
+                        {
+                            "begin": "(?<=\\bprotocol)\\G",
+                            "end": "\\b([A-Za-z][A-Za-z0-9_]*)\\b|(?==|;)",
+                            "endCaptures": {
+                                "1": {
+                                    "name": "storage.type.mml"
+                                }
+                            },
+                            "patterns": [
+                                {
+                                    "include": "#comments"
+                                },
+                                {
+                                    "include": "#docComments"
+                                }
+                            ]
+                        },
+                        {
+                            "include": "#declarationHeaderBody"
+                        }
+                    ]
+                }
+            ],
+            "comment": "The declaration name can follow comments and newlines. Parameter regions protect ordinary where identifiers. Only the header body recognizes a constraint clause."
+        },
+        "declarationHeaderBody": {
+            "patterns": [
+                {
+                    "include": "#comments"
+                },
+                {
+                    "include": "#docComments"
+                },
+                {
+                    "include": "#headerParameters"
+                },
+                {
+                    "name": "keyword.other.mml",
+                    "match": "\\bwhere\\b"
+                },
+                {
+                    "name": "keyword.operator.mml",
+                    "match": "\\b(left|right)\\b"
+                },
+                {
+                    "include": "#literals"
+                },
+                {
+                    "include": "#types"
+                },
+                {
+                    "include": "#operators"
+                },
+                {
+                    "include": "#identifiers"
+                }
+            ]
+        },
+        "headerParameters": {
+            "begin": "\\(",
+            "end": "\\)|(?==|;|\\b(?:let|fn|op|type|struct|protocol|instance|pub|prot|priv|inline)\\b)",
+            "patterns": [
+                {
+                    "include": "#headerParameters"
+                },
+                {
+                    "include": "#comments"
+                },
+                {
+                    "include": "#docComments"
+                },
+                {
+                    "include": "#types"
+                },
+                {
+                    "include": "#operators"
+                },
+                {
+                    "include": "#identifiers"
+                }
+            ],
+            "comment": "Matches nested parameter types. A body delimiter or declaration start also ends an incomplete header so later declarations retain their scopes."
         }
     },
     "scopeName": "source.mml"

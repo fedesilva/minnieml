@@ -9,6 +9,9 @@ Language support for MinnieML with syntax highlighting, diagnostics, hover, and 
 - Hover to see type information
 - Go to Definition, Go to Implementations, and Find All References for functions and operators
 
+Protocol and function headers highlight contextual `where` clauses. Ordinary functions,
+parameters, and local values named `where` keep their identifier highlighting.
+
 ## Protocol navigation
 
 Use VS Code's native **Go to Definition**, **Go to Implementations**, and

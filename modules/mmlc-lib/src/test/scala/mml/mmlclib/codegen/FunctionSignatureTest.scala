@@ -342,7 +342,7 @@ class FunctionSignatureTest extends BaseEffFunSuite with ClosureAssertions:
       val second = calls.last
       uniqueMatch(
         mainBody,
-        s"(?<sum>%[^ ]+) = add i32 ${Regex.quote(first.result)}, " +
+        s"(?<sum>%[^ ]+) = add nsw i32 ${Regex.quote(first.result)}, " +
           s"${Regex.quote(second.result)}\\n  ret i32 \\k<sum>"
       )
       assert(!mainBody.contains("load { ptr, ptr }"), mainBody)
@@ -372,7 +372,7 @@ class FunctionSignatureTest extends BaseEffFunSuite with ClosureAssertions:
       assertUnaryForwarder(llvmIr, higherOrder.group("entry"), "test_inc")
       uniqueMatch(
         mainBody,
-        s"(?<sum>%[^ ]+) = add i32 ${Regex.quote(direct.group("result"))}, " +
+        s"(?<sum>%[^ ]+) = add nsw i32 ${Regex.quote(direct.group("result"))}, " +
           s"${Regex.quote(higherOrder.group("result"))}\\n  ret i32 \\k<sum>"
       )
       assert(!mainBody.contains("load { ptr, ptr }"), mainBody)
@@ -776,7 +776,7 @@ class FunctionSignatureTest extends BaseEffFunSuite with ClosureAssertions:
       assertEquals(capturedValue, callableCapture.storedValue)
       uniqueMatch(
         captured.body,
-        s"(?<sum>%[^ ]+) = add i32 ${Regex.quote(captured.argument)}, " +
+        s"(?<sum>%[^ ]+) = add nsw i32 ${Regex.quote(captured.argument)}, " +
           s"${Regex.quote(scalarCapture.loadedValue)}\\n  ret i32 \\k<sum>"
       )
 
@@ -852,7 +852,7 @@ class FunctionSignatureTest extends BaseEffFunSuite with ClosureAssertions:
       )
       uniqueMatch(
         sibling.body,
-        s"(?<sum>%[^ ]+) = add i32 ${Regex.quote(sibling.argument)}, " +
+        s"(?<sum>%[^ ]+) = add nsw i32 ${Regex.quote(sibling.argument)}, " +
           s"${Regex.quote(scalarField.group("value"))}\\n  ret i32 \\k<sum>"
       )
 
@@ -969,7 +969,7 @@ class FunctionSignatureTest extends BaseEffFunSuite with ClosureAssertions:
       ).group("entry")
       val entryBody = functionBodyMatching(llvmIr, s"${Regex.quote(target)}\\(i32 %0\\).*")
 
-      uniqueMatch(entryBody, "(?<result>%[^ ]+) = add i32 %0, 1\\n  ret i32 \\k<result>")
+      uniqueMatch(entryBody, "(?<result>%[^ ]+) = add nsw i32 %0, 1\\n  ret i32 \\k<result>")
       assert(!mainBody.contains("{ ptr, ptr }"), mainBody)
       assert(!mainBody.contains("ptr null"), mainBody)
     }

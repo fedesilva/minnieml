@@ -39,10 +39,10 @@ class LambdaEquivalenceCodegenTest extends BaseEffFunSuite with ClosureAssertion
       assert(directCalls.contains("test_top_inc"), mainBody)
       directCalls.foreach { target =>
         val body   = functionBodyMatching(llvmIr, s"${Regex.quote(target)}\\(i32 %0\\) #0")
-        val result = uniqueMatch(body, "(%[^ ]+) = add i32 %0, 1").group(1)
+        val result = uniqueMatch(body, "(%[^ ]+) = add nsw i32 %0, 1").group(1)
         assert(body.contains(s"ret i32 $result"), body)
       }
-      uniqueMatch(mainBody, "%[^ ]+ = add i32 10, 1")
+      uniqueMatch(mainBody, "%[^ ]+ = add nsw i32 10, 1")
       assert(
         !llvmIr.contains("__closure_env") &&
           !mainBody.contains("insertvalue { ptr, ptr }") &&
@@ -86,7 +86,7 @@ class LambdaEquivalenceCodegenTest extends BaseEffFunSuite with ClosureAssertion
       )
       assert(wrapperBody.contains("call i32 @test_top_inc(i32 %0)"), wrapperBody)
       assertCalls(wrapperBody, "test_top_inc", 1)
-      val result = uniqueMatch(lambdaBody, "(%[^ ]+) = add i32 %0, 1").group(1)
+      val result = uniqueMatch(lambdaBody, "(%[^ ]+) = add nsw i32 %0, 1").group(1)
       assert(lambdaBody.contains(s"ret i32 $result"), lambdaBody)
       val applyBody = functionBody(llvmIr, "test_apply")
       indirectClosureInvocation(applyBody, "%0", "i32", "i32 %1")

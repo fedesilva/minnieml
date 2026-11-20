@@ -3,9 +3,11 @@ package mml.mmlclib.semantic
 import cats.data.State
 import cats.syntax.all.*
 import mml.mmlclib.ast.*
-import mml.mmlclib.ast.queries.ValueScope
+import mml.mmlclib.ast.queries.{OperatorQueries, ValueScope}
 import mml.mmlclib.compiler.CompilerState
 import mml.mmlclib.errors.{DiagnosticId, DiagnosticStore}
+
+import scala.annotation.tailrec
 
 object RefResolver:
 
@@ -72,21 +74,18 @@ object RefResolver:
         resolveTerm(head, context).flatMap { resolved =>
           val generic = referenceWithin(resolved)
             .filter(_.explicitTypeArgs.isEmpty)
-            .flatMap(ref => genericArity(ref, context).map(ref -> _))
+            .filterNot(_ => OperatorQueries.isOperator(resolved, context.module.resolvables))
+            .map(ref => ref -> genericCandidates(ref, context))
           generic match
-            case Some((ref, arity)) =>
-              val (candidates, remaining) = tail.span(candidateType(_, context).nonEmpty)
-              val (prefix, values) =
-                if candidates.size > arity &&
-                  candidates.drop(arity).forall(candidateValue(_, context).nonEmpty)
-                then candidates.splitAt(arity)
-                else (candidates, Nil)
-              val types = prefix.flatMap(candidateType(_, context))
-              if types.isEmpty then resolveTerms(tail, context).map(resolved :: _)
+            case Some((ref, candidates)) if candidates.nonEmpty =>
+              val (names, remaining) = tail.span(candidateType(_, context).nonEmpty)
+              if names.isEmpty then resolveTerms(tail, context).map(resolved :: _)
               else
-                val selected     = ref.copy(explicitTypeArgs = types.some)
-                val selectedTerm = replaceReference(resolved, selected)
-                resolveTerms(values ++ remaining, context).map(selectedTerm :: _)
+                val types              = names.flatMap(candidateType(_, context))
+                val (selected, values) = selectTypePrefixes(ref, types, candidates, context)
+                resolveTerms(remaining, context).map(rest =>
+                  replaceReference(resolved, selected) :: (values ++ rest)
+                )
             case _ => resolveTerms(tail, context).map(resolved :: _)
         }
 
@@ -116,19 +115,58 @@ object RefResolver:
     case expr: Expr => expr.copy(terms = expr.terms.map(replaceReference(_, ref)))
     case other => other
 
-  private def genericArity(ref: Ref, context: Context): Option[Int] =
-    ref.resolvedId
-      .flatMap(context.genericFunctions.get)
-      .orElse(
-        ref.resolvedId
-          .flatMap(context.module.resolvables.lookup)
-          .collect { case binding: Bnd =>
-            binding.value.terms.collectFirst {
-              case lambda: Lambda if lambda.typeParams.nonEmpty => lambda.typeParams.size
-            }
+  /** Groups visible generic declarations by the number of explicit type arguments they accept. */
+  private def genericCandidates(ref: Ref, context: Context): List[(Int, List[String])] =
+    (ref.candidateIds ++ ref.resolvedId).distinct
+      .flatMap { id =>
+        val arity = context.genericFunctions.get(id).orElse {
+          context.module.resolvables.lookup(id).flatMap {
+            case signature: ProtocolSignature => signature.typeParams.size.some
+            case binding:   Bnd =>
+              binding.value.terms.collectFirst { case lambda: Lambda => lambda.typeParams.size }
+            case _ => None
           }
-          .flatten
-      )
+        }
+        arity.filter(_ > 0).map(_ -> id)
+      }
+      .groupMap(_._1)(_._2)
+      .toList
+
+  /** Splits leading type names at each eligible binder count. Values after the longest viable
+    * prefix go into the shared expression. Shorter readings carry the constructors between their
+    * end and that longest prefix. If none fits, keep all written types for the arity diagnostic.
+    */
+  private def selectTypePrefixes(
+    ref:        Ref,
+    types:      List[Type],
+    candidates: List[(Int, List[String])],
+    context:    Context
+  ): (Ref, List[Ref]) =
+
+    @tailrec
+    def constructor(tpe: Type): Option[Ref] = tpe match
+      case name: TypeRef => candidateValue(Ref(name.source, name.name), context)
+      case TypeGroup(_, List(inner)) => constructor(inner)
+      case _ => None
+
+    val readings = candidates
+      .sortBy(-_._1)
+      .collect {
+        case (size, ids) if size <= types.size =>
+          types.drop(size).traverse(constructor).map(values => (size, ids, values))
+      }
+      .flatten
+
+    readings match
+      case (longest, _, shared) :: rest =>
+        val prefixes =
+          if rest.isEmpty then Nil
+          else
+            readings.map { (size, ids, values) =>
+              ExplicitArgumentPrefix(size, ids, values.take(longest - size))
+            }
+        (ref.copy(explicitTypeArgs = types.take(longest).some, argumentPrefixes = prefixes), shared)
+      case Nil => (ref.copy(explicitTypeArgs = types.some), Nil)
 
   private def candidateType(term: Term, context: Context): Option[Type] =
     referenceWithin(term, allowAscriptions = false).filter(_.qualifier.isEmpty).flatMap { ref =>
@@ -137,20 +175,21 @@ object RefResolver:
         case _ => None
     }
 
-  private def candidateValue(term: Term, context: Context): Option[Expr] =
-    referenceWithin(term).filter(_.qualifier.isEmpty).flatMap { ref =>
-      context.protocols
-        .visibleCandidates(ref.name, context.scope, context.module.resolvables)
-        .toOption
-        .filter(_.nonEmpty)
-        .map { candidates =>
-          val resolvedId = candidates match
-            case ProtocolCandidate.Declaration(id) :: Nil => id.some
-            case _ => None
-          val value = ref.copy(resolvedId = resolvedId, candidateIds = candidates.map(_.id))
-          Expr(ref.source, List(value))
-        }
-    }
+  private def candidateValue(ref: Ref, context: Context): Option[Ref] =
+    context.protocols
+      .visibleCandidates(ref.name, context.scope, context.module.resolvables)
+      .toOption
+      .filter(_.nonEmpty)
+      .map(withCandidates(ref, _))
+
+  /** Only a single ordinary declaration resolves immediately. Protocol signatures and overloads
+    * carry all visible identities into type checking.
+    */
+  private def withCandidates(ref: Ref, visible: List[ProtocolCandidate]): Ref =
+    val resolvedId = visible match
+      case ProtocolCandidate.Declaration(id) :: Nil => id.some
+      case _ => None
+    ref.copy(candidateIds = visible.map(_.id), resolvedId = resolvedId)
 
   private def resolveTerm(term: Term, context: Context): Resolution[Term] = term match
 
@@ -161,24 +200,15 @@ object RefResolver:
       resolveTerm(app.fn, context).flatMap { resolved =>
         referenceWithin(resolved) match
           case Some(ref) =>
-            val arity = genericArity(ref, context).getOrElse(app.args.size)
-            val trailingValues = app.args.drop(arity).traverse {
-              case tpe: TypeRef => candidateValue(Ref(tpe.source, tpe.name), context)
-              case _ => None
-            }
-            val (types, values) = trailingValues match
-              case Some(values) if app.args.size > arity => (app.args.take(arity), values)
-              case _ => (app.args, Nil)
-            val selected = ref.copy(
-              source           = app.source,
-              explicitTypeArgs = types.some,
-              typeAsc          = app.typeAsc,
-              typeSpec         = app.typeSpec
+            val (selected, values) =
+              selectTypePrefixes(ref, app.args, genericCandidates(ref, context), context)
+            val selectedTerm = replaceReference(
+              resolved,
+              selected.copy(typeAsc = app.typeAsc, typeSpec = app.typeSpec)
             )
-            val selectedTerm = replaceReference(resolved, selected)
             val result =
               if values.isEmpty then selectedTerm
-              else Expr(app.source, selectedTerm :: values.flatMap(_.terms))
+              else Expr(app.source, selectedTerm :: values)
             result.pure[Resolution]
 
           case None =>
@@ -250,11 +280,7 @@ object RefResolver:
               .map(causes => ResolvedCallee(ref, causes))
 
           case Right(visible) =>
-            val resolvedId = visible match
-              case ProtocolCandidate.Declaration(id) :: Nil => id.some
-              case _ => None
-            val updated = ref.copy(candidateIds = visible.map(_.id), resolvedId = resolvedId)
-            ResolvedCallee(updated).pure[Resolution]
+            ResolvedCallee(withCandidates(ref, visible)).pure[Resolution]
 
   private def resolveLambda(lambda: Lambda, context: Context): Resolution[Lambda] =
     resolveExpr(lambda.body, context.within(lambda.params))

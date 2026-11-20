@@ -6,10 +6,17 @@ import mml.mmlclib.ast.*
 /** Protocol declaration, instance, and selection errors retain their source for every consumer. */
 enum ProtocolError:
   case UnknownProtocol(ref: ProtocolRef)
+  case InvalidPrerequisiteTarget(variable: TypeVariable, protocol: Protocol)
+  case MemberConstraintOnProtocolParameter(variable: TypeVariable, protocol: Protocol)
+  case DuplicatePrerequisite(ref: ProtocolRef, first: ProtocolRef)
+  case PrerequisiteCycle(ref: ProtocolRef, path: NonEmptyList[Protocol])
+  case InvalidPrerequisite(ref: ProtocolRef)
   case DuplicateSignature(signature: ProtocolSignature, first: ProtocolSignature)
   case InvalidSignature(signature: ProtocolSignature, detail: ProtocolSignatureError)
   case InvalidInstanceType(instance: ProtocolInstance)
   case DuplicateInstance(instance: ProtocolInstance, firstId: String)
+  case MissingPrerequisiteInstance(instance: ProtocolInstance, required: ProtocolRef)
+  case InvalidPrerequisiteInstance(instance: ProtocolInstance, required: ProtocolRef)
   case MissingMember(instance: ProtocolInstance, signature: ProtocolSignature)
   case UnexpectedMember(binding: Bnd, protocol: Protocol)
   case DuplicateMember(binding: Bnd, first: Bnd)
@@ -39,10 +46,17 @@ enum ProtocolError:
   /** The source location selected for this error. */
   def source: SourceOrigin = this match
     case UnknownProtocol(ref) => ref.source
+    case InvalidPrerequisiteTarget(variable, _) => variable.source
+    case MemberConstraintOnProtocolParameter(variable, _) => variable.source
+    case DuplicatePrerequisite(ref, _) => ref.source
+    case PrerequisiteCycle(ref, _) => ref.source
+    case InvalidPrerequisite(ref) => ref.source
     case DuplicateSignature(signature, _) => signature.source
     case InvalidSignature(signature, _) => signature.source
     case InvalidInstanceType(instance) => instance.concreteType.source
     case DuplicateInstance(instance, _) => instance.source
+    case MissingPrerequisiteInstance(instance, _) => instance.protocol.source
+    case InvalidPrerequisiteInstance(instance, _) => instance.protocol.source
     case MissingMember(instance, _) => instance.source
     case UnexpectedMember(binding, _) => binding.source
     case DuplicateMember(binding, _) => binding.source
@@ -60,7 +74,9 @@ enum ProtocolError:
     case InsufficientTypeInformation(ref, _) => ref.source
     case AmbiguousSelection(ref, _) => ref.source
 
-/** A concrete callable choice uses source names and a type, never its lowered symbol spelling. */
+/** A diagnostic callable choice with its source name and instantiated type. The type may retain
+  * rigid variables from the generic caller.
+  */
 case class ProtocolAlternative(protocolName: Option[String], name: String, functionType: Type)
 
 /** A concrete protocol type required by an argument, annotation, or expected result at its use. */

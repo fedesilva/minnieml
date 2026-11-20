@@ -7,6 +7,10 @@ import cats.Id
   */
 object TypeSubstitution:
 
+  /** Substituting a callable's parameter and result types preserves its function shape. */
+  def apply(function: TypeFn, replacements: Map[String, Type]): TypeFn =
+    TypeTraversal.traverseFunction[Id](function)(apply(_, replacements))
+
   /** Scheme binders protect their occurrences. Replacements are simultaneous: variables inside a
     * replacement are not substituted again. Unresolved variables never match by spelling.
     */

@@ -226,13 +226,8 @@ def prettyPrintTerm(
       }.mkString
       val captureDetails =
         if lambda.captures.isEmpty then "" else s"\n${indentStr}  captures:$capturesStr"
-      val typeParamsStr =
-        if lambda.typeParams.isEmpty then ""
-        else s"\n${indentStr}  typeParams: ${lambda.typeParams.map(_.name).mkString(", ")}"
-      val constraintsStr = lambda.constraints.map { variableConstraints =>
-        val constraintNames = variableConstraints.constraints.map(_.nameNode.value).mkString(" & ")
-        s"\n${indentStr}  where ${variableConstraints.variable.name}: $constraintNames"
-      }.mkString
+      val typeParamsStr  = prettyPrintTypeParams(lambda.typeParams, indent + 1)
+      val constraintsStr = prettyPrintConstraints(lambda.constraints, indent + 1)
       s"${indentStr}Lambda $spanStr$typeStr$metaStr$typeParamsStr$constraintsStr\n" +
         s"$paramsStr$captureDetails\n" +
         s"${indentStr}  body:\n$bodyStr"

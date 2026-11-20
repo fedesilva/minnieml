@@ -31,6 +31,9 @@ class ProtocolConstraintTests extends BaseEffFunSuite:
     List(ProtocolRef(source, protocol.nameNode, protocol.id))
   )
   private val index = ResolvablesIndex().updated(protocol).updated(signature)
+  private val registry = ProtocolRegistry.empty
+    .registerProtocol(protocol.id.get, index)
+    .fold(error => fail(s"Invalid fixture protocol: $error"), identity)
   private val candidates = ProtocolSelection.CandidateSet(
     Nil,
     List(ProtocolSignatureCandidates(protocol, signature, Nil))
@@ -46,7 +49,8 @@ class ProtocolConstraintTests extends BaseEffFunSuite:
   test(
     "declared abstract requirements retain signature identity and instantiate its callable type"
   ):
-    val selected = ProtocolSelection.constrainedCandidates(evidence, List(requirement), index)
+    val selected =
+      ProtocolSelection.constrainedCandidates(evidence, List(requirement), registry, index)
 
     assertEquals(selected.map(_.signature.id), List(signature.id))
     assertEquals(selected.map(_.protocolType.resolvedId), List(variable.resolvedId))
@@ -64,17 +68,20 @@ class ProtocolConstraintTests extends BaseEffFunSuite:
       )
     )
 
-    assertEquals(ProtocolSelection.constrainedCandidates(evidence, Nil, index), Nil)
-    assertEquals(ProtocolSelection.constrainedCandidates(evidence, List(shadowed), index), Nil)
-    assertEquals(ProtocolSelection.constrainedCandidates(evidence, List(unrelated), index), Nil)
+    List(Nil, List(shadowed), List(unrelated)).foreach { requirements =>
+      assertEquals(
+        ProtocolSelection.constrainedCandidates(evidence, requirements, registry, index),
+        Nil
+      )
+    }
 
-  test("generic forwarding requires the exact lexical requirement"):
+  test("generic forwarding requires accepted lexical evidence for the same binder"):
     assert(
       ProtocolSelection.satisfiesRequirement(
         protocol.id.get,
         variable,
         List(requirement),
-        ProtocolRegistry.empty,
+        registry,
         index
       )
     )
@@ -83,7 +90,7 @@ class ProtocolConstraintTests extends BaseEffFunSuite:
         protocol.id.get,
         variable.copy(resolvedId = "unconstrained-variable".some),
         List(requirement),
-        ProtocolRegistry.empty,
+        registry,
         index
       )
     )
@@ -92,7 +99,28 @@ class ProtocolConstraintTests extends BaseEffFunSuite:
         protocol.id.get,
         TypeUnit(source),
         List(requirement),
-        ProtocolRegistry.empty,
+        registry,
         index
       )
     )
+
+  test("unregistered and rejected protocols cannot justify abstract operations or forwarding"):
+    val rejected = registry
+      .rejectProtocol(protocol.id.get, Vector.empty, index)
+      .fold(error => fail(s"Invalid fixture rejection: $error"), identity)
+
+    List(ProtocolRegistry.empty, rejected).foreach { unavailable =>
+      assertEquals(
+        ProtocolSelection.constrainedCandidates(evidence, List(requirement), unavailable, index),
+        Nil
+      )
+      assert(
+        !ProtocolSelection.satisfiesRequirement(
+          protocol.id.get,
+          variable,
+          List(requirement),
+          unavailable,
+          index
+        )
+      )
+    }

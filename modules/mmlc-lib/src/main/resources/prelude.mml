@@ -69,9 +69,9 @@ protocol Num 'T =
 ;
 
 instance Num Int =
-  op +(a, b) = @metal:tpl["add %type %operand1, %operand2"];;
+  op +(a, b) = @metal:tpl["add nsw %type %operand1, %operand2"];;
   op -(a, b) = @metal:tpl["sub %type %operand1, %operand2"];;
-  op *(a, b) = @metal:tpl["mul %type %operand1, %operand2"];;
+  op *(a, b) = @metal:tpl["mul nsw %type %operand1, %operand2"];;
   op /(a, b) = @metal:tpl["sdiv %type %operand1, %operand2"];;
   op ==(a, b) = @metal:tpl["icmp eq %type %operand1, %operand2"];;
   op !=(a, b) = @metal:tpl["icmp ne %type %operand1, %operand2"];;

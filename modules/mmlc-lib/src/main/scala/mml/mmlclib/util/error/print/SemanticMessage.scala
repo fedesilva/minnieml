@@ -93,6 +93,8 @@ def semanticErrorMessage(error: SemanticError): String =
       s"Undefined reference: '${ref.name}'"
     case UndefinedTypeVariable(variable, _, _) =>
       s"Unbound type variable: ${variable.name}"
+    case DuplicateConstraintVariable(variable, _, _) =>
+      s"Duplicate where entry for ${variable.name}; combine its requirements with &"
     case UndefinedTypeRef(typeRef, _, _) =>
       s"Undefined type: '${typeRef.name}'"
     case AmbiguousTypeRef(typeRef, _, _, _) =>

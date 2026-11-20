@@ -145,13 +145,39 @@ let combined = 1 %% 2;"""
       assertEquals(responses(1).result, None)
     }
 
+  test("protocol prerequisite names expose hover and navigation through JSON-RPC"):
+    val header = "protocol Detailed 'T where 'T: Inspect = fn detail(value: 'T): Int;;"
+    val col    = header.indexOf("Inspect")
+    val requests = List(
+      request(1, "textDocument/hover", 15, col),
+      request(2, "textDocument/definition", 15, col),
+      request(3, "textDocument/implementation", 15, col),
+      request(4, "textDocument/references", 15, col)
+    )
+    exchange(requests, source + "\n" + header).map { responses =>
+      val results = responses.tail.init.map(result)
+      assertEquals(results.head("range"), location(15, col, 7)("range"))
+      assert(results.head("contents")("value").str.contains("Inspect"))
+      assertEquals(
+        results.tail,
+        List(
+          ujson.Arr(location(0, 9, 7)),
+          ujson.Arr(location(4, 9, 7), location(8, 9, 7)),
+          ujson.Arr(location(4, 9, 7), location(8, 9, 7), location(15, col, 7))
+        )
+      )
+    }
+
   private def result(response: RpcResponse): ujson.Value =
     assertEquals(response.error, None)
     response.result.getOrElse(fail("Expected successful JSON-RPC result"))
 
   /** Runs initialization, source loading, navigation requests, and shutdown over framed messages.
     */
-  private def exchange(requests: List[ujson.Obj]): IO[List[RpcResponse]] =
+  private def exchange(
+    requests:       List[ujson.Obj],
+    documentSource: String = source
+  ): IO[List[RpcResponse]] =
     val initialize  = ujson.Obj("jsonrpc" -> "2.0", "id" -> 0, "method" -> "initialize")
     val initialized = ujson.Obj("jsonrpc" -> "2.0", "method" -> "initialized")
     val open = ujson.Obj(
@@ -162,7 +188,7 @@ let combined = 1 %% 2;"""
           "uri" -> uri,
           "languageId" -> "mml",
           "version" -> 1,
-          "text" -> source
+          "text" -> documentSource
         )
       )
     )

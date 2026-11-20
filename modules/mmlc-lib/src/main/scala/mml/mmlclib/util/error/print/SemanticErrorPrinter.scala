@@ -92,6 +92,10 @@ object SemanticErrorPrinter:
         s"${Console.RED}${semanticErrorMessage(semantic)} at $location in $memberName " +
           s"[phase: $phase]${Console.RESET}"
 
+      case SemanticError.DuplicateConstraintVariable(variable, _, phase) =>
+        s"${Console.RED}${semanticErrorMessage(semantic)} at ${locationOf(variable)} " +
+          s"[phase: $phase]${Console.RESET}"
+
       case SemanticError.AmbiguousTypeRef(typeRef, candidates, _, phase) =>
         val locations = candidates.collect { case candidate: FromSource => locationOf(candidate) }
         s"${Console.RED}${semanticErrorMessage(semantic)} at ${locationOf(typeRef)}: " +

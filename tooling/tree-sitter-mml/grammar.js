@@ -24,11 +24,12 @@ module.exports = grammar({
     ),
     function_declaration: $ => seq(
       optional($.visibility), optional('inline'), 'fn', field('name', $.identifier),
-      $.parameters, optional($.type_ascription), '=', field('body', $.body), ';',
+      $.parameters, optional($.type_ascription), optional($.where_clause),
+      '=', field('body', $.body), ';',
     ),
     local_function: $ => seq(
       'fn', optional('~'), field('name', $.identifier), $.parameters,
-      optional($.type_ascription), '=', field('body', $.body), ';',
+      optional($.type_ascription), optional($.where_clause), '=', field('body', $.body), ';',
     ),
     operator_declaration: $ => seq(
       optional($.visibility), optional('inline'), 'op',
@@ -42,15 +43,20 @@ module.exports = grammar({
 
     protocol_declaration: $ => seq(
       optional($.visibility), 'protocol', field('name', $.type_identifier),
-      field('parameter', $.type_variable), '=',
+      field('parameter', $.type_variable), optional($.where_clause), '=',
       repeat(choice($.function_signature, $.operator_signature)), ';',
     ),
+    where_clause: $ => seq('where', commaSep1($.type_variable_constraints)),
+    type_variable_constraints: $ => seq(
+      field('variable', $.type_variable), ':', field('protocol', $.type_identifier),
+      repeat(seq('&', field('protocol', $.type_identifier))),
+    ),
     function_signature: $ => seq(
-      'fn', field('name', $.identifier), $.parameters, $.type_ascription, ';',
+      'fn', field('name', $.identifier), $.parameters, $.type_ascription, optional($.where_clause), ';',
     ),
     operator_signature: $ => seq(
       'op', field('name', choice($.operator, $.identifier)), $.parameters,
-      $.type_ascription, optional($.integer), optional($.associativity), ';',
+      $.type_ascription, optional($.integer), optional($.associativity), optional($.where_clause), ';',
     ),
     instance_declaration: $ => seq(
       'instance', field('protocol', $.type_identifier), field('type', $._type), '=',

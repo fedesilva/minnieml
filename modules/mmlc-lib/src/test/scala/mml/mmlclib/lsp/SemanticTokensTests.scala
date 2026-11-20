@@ -7,6 +7,88 @@ import scala.collection.mutable.ListBuffer
 
 class SemanticTokensTests extends BaseEffFunSuite:
 
+  test("protocol and function constraints retain exact tokens across specializations"):
+    val source = """protocol Read 'T = fn read(value: 'T): Int;;
+protocol Render 'T where 'T: Read & ToString = fn render(value: 'T): Int;;
+instance Read Int = fn read(value) = value;;;
+instance Render Int = fn render(value) = read value;;;
+fn render_it(value: 'T): Int where 'T: Render =
+  fn local(inner: 'U): Int where 'U: Read = read inner;;
+  local value;
+;
+let first = render_it 1;
+let second = render_it true;
+instance Read Bool = fn read(value) = 0;;;
+instance Render Bool = fn render(value) = read value;;;
+protocol Apply 'T =
+  fn apply(value: 'T, f: 'T -> 'U): 'U where 'U: Read;
+  op ==>(value: 'T, f: 'T -> 'U): 'U 40 left where 'U: Read;
+;
+instance Apply Int =
+  fn apply(value, f) = f value;;
+  op ==>(value, f) = f value;;
+;
+let applied = 1 ==> render_it;"""
+    semNotFailed(source).map { module =>
+      val tokens     = decodeTokens(SemanticTokens.compute(module))
+      val duplicates = tokens.groupBy(t => (t.line, t.col)).filter(_._2.size > 1)
+      assertEquals(duplicates, Map.empty[(Int, Int), List[DecodedToken]])
+      List(
+        (2, "where 'T: Read & ToString", List("'T", "Read", "ToString")),
+        (5, "where 'T: Render", List("'T", "Render")),
+        (6, "where 'U: Read", List("'U", "Read")),
+        (14, "where 'U: Read", List("'U", "Read")),
+        (15, "where 'U: Read", List("'U", "Read"))
+      ).foreach { (line, clause, names) =>
+        val text  = source.linesIterator.drop(line - 1).next()
+        val start = text.indexOf(clause)
+        val expected = names.map { name =>
+          DecodedToken(line, start + clause.indexOf(name) + 1, name.length, TokenType.Type)
+        }
+        assertEquals(
+          tokens.filter(t => t.line == line && t.col > start && t.col <= start + clause.length),
+          expected
+        )
+      }
+    }
+
+  test("local function and binding annotations appear once and retain type navigation"):
+    val source = """type Number = Int;
+fn main(): Int =
+  fn local(value: Number): Number = value;;
+  let alias: Number -> Number = local;
+  let count: Number = alias 1;
+  count;
+;"""
+    semStateNotFailed(source).map { state =>
+      val tokens = decodeTokens(SemanticTokens.compute(state.module))
+      List(3, 4).foreach { line =>
+        val text    = source.linesIterator.drop(line - 1).next()
+        val columns = List(text.indexOf("Number") + 1, text.lastIndexOf("Number") + 1)
+        assertEquals(
+          tokens.filter(t => t.line == line && t.tokenType == TokenType.Type),
+          columns.map(col => DecodedToken(line, col, 6, TokenType.Type))
+        )
+        columns.foreach { col =>
+          val definitions = AstLookup.findDefinitionAt(state, line, col)
+          assertEquals(definitions.size, 1, s"Missing definition at $line:$col")
+          assertEquals(definitions.head.start.line, 1)
+        }
+      }
+      assertEquals(AstLookup.findDefinitionAt(state, 5, 14).map(_.start.line), List(1))
+      assertEquals(AstLookup.findDefinitionAt(state, 5, 23).map(_.start.line), List(4))
+      assertEquals(AstLookup.findDefinitionAt(state, 6, 3).map(_.start.line), List(5))
+      val typeReferences      = AstLookup.findReferencesAt(state, 1, 6, false)
+      val annotationPositions = List((3, 19), (3, 28), (4, 14), (4, 24), (5, 14))
+      assertEquals(
+        typeReferences.map(span => (span.start.line, span.start.col)),
+        annotationPositions
+      )
+      annotationPositions.foreach { (line, col) =>
+        assertEquals(AstLookup.findReferencesAt(state, line, col, false), typeReferences)
+      }
+    }
+
   test("explicit generic type arguments retain source tokens") {
     val source = """type Number = Int;
 fn identity(~value: 'T): 'T = value;;

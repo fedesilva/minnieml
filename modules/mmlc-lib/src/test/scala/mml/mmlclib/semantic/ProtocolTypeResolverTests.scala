@@ -2,8 +2,10 @@ package mml.mmlclib.semantic
 
 import mml.mmlclib.ast.*
 import mml.mmlclib.compiler.{CompilerConfig, CompilerState}
+import mml.mmlclib.lsp.{DiagnosticSeverity, Diagnostics, Range}
 import mml.mmlclib.parser.SourceInfo
 import mml.mmlclib.test.BaseEffFunSuite
+import mml.mmlclib.util.error.print.ErrorPrinter
 
 class ProtocolTypeResolverTests extends BaseEffFunSuite:
 
@@ -21,6 +23,13 @@ class ProtocolTypeResolverTests extends BaseEffFunSuite:
     val instances = module.members.collect { case instance: ProtocolInstance => instance }
     assertEquals(instances.size, 1)
     instances.head
+
+  private def constrainedProtocol(module: Module): Protocol =
+    val protocols = module.members.collect {
+      case protocol: Protocol if protocol.constraints.nonEmpty => protocol
+    }
+    assertEquals(protocols.size, 1)
+    protocols.head
 
   private def onlyLambda(binding: Bnd): Lambda = binding.value.terms match
     case (lambda: Lambda) :: Nil => lambda
@@ -97,6 +106,121 @@ class ProtocolTypeResolverTests extends BaseEffFunSuite:
         resolved.module.resolvables.lookup(signature.params(1).id.get),
         Some(signature.params(1))
       )
+    }
+
+  test("prerequisites resolve later protocols using the declaring protocol's parameter identity"):
+    val code = """
+      protocol Render 'T where 'T: Describe & Display & Copy =
+        fn render(value: 'T): String;
+      ;
+      protocol Describe 'T = fn describe(value: 'T): String; ;
+      protocol Display 'T = fn display(value: 'T): String; ;
+      protocol Copy 'T = fn copy(value: 'T): 'T; ;
+    """
+    parseNotFailed(code).map { parsed =>
+      val initial  = phaseInput(code, parsed)
+      val original = constrainedProtocol(initial.module)
+      val resolved = TypeResolver.rewriteModule(initial)
+      val protocol = constrainedProtocol(resolved.module)
+      val prerequisites = resolved.module.members.collect {
+        case declaration: Protocol if declaration.id != protocol.id => declaration
+      }
+
+      assertEquals(resolved.errors, Vector.empty)
+      val binder = protocol.typeParameter.resolvedId
+      assert(binder.nonEmpty)
+      assertEquals(protocol.constraints.map(_.variable.resolvedId), List(binder))
+      val signatureVariable = ascription(protocol.signatures.head.params.head) match
+        case variable: TypeVariable => variable
+        case other => fail(s"Expected the protocol parameter, got $other")
+      assertEquals(signatureVariable.resolvedId, binder)
+      assert(prerequisites.forall(_.typeParameter.resolvedId != binder))
+      val references = protocol.constraints.flatMap(_.constraints)
+      assertEquals(references.map(_.resolvedId), prerequisites.map(_.id))
+      protocol.constraints.zip(original.constraints).foreach { (entry, written) =>
+        assertEquals(entry.source, written.source)
+        assertEquals(entry.variable.copy(resolvedId = None), written.variable)
+        assertEquals(entry.constraints.map(_.copy(resolvedId = None)), written.constraints)
+      }
+      assertEquals(resolved.module.resolvables.lookup(protocol.id.get), Some(protocol))
+
+      val repeated = TypeResolver.rewriteModule(resolved)
+      assertEquals(repeated.errors, Vector.empty)
+      assertEquals(constrainedProtocol(repeated.module), protocol)
+      assertEquals(repeated.bindingIds, resolved.bindingIds)
+    }
+
+  test("invalid prerequisite variables and protocols report independent written failures"):
+    val code = """
+      protocol Render 'T where 'U: Missing, 'T: Describe = fn render(value: 'T): String; ;
+      protocol Describe 'T = fn describe(value: 'T): String; ;
+    """
+    parseNotFailed(code).map { parsed =>
+      val resolved = TypeResolver.rewriteModule(phaseInput(code, parsed))
+      val protocol = constrainedProtocol(resolved.module)
+      val invalid  = protocol.constraints.head
+      val valid    = protocol.constraints(1)
+      assertEquals(invalid.variable.resolvedId, None)
+      assertEquals(invalid.constraints.head.resolvedId, None)
+      assertEquals(valid.variable.resolvedId, protocol.typeParameter.resolvedId)
+      val prerequisite = resolved.module.members
+        .collectFirst {
+          case declaration: Protocol if declaration.id != protocol.id => declaration
+        }
+        .getOrElse(fail("Expected prerequisite protocol"))
+      assertEquals(valid.constraints.head.resolvedId, prerequisite.id)
+      assertEquals(resolved.errors.size, 2)
+      val variableErrors = resolved.errors.collect {
+        case SemanticError.UndefinedTypeVariable(variable, _, _) => variable
+      }
+      val protocolErrors = resolved.errors.collect {
+        case SemanticError.ProtocolErrorFound(ProtocolError.UnknownProtocol(ref), _) => ref
+      }
+      assertEquals(variableErrors, Vector(invalid.variable))
+      assertEquals(protocolErrors, Vector(invalid.constraints.head))
+    }
+
+  test("one protocol's prerequisite parameter does not become another protocol's binder"):
+    val code = """
+      protocol Render 'T where 'T: Describe = fn render(value: 'T): String; ;
+      protocol Describe 'U where 'T: Render = fn describe(value: 'U): String; ;
+    """
+    parseNotFailed(code).map { parsed =>
+      val resolved  = TypeResolver.rewriteModule(phaseInput(code, parsed))
+      val protocols = resolved.module.members.collect { case protocol: Protocol => protocol }
+      assertEquals(protocols.size, 2)
+      val first  = protocols.head
+      val second = protocols(1)
+      assertEquals(first.constraints.head.variable.resolvedId, first.typeParameter.resolvedId)
+      assertEquals(second.constraints.head.variable.resolvedId, None)
+      assertNotEquals(first.typeParameter.resolvedId, second.typeParameter.resolvedId)
+      val errors = resolved.errors.collect {
+        case SemanticError.UndefinedTypeVariable(variable, _, _) => variable
+      }
+      assertEquals(errors, Vector(second.constraints.head.variable))
+      assertEquals(resolved.errors.size, 1)
+    }
+
+  test("an unknown prerequisite identifies its written reference in CLI and LSP diagnostics"):
+    val code = "protocol Render 'T where 'T: Missing = fn render(value: 'T): String; ;"
+    parseNotFailed(code).map { parsed =>
+      val initial     = phaseInput(code, parsed)
+      val reference   = constrainedProtocol(initial.module).constraints.head.constraints.head
+      val span        = reference.spanOpt.getOrElse(fail("Expected the written prerequisite span"))
+      val resolved    = TypeResolver.rewriteModule(initial)
+      val diagnostics = Diagnostics.fromCompilerState(resolved)
+      val rendered = ErrorPrinter.prettyPrintSemanticErrors(
+        resolved.semanticErrors.toList,
+        Some(resolved.sourceInfo)
+      )
+
+      assertEquals(resolved.errors.size, 1)
+      assertEquals(diagnostics.map(_.range), List(Range.fromSrcSpan(span)))
+      assertEquals(diagnostics.map(_.message), List("Unknown protocol 'Missing'"))
+      assertEquals(diagnostics.map(_.severity), List(DiagnosticSeverity.Error))
+      assertEquals(code.substring(span.start.index, span.end.index), "Missing")
+      assert(rendered.contains("Unknown protocol 'Missing'"), rendered)
+      assert(rendered.contains(ErrorPrinter.formatLocation(span)), rendered)
     }
 
   test("instance headers and member annotations resolve while omissions remain absent"):

@@ -12,6 +12,22 @@ def protocolMessage(error: ProtocolError): String =
     case UnknownProtocol(ref) =>
       s"Unknown protocol '${ref.nameNode.value}'"
 
+    case InvalidPrerequisiteTarget(variable, protocol) =>
+      s"Protocol '${protocol.name}' can constrain only ${protocol.typeParameter.name}, " +
+        s"not ${variable.name}"
+
+    case MemberConstraintOnProtocolParameter(variable, protocol) =>
+      s"Declare requirements on ${variable.name} in the header of protocol '${protocol.name}'"
+
+    case DuplicatePrerequisite(ref, _) =>
+      s"Duplicate protocol prerequisite '${ref.nameNode.value}'"
+
+    case PrerequisiteCycle(_, path) =>
+      s"Protocol prerequisite cycle: ${path.toList.map(_.name).mkString(" -> ")}"
+
+    case InvalidPrerequisite(ref) =>
+      s"Prerequisite protocol '${ref.nameNode.value}' is invalid"
+
     case DuplicateSignature(signature, _) =>
       s"Duplicate protocol signature '${signature.meta.originalName}'"
 
@@ -25,6 +41,15 @@ def protocolMessage(error: ProtocolError): String =
     case DuplicateInstance(instance, _) =>
       s"Duplicate instance of protocol '${instance.protocol.nameNode.value}' " +
         s"for ${showType(instance.concreteType)}"
+
+    case MissingPrerequisiteInstance(instance, required) =>
+      s"Instance '${instance.protocol.nameNode.value} ${showType(instance.concreteType)}' " +
+        s"requires an instance of '${required.nameNode.value} ${showType(instance.concreteType)}'"
+
+    case InvalidPrerequisiteInstance(instance, required) =>
+      s"Instance '${instance.protocol.nameNode.value} ${showType(instance.concreteType)}' " +
+        s"requires '${required.nameNode.value} ${showType(instance.concreteType)}', " +
+        "but that instance is invalid"
 
     case MissingMember(instance, signature) =>
       s"Instance of protocol '${instance.protocol.nameNode.value}' " +
@@ -101,7 +126,7 @@ private def missingInstanceDescription(ref: Ref, protocol: Protocol, concreteTyp
   s"No instance of protocol '${protocol.name}' for ${showType(concreteType)} " +
     s"provides '${ref.name}'"
 
-/** Show every remaining concrete choice when alternatives are available. */
+/** Formats callable choices as a sorted diagnostic list. */
 private def formatAlternatives(alternatives: List[ProtocolAlternative]): String =
   if alternatives.isEmpty then ""
   else
@@ -136,7 +161,7 @@ private def registryMessage(reason: ProtocolLookupError): String = reason match
   case ProtocolLookupError.InvalidConcreteType(tpe) =>
     s"${showType(tpe)} is not a supported concrete instance type"
 
-/** A callable alternative displayed with its source name and concrete type. */
+/** Formats a callable choice with its protocol qualifier, source name, and instantiated type. */
 def protocolAlternativeDescription(alternative: ProtocolAlternative): String =
   val owner = alternative.protocolName.fold("")(name => s"$name.")
   s"$owner${alternative.name}: ${showType(alternative.functionType)}"
@@ -146,7 +171,7 @@ private def protocolSignatureMessage(error: ProtocolSignatureError): String = er
   case ProtocolSignatureError.MissingParameterType => "parameter types are required"
   case ProtocolSignatureError.DuplicateParameter => "parameter names must be distinct"
   case ProtocolSignatureError.UnboundTypeVariable =>
-    "only the protocol's type parameter may appear in a signature"
+    "signature refers to an unbound type variable"
 
 private def protocolMemberMessage(error: ProtocolMemberError): String = error match
   case ProtocolMemberError.MissingCallableMetadata => "callable metadata is required"

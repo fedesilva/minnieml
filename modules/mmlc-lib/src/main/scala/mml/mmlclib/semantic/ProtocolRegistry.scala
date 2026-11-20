@@ -16,6 +16,10 @@ import mml.mmlclib.errors.DiagnosticId
   * If type checking replaces the addition binding in ResolvablesIndex, memberBinding reads that
   * updated binding. The registry still contains the same binding ID, not an outdated AST copy.
   * Registration returns a new registry; existing registry values remain unchanged.
+  *
+  * Validated prerequisites supply transitive implication queries. prerequisiteOrder contains each
+  * accepted protocol ID once, after all its prerequisites, for declaration-order-independent
+  * checks.
   */
 final case class ProtocolRegistry private (
   private val protocolSignatures: Map[String, List[String]],
@@ -23,8 +27,11 @@ final case class ProtocolRegistry private (
   private val instances:          Map[ProtocolInstanceKey, String],
   private val instanceKeys:       Map[String, ProtocolInstanceKey],
   private val memberBindings:     Map[(String, String), String],
+  private val failedProtocols:    Map[String, Vector[DiagnosticId]],
   private val failedSignatures:   Map[String, Vector[DiagnosticId]],
-  private val failedInstances:    Map[String, Vector[DiagnosticId]]
+  private val failedInstances:    Map[String, Vector[DiagnosticId]],
+  private val prerequisites:      Map[String, Set[String]],
+  prerequisiteOrder:              Vector[String]
 ):
 
   import ProtocolLookupError.*
@@ -35,7 +42,11 @@ final case class ProtocolRegistry private (
     index: ResolvablesIndex
   ): Either[ProtocolLookupError, ProtocolRegistry] =
     for
-      _ <- Either.cond(!protocolSignatures.contains(id), (), DuplicateProtocol(id))
+      _ <- Either.cond(
+        !protocolSignatures.contains(id) && !failedProtocols.contains(id),
+        (),
+        DuplicateProtocol(id)
+      )
       declaration <- indexedProtocol(id, index)
       ids <- declaration.signatures.traverse(member => member.id.toRight(MissingId(member)))
       _ <- ids.foldLeftM(Set.empty[String]) { (seen, signatureId) =>
@@ -48,9 +59,9 @@ final case class ProtocolRegistry private (
       signatureOwners    = signatureOwners ++ ids.map(_ -> id)
     )
 
-  /** Keep rejected signature names attributable to their declaration errors. For duplicate `f`
-    * signatures, a later use of `f` carries these roots instead of reporting a missing registry ID.
-    * This records failure only; it does not register the rejected protocol as a valid declaration.
+  /** Rejects a protocol and its signatures while retaining their original diagnostic causes.
+    * Dependent declarations and member uses carry these roots instead of reporting missing registry
+    * IDs. Rejected protocols cannot provide requirements or usable member implementations.
     */
   def rejectProtocol(
     id:     String,
@@ -60,7 +71,26 @@ final case class ProtocolRegistry private (
     for
       declaration <- indexedProtocol(id, index)
       ids <- declaration.signatures.traverse(member => member.id.toRight(MissingId(member)))
-    yield copy(failedSignatures = failedSignatures ++ ids.map(_ -> causes))
+    yield
+      val roots = (failedProtocols.getOrElse(id, Vector.empty) ++ causes).distinct
+      copy(
+        failedProtocols  = failedProtocols.updated(id, roots),
+        failedSignatures = failedSignatures ++ ids.map(_ -> roots)
+      )
+
+  /** Whether an accepted protocol supplies the required protocol, including itself. */
+  def implies(protocolId: String, requiredId: String): Boolean =
+    protocolSignatures.contains(protocolId) && protocolSignatures.contains(requiredId) &&
+      !failedProtocols.contains(protocolId) && !failedProtocols.contains(requiredId) &&
+      (protocolId == requiredId || prerequisites
+        .getOrElse(protocolId, Set.empty)
+        .contains(requiredId))
+
+  /** Publishes validated transitive requirements and prerequisite-first protocol order. */
+  private[semantic] def withPrerequisites(
+    requirements: Map[String, Set[String]],
+    order:        Vector[String]
+  ): ProtocolRegistry = copy(prerequisites = requirements, prerequisiteOrder = order)
 
   /** Register instance identity independently of signature checking and body lowering. Registering
     * Num Count after Num Int fails as a duplicate when Count aliases Int, even if the two instance
@@ -92,7 +122,14 @@ final case class ProtocolRegistry private (
     instanceKeys
       .get(id)
       .toRight(MissingInstanceId(id))
-      .as(copy(failedInstances = failedInstances.updated(id, causes)))
+      .as(
+        copy(failedInstances =
+          failedInstances.updated(
+            id,
+            (failedInstances.getOrElse(id, Vector.empty) ++ causes).distinct
+          )
+        )
+      )
 
   /** Explain a missing implementation only when that exact instance has a recorded rejection. An
     * absent instance, or a type without concrete identity, supplies no failure evidence.
@@ -148,11 +185,16 @@ final case class ProtocolRegistry private (
   def instanceMemberBindingIds(instanceId: String): Set[String] =
     memberBindings.collect { case ((id, _), bindingId) if id == instanceId => bindingId }.toSet
 
-  /** Read a registered protocol from the supplied index. An indexed but unregistered protocol
-    * returns MissingProtocol; a registered ID whose node is absent returns MissingNode.
+  /** Reads a registered protocol from the supplied index. Recorded rejection returns
+    * RejectedDeclaration before registration or index lookup. Otherwise an unregistered ID returns
+    * MissingProtocol, and a registered ID with no indexed node returns MissingNode.
     */
   def protocol(id: String, index: ResolvablesIndex): Either[ProtocolLookupError, Protocol] =
-    protocolSignatures.get(id).toRight(MissingProtocol(id)).flatMap(_ => indexedProtocol(id, index))
+    for
+      _ <- failedProtocols.get(id).map(RejectedDeclaration(_)).toLeft(())
+      _ <- protocolSignatures.get(id).toRight(MissingProtocol(id))
+      declaration <- indexedProtocol(id, index)
+    yield declaration
 
   /** Read a signature owned by the registered protocol. For example, Num's + signature cannot be
     * retrieved using Clone's protocol ID. The supplied index provides the current signature.
@@ -323,6 +365,33 @@ final case class ProtocolRegistry private (
 
 object ProtocolRegistry:
 
+  /** Selects the required signature by source name, distinguishing unary and binary operators. */
+  private[semantic] def matchingSignature(
+    member:   ProtocolInstanceMember,
+    protocol: Protocol
+  ): Option[ProtocolSignature] =
+    val named = protocol.signatures.filter(_.name == DeclarationQueries.sourceName(member.binding))
+    named.find(signature => memberName(signature) == memberName(member)).orElse {
+      // A unique same-name signature lets checkMember report a shape mismatch.
+      named match
+        case signature :: Nil => signature.some
+        case _ => None
+    }
+
+  private[semantic] def memberName(signature: ProtocolSignature): MemberName =
+    MemberName(
+      signature.name,
+      Option.when(signature.meta.origin == BindingOrigin.Operator)(signature.params.size)
+    )
+
+  private[semantic] def memberName(member: ProtocolInstanceMember): MemberName =
+    MemberName(DeclarationQueries.sourceName(member.binding), member.operatorParameterCount)
+
+  /** Matching and duplicate-detection key. Functions use their source name alone; operators also
+    * use their parameter count, so unary and binary forms of the same symbol remain distinct.
+    */
+  private[semantic] case class MemberName(name: String, operatorArity: Option[Int]) derives CanEqual
+
   /** Resolve a source protocol name before registration assigns its reference an identity. Instance
     * checking and generated-instance eligibility share this declaration lookup.
     */
@@ -332,7 +401,18 @@ object ProtocolRegistry:
   private val unitTypeId = stdlibTypeId("Unit")
 
   val empty: ProtocolRegistry =
-    ProtocolRegistry(Map.empty, Map.empty, Map.empty, Map.empty, Map.empty, Map.empty, Map.empty)
+    ProtocolRegistry(
+      protocolSignatures = Map.empty,
+      signatureOwners    = Map.empty,
+      instances          = Map.empty,
+      instanceKeys       = Map.empty,
+      memberBindings     = Map.empty,
+      failedProtocols    = Map.empty,
+      failedSignatures   = Map.empty,
+      failedInstances    = Map.empty,
+      prerequisites      = Map.empty,
+      prerequisiteOrder  = Vector.empty
+    )
 
   /** Resolve aliases through declaration IDs; never use source spelling or native layout as
     * identity. Grouping such as (Int) does not change the key, and the built-in Unit declaration

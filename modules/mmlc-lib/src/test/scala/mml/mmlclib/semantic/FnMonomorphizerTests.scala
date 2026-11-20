@@ -71,6 +71,28 @@ class FnMonomorphizerTests extends BaseEffFunSuite:
         assert(state.module.members.contains(binding(state, "identity")))
       }
 
+  test("member specialization keys include the instance binding and ordered local arguments"):
+    instantiate("""
+      protocol Count 'T = fn count(x: 'T, other: 'U): Int; ;
+      instance Count Int = fn count(x, other) = 1;; ;
+      instance Count Bool = fn count(x, other) = 2;; ;
+      let first = count 1 true;
+      let repeated = count Bool 2 false;
+      let other_local = count 1 7;
+      let other_instance = count true true;
+    """).map { state =>
+      assertEquals(state.errors.map(diagnosticMessage), Vector.empty)
+      val first = selected(state, "first")
+      assertEquals(first.id, selected(state, "repeated").id)
+      assertEquals(
+        List(first, selected(state, "other_local"), selected(state, "other_instance"))
+          .flatMap(_.id)
+          .distinct
+          .size,
+        3
+      )
+    }
+
   test("unused valid templates produce no executable definition"):
     instantiate(identityDefinition + "let value = 7;").map { state =>
       assertEquals(state.errors.map(diagnosticMessage), Vector.empty)

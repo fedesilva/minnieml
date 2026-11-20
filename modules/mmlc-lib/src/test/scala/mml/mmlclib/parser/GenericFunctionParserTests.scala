@@ -153,7 +153,7 @@ class GenericFunctionParserTests extends BaseEffFunSuite:
         justParse(source).map { module =>
           assertEquals(module.members.collect { case b: Bnd => b.name }, List("render", "after"))
           val errors = TermTraversal.collect(lambda(module).body) { case e: ParseTermError => e }
-          assert(errors.exists(_.reason == SyntaxError.InvalidFunctionConstraints))
+          assert(errors.exists(_.reason == SyntaxError.InvalidConstraints))
           val state = CompilerState.empty(module, SourceInfo(source), CompilerConfig.default)
           assert(ParsingErrorChecker.checkModule(state).hasErrors)
         }

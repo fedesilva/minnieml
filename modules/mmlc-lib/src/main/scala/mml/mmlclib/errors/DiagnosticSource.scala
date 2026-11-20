@@ -14,6 +14,7 @@ def diagnosticSources(error: CompilationError): List[SourceOrigin] = error match
   case SemanticError.UndefinedRef(ref, _, _) => List(ref.source)
   case SemanticError.UndefinedTypeRef(ref, _, _) => List(ref.source)
   case SemanticError.UndefinedTypeVariable(variable, _, _) => List(variable.source)
+  case SemanticError.DuplicateConstraintVariable(variable, _, _) => List(variable.source)
   case SemanticError.AmbiguousTypeRef(ref, _, _, _) => List(ref.source)
   case SemanticError.DuplicateName(_, duplicates, _, _) =>
     duplicates.collect { case source: FromSource => source.source }

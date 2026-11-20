@@ -11,10 +11,11 @@ private[parser] case class ParsedConstraints(
   errors:  List[ParseTermError]
 )
 
-/** A valid where clause leaves the following body available when its equals is missing. Malformed
-  * clauses recover to an equals, semicolon, or declaration boundary.
+/** Parses an optional where clause. An absent clause succeeds with no entries or errors. A valid
+  * clause leaves the following body available when its equals is missing. Malformed clauses recover
+  * to an equals, semicolon, or declaration boundary.
   */
-private[parser] def functionConstraintsP(info: SourceInfo)(using P[Any]): P[ParsedConstraints] =
+private[parser] def constraintClauseP(info: SourceInfo)(using P[Any]): P[ParsedConstraints] =
 
   def protocolRefP: P[ProtocolRef] = tokenP(info)(typeIdP).map { token =>
     ProtocolRef(SourceOrigin.Loc(token.location), Name(token.location, token.value))
@@ -50,7 +51,7 @@ private[parser] def functionConstraintsP(info: SourceInfo)(using P[Any]): P[Pars
                   info,
                   start,
                   info.pointAt(result.end),
-                  SyntaxError.InvalidFunctionConstraints
+                  SyntaxError.InvalidConstraints
                 )
               )
             )
@@ -69,9 +70,10 @@ private[parser] def functionTypeAppP(info: SourceInfo)(using P[Any]): P[Term] =
   def calleeP: P[Term] =
     P(
       tokenP(info)(bindingIdP).map(token => Ref(SourceOrigin.Loc(token.location), token.value)) |
-        (pointP(info) ~ "(" ~ calleeP ~ tokenP(info)(")")).map { case (start, callee, close) =>
-          val source = SourceOrigin.Loc(span(start, close.location.end))
-          TermGroup(source, Expr(source, List(callee)))
+        (pointP(info) ~ "(" ~ (calleeP | opRefP(info)) ~ tokenP(info)(")")).map {
+          case (start, callee, close) =>
+            val source = SourceOrigin.Loc(span(start, close.location.end))
+            TermGroup(source, Expr(source, List(callee)))
         }
     )
 

@@ -48,6 +48,7 @@ object ErrorPrinter:
     case SemanticError.UndefinedRef(ref, _, _) => startPosOf(ref)
     case SemanticError.UndefinedTypeRef(typeRef, _, _) => startPosOf(typeRef)
     case SemanticError.UndefinedTypeVariable(variable, _, _) => startPosOf(variable)
+    case SemanticError.DuplicateConstraintVariable(variable, _, _) => startPosOf(variable)
     case SemanticError.AmbiguousTypeRef(typeRef, _, _, _) => startPosOf(typeRef)
     case SemanticError.DuplicateName(_, duplicates, _, _) =>
       duplicates
@@ -189,6 +190,10 @@ object ErrorPrinter:
         s"${Console.RED}${semanticErrorMessage(semantic)} at ${locationOf(typeRef)}${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 
       case SemanticError.UndefinedTypeVariable(variable, member, phase) =>
+        s"${Console.RED}${semanticErrorMessage(semantic)} at ${locationOf(variable)}" +
+          s"${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
+
+      case SemanticError.DuplicateConstraintVariable(variable, _, phase) =>
         s"${Console.RED}${semanticErrorMessage(semantic)} at ${locationOf(variable)}" +
           s"${Console.RESET}\n${Console.YELLOW}Phase: $phase${Console.RESET}"
 

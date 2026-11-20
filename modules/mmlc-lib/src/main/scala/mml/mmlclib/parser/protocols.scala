@@ -12,67 +12,59 @@ import MmlWhitespace.*
 private[parser] def protocolP(info: SourceInfo)(using P[Any]): P[Member] =
   P(
     docCommentP(info) ~ visibilityP.? ~ pointP(info) ~ protocolKw ~
-      tokenP(info)(typeIdP) ~ typeVariableP(info).rep ~ headerEndP(
+      tokenP(info)(typeIdP) ~ typeVariableP(info).rep ~ constraintClauseP(info) ~ headerEndP(
         info,
-        SyntaxError.ProtocolPrerequisites
+        SyntaxError.InvalidProtocolHeader
       ) ~
       protocolCallableP(info).rep ~ requiredBindingTokenP(info, ";") ~~ pointP(info)
-  ).map { case (doc, visibility, start, name, variables, tail, members, endError, end) =>
-    val parameterErrors = Option
-      .when(variables.size != 1)(
-        bindingError(info, start, end, SyntaxError.ProtocolParameterCount)
-      )
-      .toList
-    val headerErrors = tail
-    val memberErrors = members.toList.flatMap { member =>
-      member.errors ++
-        Option.when(member.types.exists(hasTypeApplication))(
-          bindingError(
-            info,
-            member.location.start,
-            member.location.end,
-            SyntaxError.ParameterizedSignature
-          )
-        ) ++
-        Option.when(member.body.nonEmpty)(
-          bindingError(
-            info,
-            member.location.start,
-            member.location.end,
-            SyntaxError.DefaultProtocolImplementation
-          )
-        ) ++
-        Option.when(member.parameters.exists(_.typeAsc.isEmpty) || member.result.isEmpty)(
-          bindingError(
-            info,
-            member.location.start,
-            member.location.end,
-            SyntaxError.MissingSignatureTypes
-          )
-        ) ++
-        Option.when(
-          member.types.flatMap(typeVariables).exists(v => !variables.exists(_.name == v))
-        )(
-          bindingError(
-            info,
-            member.location.start,
-            member.location.end,
-            SyntaxError.MemberTypeVariables
-          )
+  ).map {
+    case (doc, visibility, start, name, variables, constraints, tail, members, endError, end) =>
+      val parameterErrors = Option
+        .when(variables.size != 1)(
+          bindingError(info, start, end, SyntaxError.ProtocolParameterCount)
         )
-    }
-    val errors = parameterErrors ++ headerErrors ++ memberErrors ++ endError
-    variables.toList match
-      case parameter :: Nil if errors.isEmpty =>
-        Protocol(
-          source        = SourceOrigin.Loc(span(start, end)),
-          nameNode      = Name(name.location, name.value),
-          typeParameter = parameter,
-          signatures    = members.toList.flatMap(_.signature),
-          visibility    = visibility.getOrElse(Visibility.Protected),
-          docComment    = doc
-        )
-      case _ => declarationError(info, start, end, errors)
+        .toList
+      val headerErrors = constraints.errors ++ tail
+      val memberErrors = members.toList.flatMap { member =>
+        member.errors ++
+          Option.when(member.types.exists(hasTypeApplication))(
+            bindingError(
+              info,
+              member.location.start,
+              member.location.end,
+              SyntaxError.ParameterizedSignature
+            )
+          ) ++
+          Option.when(member.body.nonEmpty)(
+            bindingError(
+              info,
+              member.location.start,
+              member.location.end,
+              SyntaxError.DefaultProtocolImplementation
+            )
+          ) ++
+          Option.when(member.parameters.exists(_.typeAsc.isEmpty) || member.result.isEmpty)(
+            bindingError(
+              info,
+              member.location.start,
+              member.location.end,
+              SyntaxError.MissingSignatureTypes
+            )
+          )
+      }
+      val errors = parameterErrors ++ headerErrors ++ memberErrors ++ endError
+      variables.toList match
+        case parameter :: Nil if errors.isEmpty =>
+          Protocol(
+            source        = SourceOrigin.Loc(span(start, end)),
+            nameNode      = Name(name.location, name.value),
+            typeParameter = parameter,
+            signatures    = members.toList.flatMap(_.signature),
+            visibility    = visibility.getOrElse(Visibility.Protected),
+            docComment    = doc,
+            constraints   = constraints.entries
+          )
+        case _ => declarationError(info, start, end, errors)
   }
 
 /** Instance members keep omitted annotations and operator attributes absent for signature checking.
@@ -101,14 +93,14 @@ private[parser] def instanceP(info: SourceInfo)(using P[Any]): P[Member] =
           SyntaxError.MissingInstanceBody
         )
       ) ++
-        Option.when(member.types.flatMap(typeVariables).nonEmpty)(
+        member.constraints.headOption.map { entry =>
           bindingError(
             info,
-            member.location.start,
-            member.location.end,
-            SyntaxError.MemberTypeVariables
+            locSpan(entry).start,
+            locSpan(member.constraints.last).end,
+            SyntaxError.InstanceMemberConstraints
           )
-        )
+        }
     }
     val errors = headerErrors ++ memberErrors ++ endError
     if errors.nonEmpty then declarationError(info, start, end, errors)
@@ -123,7 +115,7 @@ private[parser] def instanceP(info: SourceInfo)(using P[Any]): P[Member] =
   }
 
 /** Header recovery stops before the body or the next declaration. */
-private def headerEndP(info: SourceInfo, unsupported: SyntaxError)(using
+private def headerEndP(info: SourceInfo, invalidHeader: SyntaxError)(using
   P[Any]
 ): P[List[ParseTermError]] =
   val context =
@@ -135,7 +127,7 @@ private def headerEndP(info: SourceInfo, unsupported: SyntaxError)(using
     .map { case (start, recovered, missing) =>
       val text = info.slice(start.index, recovered.end).trim
       Option
-        .when(text.nonEmpty)(bindingError(info, start, info.pointAt(recovered.end), unsupported))
+        .when(text.nonEmpty)(bindingError(info, start, info.pointAt(recovered.end), invalidHeader))
         .toList ++ missing
     }
 
@@ -157,7 +149,7 @@ private def protocolCallableP(info: SourceInfo)(using P[Any]): P[ParsedProtocolC
     docCommentP(info) ~ pointP(info) ~ protocolCallableNameP(info) ~ pointP(info) ~
       parsedParametersP(info, TypeContext.Generic(TypeContext.Parameter)) ~
       typeAscP(info, TypeContext.Generic(TypeContext.Operator)) ~
-      precedenceP.? ~ assocP.? ~ unsupportedMemberConstraintsP(info).? ~
+      precedenceP.? ~ assocP.? ~ constraintClauseP(info) ~
       ("=" ~ terminatedBindingExprP(info)).? ~ requiredBindingTokenP(info, ";") ~~ pointP(info)
   ).map {
     case (
@@ -177,7 +169,7 @@ private def protocolCallableP(info: SourceInfo)(using P[Any]): P[ParsedProtocolC
       val name = parsedName.value.map(Name(parsedName.location, _))
       val errors =
         parsedName.error.toList ++ parameters.error ++
-          endError ++ constraints ++
+          endError ++ constraints.errors ++
           Option.when(
             origin == BindingOrigin.Operator && !Set(1, 2).contains(parameters.values.size)
           )(
@@ -194,6 +186,7 @@ private def protocolCallableP(info: SourceInfo)(using P[Any]): P[ParsedProtocolC
         result,
         precedence,
         assoc,
+        constraints.entries,
         body.map { case (expression, bodyEnd) =>
           Lambda(span(lambdaStart, bodyEnd), parameters.values, expression, Nil, typeAsc = result)
         },
@@ -222,16 +215,6 @@ private def protocolCallableNameP(info: SourceInfo)(using
       }
   )
 
-/** A deferred where clause ends before the body or signature terminator. */
-private def unsupportedMemberConstraintsP(info: SourceInfo)(using P[Any]): P[ParseTermError] =
-  val context = Recovery.Context(
-    List("=", ";").map(Recovery.Anchor.Token(_)),
-    declarationStops
-  )
-  P(pointP(info) ~ whereKw ~ recoveryP(info, context)).map { case (start, recovered) =>
-    bindingError(info, start, info.pointAt(recovered.end), SyntaxError.MemberConstraints)
-  }
-
 private def hasTypeApplication(tpe: Type): Boolean =
   TypeTraversal.exists(tpe)(_.isInstanceOf[TypeApplication])
 
@@ -247,6 +230,7 @@ private case class ParsedProtocolCallable(
   result:        Option[Type],
   precedence:    Option[Int],
   associativity: Option[Associativity],
+  constraints:   List[TypeVariableConstraints],
   body:          Option[Lambda],
   doc:           Option[DocComment],
   errors:        List[ParseTermError]
@@ -263,7 +247,8 @@ private case class ParsedProtocolCallable(
     parameters,
     returnType,
     metadata(writtenName),
-    docComment = doc
+    docComment  = doc,
+    constraints = constraints
   )
 
   def instanceMember: Option[ProtocolInstanceMember] = for

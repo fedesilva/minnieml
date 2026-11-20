@@ -17,6 +17,9 @@ samples=(
   "$repo_root/mml/samples/link-zlib.mml"
   "$repo_root/mml/samples/protocol-functions.mml"
   "$repo_root/mml/samples/protocol-operators.mml"
+  "$repo_root/mml/samples/protocol-constraints.mml"
+  "$repo_root/mml/samples/protocol-member-variables.mml"
+  "$repo_root/mml/samples/generic-functions.mml"
 )
 tree-sitter parse --quiet "${samples[@]}"
 

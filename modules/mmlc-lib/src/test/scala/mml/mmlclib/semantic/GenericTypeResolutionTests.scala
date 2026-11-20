@@ -6,6 +6,7 @@ import mml.mmlclib.compiler.{CompilerConfig, CompilerState}
 import mml.mmlclib.lsp.{Diagnostics, Range}
 import mml.mmlclib.parser.SourceInfo
 import mml.mmlclib.test.BaseEffFunSuite
+import mml.mmlclib.util.error.print.ErrorPrinter
 
 class GenericTypeResolutionTests extends BaseEffFunSuite:
 
@@ -197,6 +198,39 @@ class GenericTypeResolutionTests extends BaseEffFunSuite:
         Some(identity(protocol.typeParameter))
       )
     }
+
+  List(
+    "fn duplicate(x: 'T): 'T where 'T: Left, 'T: Right = x;;",
+    "fn duplicate(x: 'T, y: 'U): 'T where 'T: Left, 'U: Left, 'T: Right = x;;",
+    """fn outer(x: 'T): 'T where 'T: Left =
+      fn local(y: 'T): 'T where 'T: Left, 'T: Right = y;;
+      x;
+    ;"""
+  ).zipWithIndex.foreach { (functionSource, index) =>
+    test(s"repeated function constraint variables report their second occurrence: $index"):
+      val code = functionSource + "\nprotocol Left 'T = ; protocol Right 'T = ;"
+      resolve(code).map { state =>
+        assertEquals(state.errors.size, 1)
+        state.errors.head match
+          case SemanticError.DuplicateConstraintVariable(variable, first, _) =>
+            assert(variable.resolvedId.nonEmpty)
+            assertEquals(variable.resolvedId, first.resolvedId)
+            val span = variable.spanOpt.get
+            assert(first.spanOpt.get.start.index < span.start.index)
+            assertEquals(code.substring(span.start.index, span.end.index), "'T")
+            val message     = "Duplicate where entry for 'T; combine its requirements with &"
+            val diagnostics = Diagnostics.fromCompilerState(state)
+            assertEquals(diagnostics.map(_.range), List(Range.fromSrcSpan(span)))
+            assertEquals(diagnostics.map(_.message), List(message))
+            val rendered = ErrorPrinter.prettyPrintSemanticErrors(
+              state.semanticErrors.toList,
+              Some(state.sourceInfo)
+            )
+            assert(rendered.contains(message), rendered)
+            assert(rendered.contains(ErrorPrinter.formatLocation(span)), rendered)
+          case other => fail(s"Expected a duplicate variable, got $other")
+      }
+  }
 
   test("unknown constraint variables and protocols are independent errors"):
     resolve("fn bad(x: 'T): 'T where 'U: Missing = x;;").map { state =>

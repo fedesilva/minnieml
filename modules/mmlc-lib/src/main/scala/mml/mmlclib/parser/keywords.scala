@@ -21,7 +21,7 @@ private[parser] def fnKw[$: P]: P[Unit] = P("fn" ~ wordBoundary)
 /** Parses a protocol declaration. */
 private[parser] def protocolKw[$: P]: P[Unit] = P("protocol" ~ wordBoundary)
 
-/** Recognizes deferred member constraints so the parser can diagnose them explicitly. */
+/** Introduces a constraint clause in a declaration header. */
 private[parser] def whereKw[$: P]: P[Unit] = P("where" ~ wordBoundary)
 
 /** Parses a concrete instance declaration. */

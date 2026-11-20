@@ -62,6 +62,12 @@ object SourceCodeExtractor:
           .map(s => s"\n$s")
           .getOrElse("")
 
+      case SemanticError.DuplicateConstraintVariable(variable, _, _) =>
+        spanOf(variable)
+          .flatMap(span => extractSnippet(sourceInfo, span, nameHighlightSpan = Some(span)))
+          .map(s => s"\n$s")
+          .getOrElse("")
+
       case SemanticError.AmbiguousTypeRef(typeRef, _, _, _) =>
         spanOf(typeRef)
           .flatMap(span => extractSnippet(sourceInfo, span, nameHighlightSpan = Some(span)))

@@ -1,0 +1,256 @@
+[
+  {
+    "text": "protocol Read 'T = fn read(value: 'T): Int;;",
+    "words": {
+      "protocol": [
+        true
+      ]
+    }
+  },
+  {
+    "text": "protocol Strong 'T where 'T: Read & ToString = ;",
+    "words": {
+      "protocol": [
+        true
+      ],
+      "where": [
+        true
+      ]
+    }
+  },
+  {
+    "text": "instance Strong Int = ;",
+    "words": {
+      "instance": [
+        true
+      ]
+    }
+  },
+  {
+    "text": "fn where(where: Int): Int = where;",
+    "words": {
+      "where": [
+        false,
+        false,
+        false
+      ]
+    }
+  },
+  {
+    "text": "fn check(where: Int, value: 'T): Int where 'T: Read = where;",
+    "words": {
+      "where": [
+        false,
+        true,
+        false
+      ]
+    }
+  },
+  {
+    "text": "fn nested(callback: (Int -> Int), where: Int): Int = where;",
+    "words": {
+      "where": [
+        false,
+        false
+      ]
+    }
+  },
+  {
+    "text": "fn multiline(value: 'T): Int",
+    "words": {}
+  },
+  {
+    "text": "  where /* requirement */",
+    "words": {
+      "where": [
+        true
+      ]
+    }
+  },
+  {
+    "text": "    'T: Read = read value;",
+    "words": {}
+  },
+  {
+    "text": "fn outer(): Int =",
+    "words": {}
+  },
+  {
+    "text": "  fn local(value: 'T): Int where 'T: Read = read value;;",
+    "words": {
+      "where": [
+        true
+      ]
+    }
+  },
+  {
+    "text": "  let where = 1;",
+    "words": {
+      "where": [
+        false
+      ]
+    }
+  },
+  {
+    "text": "  where;",
+    "words": {
+      "where": [
+        false
+      ]
+    }
+  },
+  {
+    "text": ";",
+    "words": {}
+  },
+  {
+    "text": "// protocol instance where 'T: Read",
+    "words": {
+      "protocol": [
+        false
+      ],
+      "instance": [
+        false
+      ],
+      "where": [
+        false
+      ]
+    }
+  },
+  {
+    "text": "let text = \"protocol instance where 'T: Read\";",
+    "words": {
+      "protocol": [
+        false
+      ],
+      "instance": [
+        false
+      ],
+      "where": [
+        false
+      ]
+    }
+  },
+  {
+    "text": "fn /* name follows */",
+    "words": {}
+  },
+  {
+    "text": "where(value: 'T): Int where 'T: Read = read value;",
+    "words": {
+      "where": [
+        false,
+        true
+      ]
+    }
+  },
+  {
+    "text": "protocol /* name follows */",
+    "words": {
+      "protocol": [
+        true
+      ]
+    }
+  },
+  {
+    "text": "Other 'T where 'T: Read = ;",
+    "words": {
+      "where": [
+        true
+      ]
+    }
+  },
+  {
+    "text": "let selected = where 'T: ('T -> Int);",
+    "words": {
+      "where": [
+        false
+      ]
+    }
+  },
+  {
+    "text": "fn commented(value: 'T): Int /* = in comment */ where 'T: Read = read value;",
+    "words": {
+      "where": [
+        true
+      ]
+    }
+  },
+  {
+    "text": "protocol StrongComment 'T where 'T // variable",
+    "words": {
+      "protocol": [
+        true
+      ],
+      "where": [
+        true
+      ]
+    }
+  },
+  {
+    "text": "  : Read = ;",
+    "words": {}
+  },
+  {
+    "text": "fn blockComment(value: 'T): Int where 'T /* variable */ : Read = read value;",
+    "words": {
+      "where": [
+        true
+      ]
+    }
+  },
+  {
+    "text": "protocol Apply 'T =",
+    "words": {
+      "where": []
+    }
+  },
+  {
+    "text": "  fn apply(where: 'T, f: 'T -> 'U): 'U where 'U: Read;",
+    "words": {
+      "where": [
+        false,
+        true
+      ]
+    }
+  },
+  {
+    "text": "  op ==>(where: 'T, f: 'T -> 'U): 'U 40 left",
+    "words": {
+      "where": [
+        false
+      ]
+    }
+  },
+  {
+    "text": "    where 'U: Read & Describe;",
+    "words": {
+      "where": [
+        true
+      ]
+    }
+  },
+  {
+    "text": "  op where(value: 'T): 'U where 'U: Read;",
+    "words": {
+      "where": [
+        false,
+        true
+      ]
+    }
+  },
+  {
+    "text": ";",
+    "words": {
+      "where": []
+    }
+  },
+  {
+    "text": "let after = where 3;",
+    "words": {
+      "where": [
+        false
+      ]
+    }
+  }
+]

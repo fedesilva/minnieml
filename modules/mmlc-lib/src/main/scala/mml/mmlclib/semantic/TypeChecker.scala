@@ -298,50 +298,61 @@ object TypeChecker:
         .orElse(direct)
         .filterNot(failedType(_, context))
 
-    // A known operand, such as 1.0 in value + 1.0, constrains the protocol parameter. The
-    // registration set alone supplies no evidence, and unresolved alternatives remain unresolved.
-    def callSignatures(
+    // Each viable declaration contributes parameter types in the order of the written operands.
+    // Drop constructor operands supplied by its type-prefix reading so an occurrence of a lambda
+    // parameter has the same position in every list. An unresolved candidate prevents inference.
+    def parameterLists(
       ref:          Ref,
       applications: List[App],
       state:        LambdaInferenceState
-    ): List[TypeFn] =
+    ): List[List[Type]] =
       if !needsProtocolSelection(ref, module.resolvables) then
-        referenceType(ref, state).flatMap(extractTypeFn(_, module)).toList
+        referenceType(ref, state).flatMap(extractTypeFn(_, module)).toList.map(_.paramTypes.toList)
       else
-        val known = applications.map(application => argumentType(application.arg, state))
-        ProtocolSelection
-          .candidates(ref, context.protocols, module.resolvables)
-          .toOption
-          .toList
-          .flatMap { choices =>
-            val evidence = ProtocolSelection.matchSignatures(
-              choices,
-              applications.zip(known).map { (application, tpe) =>
-                ProtocolSelection.ApplicationEvidence(
-                  tpe,
-                  calleeAscriptions(application).filterNot(failedType(_, context)),
-                  application.arg.source
-                )
-              },
-              None,
-              module.resolvables
-            )
-            if evidence.exists(_.evidence == ProtocolSelection.SignatureEvidence.Unknown) then Nil
-            else
-              (choices.declarationIds ++ evidence.flatMap(_.implementationIds)).distinct
-                .flatMap { id =>
+        val viable = eligibleCandidates(ref, context).toOption
+          .flatMap { candidates =>
+            callableReadings(ref, candidates).traverse { reading =>
+              val apps  = reading.constructors ++ applications
+              val known = apps.map(app => argumentType(app.arg, state))
+              val evidence = ProtocolSelection.matchSignatures(
+                reading.choices,
+                apps.zip(known).map { (app, tpe) =>
+                  ProtocolSelection.ApplicationEvidence(
+                    tpe,
+                    calleeAscriptions(app).filterNot(failedType(_, context)),
+                    app.arg.source
+                  )
+                },
+                None,
+                module.resolvables,
+                explicitTypes = reading.ref.explicitTypeArgs
+              )
+              Option.unless(
+                evidence.exists(_.evidence == ProtocolSelection.SignatureEvidence.Unknown)
+              ) {
+                val ordinary = reading.choices.declarationIds ++ evidence
+                  .filter(_.memberCall.isEmpty)
+                  .flatMap(_.implementationIds)
+                val declarations = ordinary.distinct.flatMap { id =>
                   module.resolvables
                     .lookup(id)
                     .collect { case value: Typeable => value }
                     .flatMap(value => value.typeSpec.orElse(value.typeAsc))
                     .flatMap(extractTypeFn(_, module))
                 }
-                .filter { function =>
-                  known.zip(function.paramTypes.toList).forall { (actual, expected) =>
-                    actual.forall(areTypesCompatible(expected, _, module))
-                  }
+                val members = evidence
+                  .filter(_.implementationIds.nonEmpty)
+                  .flatMap(_.memberCall.map(_.callable))
+                (declarations ++ members).map(_.paramTypes.toList).collect {
+                  case inputs if known.zip(inputs).forall { (actual, expected) =>
+                        actual.forall(areTypesCompatible(expected, _, module))
+                      } =>
+                    inputs.drop(reading.constructors.size)
                 }
+              }
+            }
           }
+        viable.fold(List.empty[List[Type]])(_.flatten)
 
     def walkAppFn(
       fn:    Callee,
@@ -382,9 +393,9 @@ object TypeChecker:
     def walkApp(app: App, state: LambdaInferenceState): LambdaInferenceState =
       val inferredFromCall = ApplicationQueries.applicationNodes(app) match
         case (ref: Ref, applications) =>
-          val signatures = callSignatures(ref, applications, state)
+          val signatures = parameterLists(ref, applications, state)
           applications.zipWithIndex.foldLeft(state) { case (current, (application, position)) =>
-            val possible = signatures.flatMap(_.paramTypes.toList.lift(position))
+            val possible = signatures.flatMap(_.lift(position))
             possible.headOption
               .filter { expected =>
                 possible.size == signatures.size &&
@@ -907,8 +918,14 @@ object TypeChecker:
           )
           checked <- inferred match
             case Left(failure) =>
+              val needsContext =
+                applications.isEmpty && ref.explicitTypeArgs.isEmpty && expectedType.isEmpty
+              val causes = failure match
+                case _: GenericInference.Failure.MissingArguments if needsContext =>
+                  context.enclosingFailure
+                case _ => Vector.empty
               for
-                roots <- report(TypeError.GenericInferenceFailed(ref, failure, phaseName))
+                roots <- report(TypeError.GenericInferenceFailed(ref, failure, phaseName), causes)
                 result <- checkApplicationChain(Checked[Callee](ref, roots), applications, context)
               yield result
             case Right(substitution) =>
@@ -917,27 +934,9 @@ object TypeChecker:
                 typeArgs = lambda.typeParams.flatMap(_.resolvedId.flatMap(substitution.get))
               )
               for
-                failures <- lambda.constraints.traverse { requirement =>
-                  val tpe = TypeSubstitution(requirement.variable, substitution)
-                  requirement.constraints
-                    .traverse { protocol =>
-                      if protocol.resolvedId.exists(
-                          ProtocolSelection.satisfiesRequirement(
-                            _,
-                            tpe,
-                            context.requirements,
-                            context.protocols,
-                            context.module.resolvables
-                          )
-                        )
-                      then Vector.empty[DiagnosticId].pure[Check]
-                      else
-                        report(TypeError.MissingGenericRequirement(ref, protocol, tpe, phaseName))
-                    }
-                    .map(_.flatten)
-                }
+                failures <- checkRequirements(ref, lambda.constraints, substitution, context)
                 result <- checkApplicationChain(
-                  Checked[Callee](selected, failures.flatten.toVector),
+                  Checked[Callee](selected, failures),
                   applications,
                   context,
                   probes.map(probe => Option.when(probe.reusable)(probe.value))
@@ -961,6 +960,45 @@ object TypeChecker:
           )
         }
 
+  /** Returns each unsatisfied protocol paired with its substituted type. A concrete type needs a
+    * usable instance. If the type is a caller variable, a constraint declared on that variable must
+    * name the required protocol or one that requires it directly or transitively.
+    */
+  private def missingRequirements(
+    requirements: List[TypeVariableConstraints],
+    substitution: Map[String, Type],
+    context:      CheckContext
+  ): List[(ProtocolRef, Type)] =
+    requirements.flatMap { requirement =>
+      val tpe = TypeSubstitution(requirement.variable, substitution)
+      requirement.constraints.collect {
+        case protocol
+            if !protocol.resolvedId.exists(
+              ProtocolSelection.satisfiesRequirement(
+                _,
+                tpe,
+                context.requirements,
+                context.protocols,
+                context.module.resolvables
+              )
+            ) =>
+          protocol -> tpe
+      }
+    }
+
+  /** Verify every written requirement at the use of a generic callable. */
+  private def checkRequirements(
+    ref:          Ref,
+    requirements: List[TypeVariableConstraints],
+    substitution: Map[String, Type],
+    context:      CheckContext
+  ): Check[Vector[DiagnosticId]] =
+    missingRequirements(requirements, substitution, context)
+      .traverse { (protocol, tpe) =>
+        report(TypeError.MissingGenericRequirement(ref, protocol, tpe, phaseName))
+      }
+      .map(_.flatten.toVector)
+
   /** Infers a call's type arguments, using each partial solution to check unresolved callbacks.
     * Every retry supplies at least one previously unknown argument type, bounding the process by
     * the argument count. Probes share the diagnostic checkpoint and never commit inferred trees.
@@ -976,49 +1014,58 @@ object TypeChecker:
     checkpoint:    DiagnosticStore
   ): Either[GenericInference.Failure, Map[String, Type]] =
 
-    @tailrec
-    def infer(evidence: List[Option[Type]]): Either[GenericInference.Failure, Map[String, Type]] =
-      GenericInference.inferPartial(
-        callable,
-        parameters,
-        evidence,
-        expectedType,
-        explicitTypes,
-        context.module.resolvables,
-        applications.map(calleeAscriptions)
-      ) match
+    val call = GenericInference.Call(
+      probes.map(probe => probe.knownType.orElse(genericArgumentScheme(probe, context))),
+      expectedType,
+      applications.map(calleeAscriptions)
+    )
+    GenericInference.inferCallable(
+      callable,
+      parameters,
+      call,
+      Nil,
+      explicitTypes,
+      parameters,
+      context.module.resolvables,
+      refineCallbacks(applications, context, checkpoint)
+    )
 
-        case Left(failure) => failure.asLeft
+  private def refineCallbacks(
+    applications: List[App],
+    context:      CheckContext,
+    checkpoint:   DiagnosticStore
+  ): GenericInference.RefineArguments =
+    (callable, evidence, missing) =>
+      contextualCallbackEvidence(callable, applications.zip(evidence), missing, context, checkpoint)
 
-        case Right(partial) =>
-          val missing = parameters.flatMap(_.resolvedId).toSet -- partial.substitution.keySet
-          val next = contextualCallbackEvidence(
-            TypeSubstitution(callable, partial.substitution),
-            applications.zip(evidence),
-            missing,
-            context,
-            checkpoint
-          )
-          if next == evidence then partial.complete
-          else infer(next)
+  /** Collects an operand's source, known type or generic scheme, and valid callee annotations for
+    * protocol selection. Direct calls and later uses of a partial share this evidence.
+    */
+  private def applicationEvidence(
+    application: App,
+    probe:       ArgumentProbe,
+    context:     CheckContext
+  ): ProtocolSelection.ApplicationEvidence =
+    ProtocolSelection.ApplicationEvidence(
+      probe.knownType,
+      calleeAscriptions(application).filterNot(failedType(_, context)),
+      application.arg.source,
+      Option.when(probe.knownType.isEmpty)(genericArgumentScheme(probe, context)).flatten
+    )
 
-    val initial = probes.map { probe =>
-      probe.knownType.orElse(
-        singleCallee(probe.original)
-          .collect {
-            case argument: Ref if argument.explicitTypeArgs.isEmpty => argument
-          }
-          .filter(functionTemplate(_, context).isDefined)
-          .flatMap { argument =>
-            context.params
-              .get(argument.name)
-              .filter(_.id == argument.resolvedId)
-              .flatMap(_.typeSpec)
-              .orElse(resolveRefType(argument, context.module))
-          }
-      )
-    }
-    infer(initial)
+  private def genericArgumentScheme(probe: ArgumentProbe, context: CheckContext): Option[Type] =
+    singleCallee(probe.original)
+      .collect {
+        case argument: Ref if argument.explicitTypeArgs.isEmpty => argument
+      }
+      .filter(functionTemplate(_, context).isDefined)
+      .flatMap { argument =>
+        context.params
+          .get(argument.name)
+          .filter(_.id == argument.resolvedId)
+          .flatMap(_.typeSpec)
+          .orElse(resolveRefType(argument, context.module))
+      }
 
   /** Collects callback types from known parameter types at each application boundary. Unknown
     * callee variables cannot seed a lambda parameter or constrain its result: the body supplies
@@ -1205,6 +1252,23 @@ object TypeChecker:
         Checked(result, checked.roots)
       case _ => checked
 
+  /** Checks the operand against its expected parameter type when one is available. A bare generic
+    * callback that lost this context inherits the failed callee's diagnostic causes. Independently
+    * invalid operands retain their own diagnostics.
+    */
+  private def checkOperand(
+    operand:  Expr,
+    callee:   Checked[Callee],
+    expected: Option[Type],
+    context:  CheckContext
+  ): Check[Expr] =
+    val roots = if expected.isEmpty then resultRoots(callee, context) else Vector.empty
+    val argumentContext =
+      if roots.nonEmpty && bareRef(operand).exists(functionTemplate(_, context).isDefined) then
+        context.copy(enclosingFailure = roots)
+      else context.independent
+    checkExpr(operand, argumentContext, expected)
+
   /** Check every supplied argument before deciding whether a concrete signature applies. A returned
     * callable starts another invocation naturally when validateApplication consumes the previous
     * signature's last parameter.
@@ -1226,7 +1290,7 @@ object TypeChecker:
             expected
               .forall(tpe => value.typeSpec.exists(areTypesCompatible(tpe, _, context.module)))
           }
-          .fold(checkExpr(original.arg, context.independent, expected))(_.pure[Check])
+          .fold(checkOperand(original.arg, constrained, expected, context))(_.pure[Check])
         checked <- validateApplication(
           original.copy(fn = constrained.value, arg = argument),
           constrained,
@@ -1246,15 +1310,24 @@ object TypeChecker:
   ): SelectionTrial =
     val selected =
       ref.copy(resolvedId = bindingId.some, candidateIds = List(bindingId), typeSpec = None)
-    checkSelectionTrial(
-      bindingId,
-      checkRef(selected, context).widen,
-      applications,
-      probes,
-      context,
-      expectedType,
-      checkpoint
-    )
+    if functionTemplate(selected, context).nonEmpty then
+      selectionTrial(
+        bindingId,
+        checkGenericInstantiation(selected, applications, context, expectedType),
+        context,
+        expectedType,
+        checkpoint
+      )
+    else
+      checkSelectionTrial(
+        bindingId,
+        checkRef(selected, context).widen,
+        applications,
+        probes,
+        context,
+        expectedType,
+        checkpoint
+      )
 
   /** Checks one candidate from an isolated diagnostic checkpoint. Concrete declarations and
     * declared abstract operations supply their own root; argument reuse and applicability share
@@ -1278,6 +1351,15 @@ object TypeChecker:
         probes.map(probe => Option.when(probe.reusable)(probe.value))
       )
     yield result
+    selectionTrial(bindingId, checking, context, expectedType, checkpoint)
+
+  private def selectionTrial(
+    bindingId:    String,
+    checking:     Check[Checked[Callee]],
+    context:      CheckContext,
+    expectedType: Option[Type],
+    checkpoint:   DiagnosticStore
+  ): SelectionTrial =
     val (diagnostics, checked) = checking.run(checkpoint).value
     val newFailure             = hasPrimarySince(diagnostics, checkpoint)
     val expectedMatches = expectedType.forall { expected =>
@@ -1287,8 +1369,99 @@ object TypeChecker:
     // cannot favor another implementation with the same signature.
     SelectionTrial(bindingId, checked, diagnostics, !newFailure && expectedMatches)
 
-  /** Select a concrete callable from supplied arguments and, when needed, uses of its result.
-    * Local-use evidence is lazy so already constrained calls do not scan their continuation.
+  /** Explicit type arguments restrict both preliminary inference and final selection to generics.
+    */
+  private def eligibleCandidates(
+    ref:     Ref,
+    context: CheckContext
+  ): Either[ProtocolLookupError, ProtocolSelection.CandidateSet] =
+    ProtocolSelection.candidates(ref, context.protocols, context.module.resolvables).map {
+      choices =>
+        if ref.explicitTypeArgs.isEmpty then choices
+        else
+          choices.copy(
+            declarationIds = choices.declarationIds.filter(id =>
+              functionTemplate(ref.copy(resolvedId = id.some), context)
+                .exists(_.typeParams.nonEmpty)
+            ),
+            signatures = choices.signatures.filter(_.signature.typeParams.nonEmpty)
+          )
+    }
+
+  /** A possible split between types and operands. Constructors between this prefix and the longest
+    * viable prefix are additional operands. Any later operands are shared by all readings.
+    */
+  private case class CallableReading(
+    ref:          Ref,
+    constructors: List[App],
+    choices:      ProtocolSelection.CandidateSet
+  )
+
+  /** Builds a callee for each possible explicit type prefix, together with the declarations
+    * accepting that prefix and the constructor operands needed before the shared arguments.
+    */
+  private def callableReadings(
+    ref:     Ref,
+    choices: ProtocolSelection.CandidateSet
+  ): List[CallableReading] =
+    ref.argumentPrefixes match
+      case Nil => List(CallableReading(ref, Nil, choices))
+      case prefixes =>
+        prefixes.map { prefix =>
+          val root = ref.copy(
+            explicitTypeArgs = ref.explicitTypeArgs.map(_.take(prefix.size)),
+            candidateIds     = prefix.candidateIds,
+            argumentPrefixes = Nil
+          )
+          val candidates = choices.copy(
+            declarationIds = choices.declarationIds.filter(prefix.candidateIds.contains),
+            signatures =
+              choices.signatures.filter(_.signature.id.exists(prefix.candidateIds.contains))
+          )
+          val constructors = prefix.constructors.map { value =>
+            val source = root.spanOpt
+              .zip(value.spanOpt)
+              .map { (start, end) => SourceOrigin.Loc(SrcSpan(start.start, end.end)) }
+              .getOrElse(value.source)
+            App(source, root, Expr(value.source, List(value)))
+          }
+          CallableReading(root, constructors, candidates)
+        }
+
+  /** Argument evidence for one reading. Each probe describes the application at the same position,
+    * including operands contributed by that reading's constructor prefix.
+    */
+  private case class CallableInput(
+    ref:          Ref,
+    applications: List[App],
+    probes:       List[ArgumentProbe],
+    supplied:     List[ProtocolSelection.ApplicationEvidence],
+    choices:      ProtocolSelection.CandidateSet
+  ):
+    def signatureUses(
+      uses: List[ProtocolSelection.UseEvidence]
+    ): List[ProtocolSelection.UseEvidence] =
+      uses.map(use => use.copy(applications = supplied ++ use.applications))
+
+  private def callableInputs(
+    ref:          Ref,
+    applications: List[App],
+    probes:       List[ArgumentProbe],
+    choices:      ProtocolSelection.CandidateSet,
+    context:      CheckContext,
+    checkpoint:   DiagnosticStore
+  ): List[CallableInput] =
+    callableReadings(ref, choices).map { reading =>
+      val apps      = reading.constructors ++ applications
+      val extra     = reading.constructors.map(app => probeArgument(app.arg, context, checkpoint))
+      val arguments = extra ++ probes
+      val supplied =
+        apps.zip(arguments).map { (app, probe) => applicationEvidence(app, probe, context) }
+      CallableInput(reading.ref, apps, arguments, supplied, reading.choices)
+    }
+
+  /** Selects a callable from its operands, expected type, and any required later uses. A caller's
+    * declared constraint can select a protocol signature before its receiver becomes concrete.
     */
   private def selectCallable(
     ref:          Ref,
@@ -1303,12 +1476,7 @@ object TypeChecker:
       // Failed annotations supply no type evidence; independently known arguments remain usable.
       val selectionExpected = expectedType.filterNot(failedType(_, context))
       val probes            = applications.map(app => probeArgument(app.arg, context, checkpoint))
-      val candidates = ProtocolSelection.candidates(
-        ref,
-        context.protocols,
-        context.module.resolvables
-      )
-      candidates match
+      eligibleCandidates(ref, context) match
         case Left(error) =>
           failedSelection(
             ref,
@@ -1320,20 +1488,23 @@ object TypeChecker:
           )
 
         case Right(choices) =>
-          val applicationEvidence = applications.zip(probes).map { (application, probe) =>
-            ProtocolSelection.ApplicationEvidence(
-              probe.knownType,
-              calleeAscriptions(application).filterNot(failedType(_, context)),
-              application.arg.source
+          val inputs = callableInputs(ref, applications, probes, choices, context, checkpoint)
+
+          def matchUses(uses: List[ProtocolSelection.UseEvidence]) = inputs.map { input =>
+            input -> ProtocolSelection.matchSignatures(
+              input.choices,
+              input.supplied,
+              selectionExpected,
+              context.module.resolvables,
+              input.signatureUses(uses),
+              selectionExpected.fold(ref.source)(_.source),
+              input.ref.explicitTypeArgs,
+              refineCallbacks(input.applications, context, checkpoint)
             )
           }
-          val suppliedEvidence = ProtocolSelection.matchSignatures(
-            choices,
-            applicationEvidence,
-            selectionExpected,
-            context.module.resolvables,
-            expectedSource = selectionExpected.fold(ref.source)(_.source)
-          )
+
+          val initial          = matchUses(Nil)
+          val suppliedEvidence = initial.flatMap(_._2)
           val suppliedCandidates = choices.declarationIds ++
             suppliedEvidence.flatMap(_.implementationIds)
 
@@ -1348,55 +1519,91 @@ object TypeChecker:
 
           // Later uses constrain the initializer's result. Signature matching needs the supplied
           // prefix as well, while concrete candidate checks start at the remaining type.
-          val signatureUses = uses.map { use =>
-            use.copy(applications = applicationEvidence ++ use.applications)
-          }
-          val evidence =
-            if signatureUses.isEmpty then suppliedEvidence
-            else
-              ProtocolSelection.matchSignatures(
-                choices,
-                applicationEvidence,
-                selectionExpected,
-                context.module.resolvables,
-                signatureUses,
-                selectionExpected.fold(ref.source)(_.source)
-              )
+          val readings = if uses.isEmpty then initial else matchUses(uses)
+          val evidence = readings.flatMap(_._2)
 
-          val matching = evidence.flatMap(_.implementationIds)
-          // An expected parameter type cannot repair an independent operand error. Trying each
-          // candidate would only repeat the same failed subtree, once at every enclosing call.
-          val trials =
-            if probes.exists(_.independentErrors.nonEmpty) then Nil
-            else
-              (choices.declarationIds ++ matching).distinct.map { id =>
-                trySelection(ref, id, applications, probes, context, selectionExpected, checkpoint)
-              }
-          val constrained = ProtocolSelection
-            .constrainedCandidates(
-              evidence,
-              context.requirements,
-              context.module.resolvables
-            )
-            .flatMap { candidate =>
-              candidate.signature.id.map { id =>
-                val selected = ref.copy(
-                  resolvedId   = id.some,
-                  candidateIds = List(id),
-                  typeSpec     = candidate.callableType.some,
-                  protocolType = candidate.protocolType.some
+          def memberTrial(
+            input:   CallableInput,
+            id:      String,
+            matched: ProtocolSelection.SignatureMatch,
+            root:    Ref
+          ): SelectionTrial =
+            val selected = matched.memberCall match
+              case Some(call) =>
+                val typed = root.copy(typeSpec = call.callable.some, typeArgs = call.arguments)
+                checkRequirements(
+                  ref,
+                  matched.registered.signature.constraints,
+                  call.substitution,
+                  context
                 )
-                checkSelectionTrial(
+                  .map(roots => Checked[Callee](typed, roots))
+              case None if root.protocolType.nonEmpty => Checked[Callee](root).pure[Check]
+              case None => checkRef(root, context).widen[Checked[Callee]]
+
+            checkSelectionTrial(
+              id,
+              selected,
+              input.applications,
+              input.probes,
+              context,
+              selectionExpected,
+              checkpoint
+            )
+
+          val trials = readings.flatMap { (input, matches) =>
+            if input.probes.exists(_.independentErrors.nonEmpty) then Nil
+            else
+              val ordinary = input.choices.declarationIds.map { id =>
+                trySelection(
+                  input.ref,
                   id,
-                  Checked[Callee](selected).pure[Check],
-                  applications,
-                  probes,
+                  input.applications,
+                  input.probes,
                   context,
                   selectionExpected,
                   checkpoint
                 )
               }
+              ordinary ++ matches.flatMap { matched =>
+                matched.implementationIds.map { id =>
+                  memberTrial(
+                    input,
+                    id,
+                    matched,
+                    input.ref.copy(resolvedId = id.some, candidateIds = List(id), typeSpec = None)
+                  )
+                }
+              }
+          }
+
+          val abstractReadings = readings.map { (input, matches) =>
+            input -> ProtocolSelection.constrainedCandidates(
+              matches,
+              context.requirements,
+              context.protocols,
+              context.module.resolvables
+            )
+          }
+          val abstractCandidates = abstractReadings.flatMap(_._2)
+          val constrained = abstractReadings.flatMap { (input, candidates) =>
+            candidates.flatMap { candidate =>
+              candidate.signature.id.map { id =>
+                memberTrial(
+                  input,
+                  id,
+                  candidate.matched,
+                  input.ref.copy(
+                    resolvedId   = id.some,
+                    candidateIds = List(id),
+                    typeSpec     = candidate.callableType.some,
+                    protocolType = candidate.protocolType.some
+                  )
+                )
+              }
             }
+          }
+
           val applicable = (trials ++ constrained).filter { trial =>
             trial.applicable && trial.checked.value.typeSpec.exists { tpe =>
               ProtocolSelection.matchesUses(tpe, uses, context.module.resolvables)
@@ -1411,7 +1618,8 @@ object TypeChecker:
                 case ProtocolSelection.SignatureMatch(
                       registered,
                       SignatureEvidence.Concrete(tpe, _),
-                      Nil
+                      Nil,
+                      _
                     ) =>
                   ProtocolError.MissingInstance(ref, registered.protocol, tpe)
               }
@@ -1429,17 +1637,17 @@ object TypeChecker:
                             result.registered.implementations.flatMap(_.binding.id)
                           case _ => Nil
                       }
-                  val uses =
-                    ProtocolSelection.UseEvidence(
-                      applicationEvidence,
-                      selectionExpected
-                    ) :: signatureUses
-                  selectionAlternatives(
-                    choices,
-                    ids,
-                    uses,
-                    context
-                  )
+                  readings.flatMap { (input, matches) =>
+                    selectionAlternatives(
+                      matches,
+                      input.choices.declarationIds.toSet,
+                      ids,
+                      ProtocolSelection.UseEvidence(input.supplied, selectionExpected) :: input
+                        .signatureUses(uses),
+                      abstractCandidates,
+                      context
+                    )
+                  }
               val error =
                 if applicable.size > 1 then ProtocolError.AmbiguousSelection(ref, alternatives)
                 else if needsEvidence then
@@ -1455,7 +1663,8 @@ object TypeChecker:
                 case matched @ ProtocolSelection.SignatureMatch(
                       _,
                       SignatureEvidence.Concrete(variable: TypeVariable, _),
-                      Nil
+                      Nil,
+                      _
                     ) if constrained.isEmpty =>
                   val protocol = matched.registered.protocol
                   TypeError.MissingGenericRequirement(
@@ -1465,8 +1674,32 @@ object TypeChecker:
                     phaseName
                   )
               }
-              undeclared match
-                case Some(failure) =>
+              val genericFailure = evidence match
+                case matched :: Nil
+                    if choices.declarationIds.isEmpty &&
+                      !matched.evidence.isInstanceOf[SignatureEvidence.Conflicting] =>
+                  matched.inference
+                    .flatMap(_.left.toOption)
+                    .map(TypeError.GenericInferenceFailed(ref, _, phaseName))
+                case Nil if choices.declarationIds.isEmpty && ref.explicitTypeArgs.nonEmpty =>
+                  Some(
+                    TypeError.GenericInferenceFailed(
+                      ref,
+                      GenericInference.Failure
+                        .TypeArgumentCount(0, ref.explicitTypeArgs.toList.flatten.size),
+                      phaseName
+                    )
+                  )
+                case _ => None
+              val uniqueGenericTrial = (trials ++ constrained) match
+                case trial :: Nil
+                    if evidence.exists(_.memberCall.nonEmpty) && !trial.applicable &&
+                      hasPrimarySince(trial.diagnostics, checkpoint) =>
+                  Some(trial)
+                case _ => None
+              (undeclared.orElse(genericFailure), uniqueGenericTrial) match
+                case (_, Some(trial)) => State.set(trial.diagnostics).as(trial.checked)
+                case (Some(failure), _) if probes.forall(_.independentErrors.isEmpty) =>
                   report(failure).map { roots =>
                     val result = applications.zip(probes).foldLeft[Callee](ref) {
                       case (function, (original, probe)) =>
@@ -1474,7 +1707,7 @@ object TypeChecker:
                     }
                     Checked(result, roots)
                   }
-                case None =>
+                case _ =>
                   failedSelection(ref, applications, probes, error, expectedType, context)
     }
 
@@ -1503,10 +1736,19 @@ object TypeChecker:
         .minByOption(_.source.spanOpt.map(span => span.end.index - span.start.index))
         .fold(requirement.source)(_.source)
 
+    def solvedLocalsSatisfyRequirements(
+      matched: ProtocolSelection.SignatureMatch,
+      locals:  Map[String, Type]
+    ) =
+      val known = matched.registered.signature.constraints
+        .filter(_.variable.resolvedId.exists(locals.contains))
+      missingRequirements(known, locals, context).isEmpty
+
     val conflicts = evidence.flatMap { matched =>
       matched.evidence match
 
-        case ProtocolSelection.SignatureEvidence.Conflicting(requirements) =>
+        case ProtocolSelection.SignatureEvidence.Conflicting(requirements, locals)
+            if solvedLocalsSatisfyRequirements(matched, locals) =>
           NonEmptyList.fromList(requirements).map { required =>
             val available = matched.registered.implementations.map(_.typeKey).toSet
             val missing = requirements
@@ -1528,32 +1770,54 @@ object TypeChecker:
       ProtocolError.ConflictingUses(ref, context.bindingName, groups)
     }
 
-  /** Diagnostic choices use only concrete signatures compatible with the evidence already known.
-    * This does not check expressions or supply evidence to instance selection.
+  /** Diagnostic choices name compatible callables with their protocol and instantiated type.
+    * Abstract candidates retain the caller's rigid variable instead of requiring an instance.
     */
   private def selectionAlternatives(
-    choices: ProtocolSelection.CandidateSet,
-    ids:     List[String],
-    uses:    List[ProtocolSelection.UseEvidence],
-    context: CheckContext
+    matches:            List[ProtocolSelection.SignatureMatch],
+    ordinaryIds:        Set[String],
+    ids:                List[String],
+    uses:               List[ProtocolSelection.UseEvidence],
+    abstractCandidates: List[ProtocolSelection.ConstrainedCandidate],
+    context:            CheckContext
   ): List[ProtocolAlternative] =
+
     val index = context.module.resolvables
-    val owners = choices.signatures.flatMap { registered =>
-      registered.implementations.flatMap { implementation =>
-        implementation.binding.id.map(_ -> registered.protocol.name)
-      }
+    val owners = matches.flatMap { matched =>
+      val registered = matched.registered
+      (registered.signature.id.toList ++ registered.implementations.flatMap(_.binding.id))
+        .map(_ -> matched)
     }.toMap
+
     ids.distinct
+      .filter(id => ordinaryIds.contains(id) || owners.contains(id))
       .flatMap { id =>
-        index.lookup(id).collect { case binding: Bnd => binding }.flatMap { binding =>
-          binding.typeSpec
-            .filterNot(failedType(_, context))
-            .filter(ProtocolSelection.matchesUses(_, uses, index))
-            .map { tpe =>
-              ProtocolAlternative(owners.get(id), DeclarationQueries.sourceName(binding), tpe)
+        index.lookup(id).flatMap {
+
+          case binding: Bnd =>
+            val owner = owners.get(id)
+            owner.flatMap(_.memberCall.map(_.callable)).orElse(binding.typeSpec).map { tpe =>
+              ProtocolAlternative(
+                owner.map(_.registered.protocol.name),
+                DeclarationQueries.sourceName(binding),
+                tpe
+              )
             }
+
+          case signature: ProtocolSignature =>
+            abstractCandidates.find(_.signature.id.contains(id)).map { candidate =>
+              ProtocolAlternative(
+                owners.get(id).map(_.registered.protocol.name),
+                signature.meta.originalName,
+                candidate.callableType
+              )
+            }
+
+          case _ => None
         }
       }
+      .filterNot(alternative => failedType(alternative.functionType, context))
+      .filter(alternative => ProtocolSelection.matchesUses(alternative.functionType, uses, index))
 
   /** Context-dependent probe errors are provisional: an expected lambda or hole type may resolve
     * them. Independent argument errors are emitted once when no selection can be committed.
@@ -1735,7 +1999,7 @@ object TypeChecker:
     expectedType: Option[Type],
     checkpoint:   DiagnosticStore
   ): List[ProtocolSelection.UseEvidence] =
-    import ProtocolSelection.{ApplicationEvidence, UseEvidence}
+    import ProtocolSelection.UseEvidence
 
     def tracked(ref: Ref, aliases: Set[String]): Boolean =
       ref.resolvedId.exists(aliases.contains)
@@ -1788,10 +2052,10 @@ object TypeChecker:
                 List(
                   UseEvidence(
                     applications.map { application =>
-                      ApplicationEvidence(
-                        known(application.arg, scope),
-                        calleeAscriptions(application).filterNot(failedType(_, scope)),
-                        application.arg.source
+                      applicationEvidence(
+                        application,
+                        probeArgument(application.arg, scope, checkpoint),
+                        scope
                       )
                     },
                     usable(app.typeAsc.orElse(expected), scope),
@@ -1952,7 +2216,7 @@ object TypeChecker:
         case _ => checkCallee(app.fn, context, None)
       constrained <- validateCalleeAscriptions(fn, calleeAscriptions(app), context)
       expected = expectedArgumentType(constrained.value, context.module)
-      arg <- checkExpr(app.arg, context.independent, expected)
+      arg <- checkOperand(app.arg, constrained, expected, context)
       checked <- validateApplication(
         app.copy(fn = constrained.value, arg = arg),
         constrained,

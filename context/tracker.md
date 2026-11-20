@@ -21,13 +21,6 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 
 ## Active Tasks
 
-### Protocol member constraints
-
-- **Tracker:** [Protocol member constraints](tasks/protocol-member-constraints.md)
-- **Status:** design
-- **Current focus:** Define `where` constraints on protocol member signatures, including variable
-  scope, instance conformance, and call-site obligations, using the generic function machinery.
-
 ### Intrinsic arrays
 
 - **Tracker:** [Intrinsic arrays](tasks/intrinsic-arrays.md)
@@ -93,3 +86,10 @@ Narrow fixes that do not address the underlying problem are to be shunned.
 - **Status:** deferred
 - **Current focus:** Draft staged repair using shared functional traversal tools across compiler
   phases, including availability queries and LLVM emission.
+
+### Prelude source representation parity
+
+- **Tracker:** [Make synthetic prelude definitions expressible in MML](tasks/prelude-source-representation-parity.md)
+- **Status:** planned
+- **Current focus:** Low priority. Support native void and pointers to MML types such as
+  `*String`; survey and reconcile other transcription gaps, including destructor names.

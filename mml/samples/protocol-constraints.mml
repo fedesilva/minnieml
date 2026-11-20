@@ -1,0 +1,145 @@
+// Protocol prerequisites: requirements may form chains and share dependencies.
+// Run with: mmlc run mml/samples/protocol-constraints.mml
+
+// Describe and Display both require ToString, so Render requires it transitively.
+// An explicit & ToString is also allowed, but each protocol may be written only once.
+// Every Render instance requires these instances for the same concrete type.
+protocol Render 'T where
+    'T: Describe & Display =
+  fn render(label: String, value: 'T): String;
+;
+
+// Int implements each protocol. The declarations may follow their uses.
+instance Render Int =
+  fn render(label, value) =
+    label ++ (describe value) ++ " " ++ (display value);
+  ;
+;
+
+protocol Describe 'T where 'T: ToString =
+  fn describe(value: 'T): String;
+;
+
+protocol Display 'T where 'T: ToString =
+  fn display(value: 'T): String;
+;
+
+instance Display Int =
+  fn display(value) = "[" ++ (to_str value) ++ "]";;
+;
+
+instance Describe Int =
+  fn describe(value) = "number " ++ (to_str value);;
+;
+
+// Render supplies Describe, Display, and ToString to generic bodies.
+fn render_value(value: 'T): String
+  where 'T: Render =
+    render "generic: " value;
+;
+
+fn describe_value(value: 'T): String
+  where 'T: Render =
+    let as_text: 'T -> String = to_str;
+    (describe value) ++ " " ++ (display value) ++ " (" ++ (as_text value) ++ ")";
+;
+
+fn decorate(label: String, value: 'T): String
+  where 'T: ToString =
+    label ++ (to_str value);
+;
+
+// Forward to a weaker constraint, retaining the partially applied function.
+fn forward(value: 'T): String
+  where 'T: Render =
+    let formatted: 'T -> String = decorate "forwarded: ";
+    formatted value;
+;
+
+// Local functions share evidence for the enclosing type variable.
+fn nested(value: 'T): String
+  where 'T: Render =
+    fn local(other: 'T): String = to_str other;;
+    local value;
+;
+
+pub fn main(): Unit =
+  println (render "direct: " 42);
+
+  let render_int = render;
+  println (render_int "function value: " 7);
+
+  let render_again = render "partial: ";
+  println (render_again 9);
+
+  println (render_value 11);
+  println ("implied: " ++ (describe_value 13));
+  println (forward 17);
+  println ("nested: " ++ (nested 19));
+;
+
+// Expected output:
+// direct: number 42 [42]
+// function value: number 7 [7]
+// partial: number 9 [9]
+// generic: number 11 [11]
+// implied: number 13 [13] (13)
+// forwarded: 17
+// nested: 19
+
+// Valid syntax: combine requirements for one variable in a single entry with &.
+// protocol CombinedRequirements 'T where 'T: Describe & Display = ;
+
+// Counterexamples: uncomment one code block at a time to see its diagnostic.
+// Leave the explanation commented. Each block is independent of the others.
+
+// 1. A requirement cannot be written twice in one entry.
+// protocol Repeated 'T where 'T: Describe & Describe = ;
+
+// 2. A protocol cannot require itself.
+// protocol Self 'T where 'T: Self = ;
+
+// 3. Indirect cycles are rejected with the dependency path.
+// protocol First 'T where 'T: Second = ;
+// protocol Second 'T where 'T: First = ;
+
+// 4. A protocol clause can constrain only its declared type variable.
+// protocol WrongVariable 'T where 'U: Describe = ;
+
+// 5. Every prerequisite must name a declared protocol.
+// protocol UnknownPrerequisite 'T where 'T: Absent = ;
+
+// 6. A prerequisite gives neither same-named member priority over the other.
+// protocol BaseLabel 'T = fn label(value: 'T): String; ;
+// protocol FancyLabel 'T where 'T: BaseLabel = fn label(value: 'T): String; ;
+// instance BaseLabel Int = fn label(value) = "base";; ;
+// instance FancyLabel Int = fn label(value) = "fancy";; ;
+// let ambiguous_label = label 42;
+
+// 7. An unused instance must still supply its prerequisites for its concrete type.
+// protocol Stamp 'T where 'T: Describe = fn stamp(value: 'T): String; ;
+// instance Stamp Bool = fn stamp(value) = "flag";; ;
+
+// 8. A malformed prerequisite instance cannot satisfy a dependent instance.
+// protocol Tagged 'T where 'T: Tag = fn tagged(value: 'T): String; ;
+// protocol Tag 'T = fn tag(value: 'T): String; ;
+// instance Tagged Int = fn tagged(value) = "tagged";; ;
+// instance Tag Int = ;
+
+// 9. A missing prerequisite rejects the entire dependent chain.
+// protocol Leaf 'T where 'T: Middle = ;
+// protocol Middle 'T where 'T: Root = ;
+// protocol Root 'T = ;
+// instance Leaf Bool = ;
+// instance Middle Bool = ;
+
+// 10. A generic body needs declared evidence, even when concrete instances exist.
+// fn missing_evidence(value: 'T): String = to_str value;;
+
+// 11. Implied generic members remain ambiguous without a priority rule.
+// protocol GeneralLabel 'T = fn label(value: 'T): String; ;
+// protocol FancyLabel 'T where 'T: GeneralLabel = fn label(value: 'T): String; ;
+// fn ambiguous(value: 'T): String where 'T: FancyLabel = label value;;
+
+// 12. A requirement on one variable cannot justify an operation on another.
+// fn wrong_evidence(left: 'T, right: 'U): String where 'T: Render = to_str right;;

@@ -2,21 +2,23 @@ package mml.mmlclib.ast
 
 import cats.syntax.all.*
 
-/** A protocol over one type parameter, with signatures for its required functions and operators. */
+/** A protocol over one type parameter, with its constraints and required functions and operators.
+  */
 case class Protocol(
   source:        SourceOrigin,
   nameNode:      Name,
   typeParameter: TypeVariable,
   signatures:    List[ProtocolSignature],
-  visibility:    Visibility         = Visibility.Protected,
-  docComment:    Option[DocComment] = None,
-  id:            Option[String]     = None
+  visibility:    Visibility                    = Visibility.Protected,
+  docComment:    Option[DocComment]            = None,
+  id:            Option[String]                = None,
+  constraints:   List[TypeVariableConstraints] = Nil
 ) extends Decl,
       Resolvable
 
 /** A function or operator signature. Parameters retain type annotations and consuming ownership
-  * markers. Required signatures have no default body; metadata describes function or operator
-  * syntax.
+  * markers. A signature binds its own type variables in first-appearance order and declares their
+  * requirements. Metadata describes function or operator syntax.
   */
 case class ProtocolSignature(
   source:      SourceOrigin,
@@ -24,9 +26,11 @@ case class ProtocolSignature(
   params:      List[FnParam],
   returnType:  Type,
   meta:        BindingMeta,
-  defaultBody: Option[Lambda]     = None,
-  docComment:  Option[DocComment] = None,
-  id:          Option[String]     = None
+  defaultBody: Option[Lambda]                = None,
+  docComment:  Option[DocComment]            = None,
+  id:          Option[String]                = None,
+  typeParams:  List[TypeVariable]            = Nil,
+  constraints: List[TypeVariableConstraints] = Nil
 ) extends Decl,
       Resolvable
 

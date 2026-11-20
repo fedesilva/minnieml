@@ -48,6 +48,16 @@ let unary = %% 3;
 """
 
 
+LOCAL_BINDING_SOURCE = """type Number = Int;
+fn main(): Int =
+  fn local(value: Number): Number = value;;
+  let alias: Number -> Number = local;
+  let count: Number = alias 1;
+  count;
+;
+"""
+
+
 def position(line, column):
     return {"line": line - 1, "character": column - 1}
 
@@ -195,6 +205,31 @@ async def run(compiler):
                 [(13, 17, 2), (15, 13, 2)],
                 [(14, 20, 2)],
             ]),
+        ])
+        type_references = [(3, 19, 6), (3, 28, 6), (4, 14, 6), (4, 24, 6), (5, 14, 6)]
+        await check_document(server, root, "local-bindings", LOCAL_BINDING_SOURCE, [
+            ("definition", 3, 28, [(1, 1, 18)]),
+            ("definition", 4, 14, [(1, 1, 18)]),
+            ("definition", 4, 24, [(1, 1, 18)]),
+            ("definition", 5, 14, [(1, 1, 18)]),
+            ("definition", 5, 23, [(4, 7, 5)]),
+            ("definition", 6, 3, [(5, 7, 5)]),
+            ("references", 3, 28, type_references),
+            ("references", 4, 14, type_references),
+            ("references", 5, 14, type_references),
+        ])
+        member_sample = (root / "mml/samples/protocol-member-variables.mml").read_text()
+        await check_document(server, root, "member-variables", member_sample, [
+            ("definition", 4, 11, [(3, 28, 2)]),
+            ("references", 3, 28, [(4, 11, 2)]),
+            ("references", 3, 30, [(4, 11, 2)]),
+            ("definition", 14, 35, [(14, 30, 2)]),
+            ("definition", 25, 5, [(3, 6, 5)]),
+            ("definition", 30, 12, [(3, 6, 5)]),
+            ("definition", 33, 20, [(3, 6, 5)]),
+            ("definition", 37, 14, [(14, 6, 3)]),
+            ("implementation", 36, 22, [(18, 6, 3)]),
+            ("references", 18, 6, [(36, 22, 3), (37, 14, 3)]),
         ])
         await server.request("shutdown", None)
         assert await asyncio.wait_for(process.wait(), 10) == 0
