@@ -34,7 +34,7 @@ pub fn main()  =
   println (label_flag false);
 
   println (to_str (7 ==> is_even));
-  println ( (==>) String 7 int_to_str);
+  println ( (==>) String 7 to_str);
 ;
 
 // Expected output:
