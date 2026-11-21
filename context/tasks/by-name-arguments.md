@@ -5,8 +5,8 @@
 - **Owner:** The Author
 - **Status:** planned
 - **Created:** 2026-09-10
-- **Target Branch:** codex/by-name-arguments
-- **Parent Branch:** dev-2026-03-21-lambdas (Git Town parent verified)
+- **Target Branch:** dev/by-name-arguments
+- **Parent Branch:** main (Git Town parent verified)
 - **External Reference (optional):** none
 
 ## Execution Checklist
@@ -20,9 +20,11 @@
 ## Primary outcome: short-circuiting and/or
 
 Boolean `and` and `or` must control evaluation of their right operand. Their eager LLVM
-implementations in [prelude.mml](../../modules/mmlc-lib/src/main/resources/prelude.mml)
-evaluate both operands. Replace them with ordinary conditional operator bodies whose
-right parameter is by-name:
+implementations in
+[StandardOperators.scala](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/semantic/StandardOperators.scala)
+evaluate both operands. [prelude.mml](../../modules/mmlc-lib/src/main/resources/prelude.mml)
+is a reference transcription, not a loaded implementation. Replace the injected operators
+with ordinary conditional operator bodies whose right parameter is by-name:
 
 - `and`: evaluate the left operand once; evaluate the right operand only when the left is true.
 - `or`: evaluate the left operand once; evaluate the right operand only when the left is false.
@@ -35,7 +37,7 @@ implementation; a small `while` fixture can demonstrate repeated predicate/body 
 
 ## Settled design
 
-### Evaluation mode, independent of type
+### Evaluation mode in declarations and function types
 
 Use an enum, with no new by-name AST node:
 
@@ -47,15 +49,18 @@ enum Evaluation:
 Add an evaluation field to the existing `FnParam`, defaulting to `Eager`. The source marker
 `=>` before the parameter name selects `ByName`, as in `=> pred: Bool` or `=> body: Unit`.
 This is parameter syntax, not a `TypeByName` node or a separate `ByNameFnParam` node.
+In a function type annotation, `=> Bool -> Bool` takes a by-name `Bool` and returns
+a `Bool`. The `=>` marker belongs to the parameter.
 
 Evaluation mode is independent of `typeAsc` and `typeSpec`. The annotation may be absent
 where inference is supported; the mode remains known while the result type is unknown.
 Full inference for currently annotation-required declarations is outside this task.
 
-Callable types must retain each parameter's evaluation mode through aliases, higher-order
-calls, and partial applications until elaboration. A declaration-only flag is insufficient:
-a call through a function value must recover the same contract. The concrete extension to
-`TypeFn` is an implementation-plan detail to review before coding.
+`FnParam` carries the declared evaluation mode. In `TypeFn`, each parameter type is
+paired with its evaluation mode so callers can read it from the function signature.
+Calls through function values follow the corresponding parameter's mode in `TypeFn`.
+An eager argument is evaluated before the call. A by-name argument follows the
+adaptation rules below.
 
 ### Argument adaptation and parameter use
 
@@ -110,8 +115,10 @@ whether each argument supplies a result expression or a matching thunk. Elaborat
 The output must be fully typed ordinary lambda/application AST. No by-name evaluation mode
 may remain at the downstream executable boundary. Preserve source origins for diagnostics.
 
-Elaboration must precede partial application so partial applications retain thunk values
-instead of eagerly evaluating their bodies. The existing
+A partial application captures each supplied by-name argument as a thunk. Each remaining
+parameter keeps its evaluation mode in the source-level type of the resulting function.
+Elaboration precedes partial-application elaboration so the generated closure captures
+the thunk without invoking it. The existing
 [semantic pipeline](../../modules/mmlc-lib/src/main/scala/mml/mmlclib/compiler/SemanticStage.scala)
 performs initial capture analysis before type checking; generated lambdas therefore need
 capture analysis after elaboration as well.
@@ -139,11 +146,6 @@ See the [lambda reference](../../docs/language-reference.md#lambda-expressions) 
 Deliver the smallest coherent end-to-end implementation, with `and`/`or` as the first
 runtime acceptance tests. Before edits, resolve these representation details within the plan:
 
-- Extend callable parameter representation to retain evaluation mode without a new by-name
-  AST node. `TypeFn.paramTypes` currently holds bare types; specify how modes stay aligned
-  with parameters through construction, comparison, canonicalization, aliases, and inference.
-- Specify source notation for by-name parameters in callable type annotations, so an explicit
-  higher-order signature can express the contract. Ordinary eager arrow types stay eager.
 - Define checking precedence for an already matching thunk versus a result expression,
   including nested function results, contextual lambda inference, and unknown result types.
 - Define or reject combinations of `=>` with consuming parameter syntax and foreign/native
@@ -154,14 +156,16 @@ Implementation steps:
 1. Add `Evaluation` and the defaulted `FnParam` field. Parse `=> name: T` consistently for
    functions, operators, and lambda parameters. Preserve the marker in relevant printers and
    diagnostics. Add parser coverage for valid markers and malformed declarations.
-2. Carry evaluation modes in callable types and all relevant type transformations. Check
-   by-name references as their result type; check arguments against the result/thunk contract.
+2. Pair each parameter type in `TypeFn` with its evaluation mode. Apply the agreed
+   evaluation rules at calls. Check by-name references
+   as their result type and check arguments against the result/thunk contract.
    Preserve eager behavior and accumulate useful type errors using existing test helpers.
 3. Add the post-type-checking elaboration pass. Rewrite by resolved identity, including nested
    references and function-valued callees; preserve shadowing and source origins. Rebuild
    generated captures, IDs, types, and indexes before partial-application processing.
-4. Replace the prelude's eager Boolean templates with ordinary conditional definitions using
-   a by-name right operand. Keep operator precedence and associativity unchanged.
+4. Replace the eager Boolean templates injected by `StandardOperators.scala` with ordinary
+   conditional definitions using a by-name right operand. Keep the `prelude.mml` reference
+   transcription aligned. Preserve operator precedence and associativity.
 5. Establish skipped, required, and exactly-once right-operand execution with observable effects
    at runtime, including nested/mixed `and`/`or` expressions and explicit thunk arguments.
 
@@ -217,7 +221,7 @@ Document validation passed: tracking consistency review, local file links, and
 
 ## Signoff
 
-- Design decisions: evaluation enum on existing parameters, type-independent mode, argument
+- Design decisions: evaluation mode on `FnParam` and alongside each parameter type in `TypeFn`, argument
   adaptation, implicit invocation, and post-type-checking lambda elaboration are agreed.
 - Implementation plan: pending approval, including the Stage 1 representation details.
 - Feature signoff and tracked item completion: pending.
@@ -229,10 +233,7 @@ Document validation passed: tracking consistency review, local file links, and
 ## Task Working Memory
 
 Primary acceptance: short-circuiting `and`/`or` using the general by-name mechanism.
-Working branch: `codex/by-name-arguments`, parent `dev-2026-03-21-lambdas`.
-The frontend retains `Evaluation.ByName` independently of optional parameter types and
-preserves it in callable contracts. Post-type-checking elaboration removes the distinction
-before partial application, closure memory generation, and ownership analysis.
+Working branch: `dev/by-name-arguments`, parent `main`.
 
-Next action: review the Stage 1 representation and checking details and approve a bounded
-implementation stage. Compiler implementation, verification, and feature signoff are pending.
+Next action: settle how the type checker distinguishes a result expression from a supplied thunk.
+Stage 1 implementation approval, verification, and feature signoff are pending.
